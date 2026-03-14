@@ -1180,3 +1180,97 @@ tbody tr:hover td { background: var(--cream); }
   body { background: white; }
   .bill-receipt { box-shadow: none; border: none; }
 }
+
+/* ── 25. Super Admin ─────────────────────────────── */
+
+/* Gold gradient badge — "⚡ Super Admin" in header */
+.sa-badge {
+  background: linear-gradient(135deg, var(--gold-dark), var(--gold-accent));
+  color: white;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 20px;
+  margin-left: 10px;
+}
+
+/* App header variant for Super Admin */
+.sa-header {
+  background: linear-gradient(135deg, var(--cream) 0%, var(--gold-lighter) 100%) !important;
+  border-bottom: 2px solid var(--gold-light) !important;
+}
+
+/* Super Admin full-page container */
+.sa-page {
+  padding: 36px;
+  background: var(--cream);
+  min-height: 100vh;
+}
+.sa-page-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* ● LIVE sync pill shown in header when Firebase is active */
+.live-indicator {
+  color: var(--gold);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+/* Logged-in user chip in header */
+.header-user {
+  font-size: 0.75rem;
+  color: var(--text-light);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.header-user-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* Super Admin table cell helpers */
+.td-num   { color: var(--text-xlight); font-size: 0.82rem; }
+.td-date  { font-size: 0.8rem;  color: var(--text-light); }
+.td-dash  { color: var(--text-xlight); }
+
+.td-address {
+  font-size: 0.82rem;
+  color: var(--text-light);
+  max-width: 200px;
+}
+
+.td-shop-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.td-shop-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--gold-lighter);
+  border: 1px solid var(--gold-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.td-gst-code {
+  font-size: 0.78rem;
+  background: var(--cream-2);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+}

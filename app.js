@@ -318,7 +318,25 @@ async function login(role, username, password) {
   if (!shop) { showToast('No shop found. Please set up your shop first.', 'error'); return false; }
   if (role === 'admin') {
     if (shop.adminUsername === username && shop.adminPassword === password) {
-      DB.setSession({ role:'admin', name:shop.ownerName, username }); return true;
+      // Auto-sync old localStorage shop to Firebase if not already there
+      let shopId = DB.getShopId();
+      if (firebaseReady && !shopId) {
+        shopId = uid();
+        _ls(KEYS.shopId, shopId);
+        state.shopId = shopId;
+        const cats = DB.getCategories();
+        db.collection('shops').doc(shopId).set({ shopInfo: shop, categories: cats, createdAt: Date.now() }).catch(console.error);
+        db.collection('users').doc(username).set({ role:'admin', shopId, name:shop.ownerName, id:shopId, password }).catch(console.error);
+        // Sync existing employees, customers, products, orders
+        DB.getEmployees().forEach(e => db.collection('shops').doc(shopId).collection('employees').doc(e.id).set(e).catch(console.error));
+        DB.getCustomers().forEach(c => db.collection('shops').doc(shopId).collection('customers').doc(c.id).set(c).catch(console.error));
+        DB.getProducts().forEach(p => db.collection('shops').doc(shopId).collection('products').doc(p.id).set(p).catch(console.error));
+        DB.getOrders().forEach(o => db.collection('shops').doc(shopId).collection('orders').doc(o.id).set(o).catch(console.error));
+        showToast('Shop synced to cloud ☁️', 'success');
+      }
+      DB.setSession({ role:'admin', name:shop.ownerName, username, shopId: shopId||undefined });
+      if (shopId) { state.shopId = shopId; Sync.start(shopId); }
+      return true;
     }
     showToast('Invalid admin credentials', 'error'); return false;
   }

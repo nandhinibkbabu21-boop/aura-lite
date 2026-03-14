@@ -291,20 +291,22 @@ async function login(role, username, password) {
   if (firebaseReady) {
     try {
       const userDoc = await db.collection('users').doc(username).get();
-      if (!userDoc.exists) { showToast('User not found', 'error'); return false; }
-      const u = userDoc.data();
-      if (u.password !== password) { showToast('Incorrect password', 'error'); return false; }
-      if (u.role !== role) { showToast(`This is a ${u.role} account`, 'error'); return false; }
-      const shopSnap = await db.collection('shops').doc(u.shopId).get();
-      if (shopSnap.exists) {
-        const sd = shopSnap.data();
-        if (sd.shopInfo)   _ls(KEYS.shop, sd.shopInfo);
-        if (sd.categories) _ls(KEYS.categories, sd.categories);
+      if (userDoc.exists) {
+        const u = userDoc.data();
+        if (u.password !== password) { showToast('Incorrect password', 'error'); return false; }
+        if (u.role !== role) { showToast(`This is a ${u.role} account`, 'error'); return false; }
+        const shopSnap = await db.collection('shops').doc(u.shopId).get();
+        if (shopSnap.exists) {
+          const sd = shopSnap.data();
+          if (sd.shopInfo)   _ls(KEYS.shop, sd.shopInfo);
+          if (sd.categories) _ls(KEYS.categories, sd.categories);
+        }
+        _ls(KEYS.shopId, u.shopId); state.shopId = u.shopId;
+        DB.setSession({ role, name:u.name, username, id:u.id, shopId:u.shopId });
+        Sync.start(u.shopId);
+        return true;
       }
-      _ls(KEYS.shopId, u.shopId); state.shopId = u.shopId;
-      DB.setSession({ role, name:u.name, username, id:u.id, shopId:u.shopId });
-      Sync.start(u.shopId);
-      return true;
+      // Not found in Firebase — fall through to local check
     } catch (e) {
       console.error('login error:', e);
       showToast('Connection error – trying offline…', 'warning');
@@ -360,8 +362,7 @@ function renderLanding() {
           ${loginCard('customer', '🛍️', 'Customer', 'Browse &amp; shop the collection')}
         </div>
         <p class="landing-footer">
-          ${!shop ? `New shop? <a id="setup-shop-link">Set up your boutique →</a>` :
-            `<span style="color:var(--text-xlight);">© ${new Date().getFullYear()} Aura Lite · Luxury Fashion Platform</span>`}
+          New shop? <a id="setup-shop-link">Set up your boutique →</a>
           ${firebaseReady ? `<br/><a id="sa-link" style="font-size:0.68rem;color:var(--text-xlight);margin-top:6px;display:inline-block;cursor:pointer;">Super Admin ↗</a>` : ''}
         </p>
       </div>

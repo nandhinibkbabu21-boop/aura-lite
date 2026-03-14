@@ -16,10 +16,10 @@
  */
 
 const firebaseConfig = {
-  apiKey:            "YOUR_API_KEY_HERE",
-  authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId:         "YOUR_PROJECT_ID",
-  storageBucket:     "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId:             "YOUR_APP_ID"
+  apiKey:            "AIzaSyCipq9kGRoox7r6UvXyyFD7FzRv_YU7dA0",
+  authDomain:        "aura-lite-17acb.firebaseapp.com",
+  projectId:         "aura-lite-17acb",
+  storageBucket:     "aura-lite-17acb.firebasestorage.app",
+  messagingSenderId: "839298453615",
+  appId:             "1:839298453615:web:b8439c2691e6a8a4937d9a"
 };

@@ -40,6 +40,20 @@ const KEYS = {
 
 const SUPER_ADMIN_CREDS = { username: 'superadmin', password: '1234567890@' };
 
+function getDeviceId() {
+  let id = localStorage.getItem('aura_device_id');
+  if (!id) { id = uid(); localStorage.setItem('aura_device_id', id); }
+  return id;
+}
+function recordDeviceLogin(shopId, info) {
+  if (!firebaseReady || !shopId) return;
+  const deviceId = getDeviceId();
+  db.collection('shops').doc(shopId).collection('devices').doc(deviceId).set({
+    role: info.role, name: info.name, lastLogin: Date.now(),
+    userAgent: navigator.userAgent.substring(0, 120)
+  }, { merge: true }).catch(console.error);
+}
+
 let state = {
   route: 'landing', subRoute: 'overview',
   session: null, shopId: null,
@@ -292,6 +306,7 @@ async function login(role, username, password) {
         }
         _ls(KEYS.shopId, u.shopId); state.shopId = u.shopId;
         DB.setSession({ role, name:u.name, username, id:u.id, shopId:u.shopId });
+        recordDeviceLogin(u.shopId, { role, name:u.name });
         Sync.start(u.shopId);
         return true;
       }
@@ -324,19 +339,19 @@ async function login(role, username, password) {
         showToast('Shop synced to cloud ☁️', 'success');
       }
       DB.setSession({ role:'admin', name:shop.ownerName, username, shopId: shopId||undefined });
-      if (shopId) { state.shopId = shopId; Sync.start(shopId); }
+      if (shopId) { state.shopId = shopId; Sync.start(shopId); recordDeviceLogin(shopId, { role:'admin', name:shop.ownerName }); }
       return true;
     }
     showToast('Invalid admin credentials', 'error'); return false;
   }
   if (role === 'employee') {
     const emp = DB.getEmployees().find(e => e.username===username && e.password===password);
-    if (emp) { DB.setSession({ role:'employee', name:emp.name, username, id:emp.id }); return true; }
+    if (emp) { DB.setSession({ role:'employee', name:emp.name, username, id:emp.id }); recordDeviceLogin(DB.getShopId(), { role:'employee', name:emp.name }); return true; }
     showToast('Invalid employee credentials', 'error'); return false;
   }
   if (role === 'customer') {
     const cust = DB.getCustomers().find(c => c.username===username && c.password===password);
-    if (cust) { DB.setSession({ role:'customer', name:cust.name, username, id:cust.id }); return true; }
+    if (cust) { DB.setSession({ role:'customer', name:cust.name, username, id:cust.id }); recordDeviceLogin(DB.getShopId(), { role:'customer', name:cust.name }); return true; }
     showToast('Invalid customer credentials', 'error'); return false;
   }
   return false;
@@ -1159,13 +1174,16 @@ async function loadSuperAdminShops() {
       return;
     }
     const shops = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    const deviceCounts = await Promise.all(
+      shops.map(s => db.collection('shops').doc(s.id).collection('devices').get().then(d => d.size).catch(()=>0))
+    );
     container.innerHTML = `
       <div class="grid-4 mb-3">
         ${statCard('◈','Total Shops',shops.length,'registered')}
         ${statCard('✦','Platform','Aura Lite','Cloud Synced')}
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>Shop Name</th><th>Owner</th><th>Phone</th><th>Address</th><th>GST</th><th>Registered</th><th>Action</th></tr></thead>
+        <thead><tr><th>#</th><th>Shop Name</th><th>Owner</th><th>Phone</th><th>Address</th><th>GST</th><th>Registered</th><th>Devices</th><th>Action</th></tr></thead>
         <tbody>${shops.map((shop,i) => {
           const info = shop.shopInfo || shop;
           return `<tr>
@@ -1178,6 +1196,7 @@ async function loadSuperAdminShops() {
             <td class="td-address">${esc(info.address||'—')}</td>
             <td>${info.gst?`<code class="td-gst-code">${esc(info.gst)}</code>`:'<span class="td-dash">—</span>'}</td>
             <td class="td-date">${info.createdAt?fmtDate(info.createdAt):'—'}</td>
+            <td class="td-num">${deviceCounts[i]}</td>
             <td><button class="btn btn-sm btn-danger sa-delete-btn" data-shopid="${esc(shop.id)}">🗑 Delete</button></td>
           </tr>`;}).join('')}
         </tbody></table></div>`;

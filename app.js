@@ -38,7 +38,7 @@ const KEYS = {
   shopId:     `${APP_KEY}_shopId`,
 };
 
-const SUPER_ADMIN_CREDS = { username: 'superadmin', password: 'AuraLite@2025' };
+const SUPER_ADMIN_CREDS = { username: 'superadmin', password: '1234567890@' };
 
 let state = {
   route: 'landing', subRoute: 'overview',
@@ -268,19 +268,8 @@ function render() {
    8. AUTH
 ═══════════════════════════════════════════════════ */
 async function loginSuperAdmin(username, password) {
-  if (firebaseReady) {
-    try {
-      const doc = await db.collection('config').doc('superadmin').get();
-      if (!doc.exists) await db.collection('config').doc('superadmin').set(SUPER_ADMIN_CREDS);
-      const creds = doc.exists ? doc.data() : SUPER_ADMIN_CREDS;
-      if (creds.username === username && creds.password === password) {
-        DB.setSession({ role:'super-admin', name:'Super Admin', username }); return true;
-      }
-    } catch (e) { console.error('SA login:', e); }
-  } else {
-    if (username === SUPER_ADMIN_CREDS.username && password === SUPER_ADMIN_CREDS.password) {
-      DB.setSession({ role:'super-admin', name:'Super Admin', username }); return true;
-    }
+  if (username === SUPER_ADMIN_CREDS.username && password === SUPER_ADMIN_CREDS.password) {
+    DB.setSession({ role:'super-admin', name:'Super Admin', username }); return true;
   }
   showToast('Invalid Super Admin credentials', 'error'); return false;
 }

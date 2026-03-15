@@ -1165,7 +1165,7 @@ async function loadSuperAdminShops() {
         ${statCard('✦','Platform','Aura Lite','Cloud Synced')}
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>Shop Name</th><th>Owner</th><th>Phone</th><th>Address</th><th>GST</th><th>Registered</th></tr></thead>
+        <thead><tr><th>#</th><th>Shop Name</th><th>Owner</th><th>Phone</th><th>Address</th><th>GST</th><th>Registered</th><th>Action</th></tr></thead>
         <tbody>${shops.map((shop,i) => {
           const info = shop.shopInfo || shop;
           return `<tr>
@@ -1178,11 +1178,29 @@ async function loadSuperAdminShops() {
             <td class="td-address">${esc(info.address||'—')}</td>
             <td>${info.gst?`<code class="td-gst-code">${esc(info.gst)}</code>`:'<span class="td-dash">—</span>'}</td>
             <td class="td-date">${info.createdAt?fmtDate(info.createdAt):'—'}</td>
+            <td><button class="btn btn-sm btn-danger sa-delete-btn" data-shopid="${esc(shop.id)}">🗑 Delete</button></td>
           </tr>`;}).join('')}
         </tbody></table></div>`;
+    container.querySelectorAll('.sa-delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => deleteShop(btn.dataset.shopid));
+    });
   } catch (e) {
     console.error('SA shops:', e);
     container.innerHTML = `<div class="alert alert-danger">✕ &nbsp; Failed to load shops: ${e.message}</div>`;
+  }
+}
+
+async function deleteShop(shopId) {
+  if (!confirm('Delete this shop permanently? This cannot be undone.')) return;
+  try {
+    await db.collection('shops').doc(shopId).delete();
+    const usersSnap = await db.collection('users').where('shopId','==',shopId).get();
+    usersSnap.forEach(u => u.ref.delete());
+    showToast('Shop deleted', 'success');
+    loadSuperAdminShops();
+  } catch (e) {
+    console.error('delete shop:', e);
+    showToast('Failed to delete shop: ' + e.message, 'error');
   }
 }
 

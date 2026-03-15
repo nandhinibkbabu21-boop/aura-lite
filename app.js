@@ -1489,7 +1489,26 @@ function attachListeners() {
 /* ═══════════════════════════════════════════════════
    24. INIT
 ═══════════════════════════════════════════════════ */
-function init() {
+async function init() {
+  // If a shopId is stored locally, verify it still exists in Firebase.
+  // If not (shop was deleted), wipe local data so device shows clean landing page.
+  if (firebaseReady) {
+    const localShopId = _ls(KEYS.shopId) || state.shopId;
+    if (localShopId) {
+      try {
+        const shopSnap = await db.collection('shops').doc(localShopId).get();
+        if (!shopSnap.exists) {
+          [KEYS.shop, KEYS.employees, KEYS.customers, KEYS.products,
+           KEYS.categories, KEYS.orders, KEYS.shopId, KEYS.session]
+            .forEach(k => localStorage.removeItem(k));
+          navigate('landing');
+          showToast('This shop is no longer registered. Please set up again.', 'warning');
+          return;
+        }
+      } catch(_) { /* offline – continue with cached data */ }
+    }
+  }
+
   const session=DB.getSession();
   if(session){
     state.session=session; state.shopId=DB.getShopId();

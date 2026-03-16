@@ -1371,7 +1371,23 @@ function attachListeners() {
     e.preventDefault();
     const fd=new FormData(e.target);
     if(DB.getCustomers().find(c=>c.username===fd.get('username'))){showToast('Username already taken','error');return;}
-    if(firebaseReady){try{const ex=await db.collection('users').doc(fd.get('username')).get();if(ex.exists){showToast('Username already taken','error');return;}}catch(_){}}
+    if(firebaseReady){
+      try{
+        const ex=await db.collection('users').doc(fd.get('username')).get();
+        if(ex.exists){
+          // Username exists globally – check if it's already in THIS shop's customer list
+          const shopId=DB.getShopId();
+          if(shopId){
+            const custSnap=await db.collection('shops').doc(shopId).collection('customers')
+              .where('username','==',fd.get('username')).get();
+            // If found in this shop → truly taken; if NOT found → orphaned record, allow overwrite
+            if(!custSnap.empty){showToast('Username already taken','error');return;}
+          } else {
+            showToast('Username already taken','error');return;
+          }
+        }
+      }catch(_){}
+    }
     const cust={id:uid(),name:fd.get('name'),whatsapp:fd.get('whatsapp'),gender:fd.get('gender'),size:fd.get('size'),
       address:fd.get('address'),skinTone:fd.get('skinTone'),preferredColor:fd.get('preferredColor'),
       occasion:fd.get('occasion'),username:fd.get('username'),password:fd.get('password')};

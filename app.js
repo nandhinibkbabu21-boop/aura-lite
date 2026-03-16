@@ -298,16 +298,30 @@ async function login(role, username, password) {
         const u = userDoc.data();
         if (u.password !== password) { showToast('Incorrect password', 'error'); return false; }
         if (u.role !== role) { showToast(`This is a ${u.role} account`, 'error'); return false; }
-        const shopSnap = await db.collection('shops').doc(u.shopId).get();
-        if (shopSnap.exists) {
-          const sd = shopSnap.data();
-          if (sd.shopInfo)   _ls(KEYS.shop, sd.shopInfo);
-          if (sd.categories) _ls(KEYS.categories, sd.categories);
+        // Use shopId from user doc, or fall back to the device's stored shopId
+        const resolvedShopId = u.shopId || _ls(KEYS.shopId) || state.shopId;
+        if (resolvedShopId) {
+          const shopSnap = await db.collection('shops').doc(resolvedShopId).get();
+          if (shopSnap.exists) {
+            const sd = shopSnap.data();
+            if (sd.shopInfo)   _ls(KEYS.shop, sd.shopInfo);
+            if (sd.categories) _ls(KEYS.categories, sd.categories);
+          }
+          _ls(KEYS.shopId, resolvedShopId); state.shopId = resolvedShopId;
+          // If user doc had null shopId, fix it in Firebase now
+          if (!u.shopId) db.collection('users').doc(username).update({ shopId: resolvedShopId }).catch(()=>{});
+          // If customer not in shop's customers sub-collection, add them
+          if (role === 'customer') {
+            const custRef = db.collection('shops').doc(resolvedShopId).collection('customers').doc(u.id);
+            const custSnap = await custRef.get().catch(()=>null);
+            if (custSnap && !custSnap.exists) {
+              custRef.set({ id:u.id, name:u.name, username, password:u.password, whatsapp:u.whatsapp||'', gender:u.gender||'', size:u.size||'' }).catch(()=>{});
+            }
+          }
         }
-        _ls(KEYS.shopId, u.shopId); state.shopId = u.shopId;
-        DB.setSession({ role, name:u.name, username, id:u.id, shopId:u.shopId });
-        recordDeviceLogin(u.shopId, { role, name:u.name });
-        Sync.start(u.shopId);
+        DB.setSession({ role, name:u.name, username, id:u.id, shopId:resolvedShopId||undefined });
+        recordDeviceLogin(resolvedShopId, { role, name:u.name });
+        Sync.start(resolvedShopId);
         return true;
       }
       // Not found in Firebase — fall through to local check

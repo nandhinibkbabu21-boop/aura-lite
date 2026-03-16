@@ -322,6 +322,7 @@ async function login(role, username, password) {
         DB.setSession({ role, name:u.name, username, id:u.id, shopId:resolvedShopId||undefined });
         recordDeviceLogin(resolvedShopId, { role, name:u.name });
         Sync.start(resolvedShopId);
+        if (role==='admin') repairOrphanedCustomers(resolvedShopId);
         return true;
       }
       // Not found in Firebase — fall through to local check
@@ -353,7 +354,7 @@ async function login(role, username, password) {
         showToast('Shop synced to cloud ☁️', 'success');
       }
       DB.setSession({ role:'admin', name:shop.ownerName, username, shopId: shopId||undefined });
-      if (shopId) { state.shopId = shopId; Sync.start(shopId); recordDeviceLogin(shopId, { role:'admin', name:shop.ownerName }); }
+      if (shopId) { state.shopId = shopId; Sync.start(shopId); recordDeviceLogin(shopId, { role:'admin', name:shop.ownerName }); repairOrphanedCustomers(shopId); }
       return true;
     }
     showToast('Invalid admin credentials', 'error'); return false;
@@ -1229,6 +1230,25 @@ async function loadSuperAdminShops() {
   }
 }
 
+async function repairOrphanedCustomers(shopId) {
+  if (!firebaseReady || !shopId) return;
+  try {
+    const usersSnap = await db.collection('users')
+      .where('role','==','customer').where('shopId','==',shopId).get();
+    for (const doc of usersSnap.docs) {
+      const u = doc.data();
+      const custId = u.id || doc.id;
+      const custRef = db.collection('shops').doc(shopId).collection('customers').doc(custId);
+      const exists = await custRef.get().then(s=>s.exists).catch(()=>true);
+      if (!exists) {
+        await custRef.set({ id:custId, name:u.name||'', username:doc.id,
+          password:u.password||'', whatsapp:u.whatsapp||'',
+          gender:u.gender||'', size:u.size||'', address:u.address||'' }).catch(()=>{});
+      }
+    }
+  } catch(e) { console.warn('repairOrphanedCustomers:', e); }
+}
+
 async function deleteShop(shopId) {
   if (!confirm('Delete this shop permanently? This cannot be undone.')) return;
   try {
@@ -1384,22 +1404,15 @@ function attachListeners() {
   on('#customer-register-form','submit', async e=>{
     e.preventDefault();
     const fd=new FormData(e.target);
+    const regShopId = DB.getShopId();
+    if(!regShopId){ showToast('No shop found on this device. Please register on the shop\'s device.','error'); return; }
+    // Only check THIS shop's customer list — not the global users collection
     if(DB.getCustomers().find(c=>c.username===fd.get('username'))){showToast('Username already taken','error');return;}
     if(firebaseReady){
       try{
-        const ex=await db.collection('users').doc(fd.get('username')).get();
-        if(ex.exists){
-          // Username exists globally – check if it's already in THIS shop's customer list
-          const shopId=DB.getShopId();
-          if(shopId){
-            const custSnap=await db.collection('shops').doc(shopId).collection('customers')
-              .where('username','==',fd.get('username')).get();
-            // If found in this shop → truly taken; if NOT found → orphaned record, allow overwrite
-            if(!custSnap.empty){showToast('Username already taken','error');return;}
-          } else {
-            showToast('Username already taken','error');return;
-          }
-        }
+        const custSnap=await db.collection('shops').doc(regShopId).collection('customers')
+          .where('username','==',fd.get('username')).get();
+        if(!custSnap.empty){showToast('Username already taken','error');return;}
       }catch(_){}
     }
     const cust={id:uid(),name:fd.get('name'),whatsapp:fd.get('whatsapp'),gender:fd.get('gender'),size:fd.get('size'),

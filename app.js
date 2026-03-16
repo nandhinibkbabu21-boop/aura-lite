@@ -504,7 +504,7 @@ function renderRegisterCustomer() {
             <div class="form-group"><label class="form-label">Full Name <span class="required">*</span></label>
               <input type="text" class="form-control" name="name" required placeholder="Your name"/></div>
             <div class="form-group"><label class="form-label">WhatsApp Number <span class="required">*</span></label>
-              <input type="tel" class="form-control" name="whatsapp" required maxlength="15" placeholder="10-digit number"/></div>
+              <input type="tel" class="form-control" name="whatsapp" required maxlength="10" pattern="[0-9]{10}" title="Enter exactly 10 digits" placeholder="10-digit number"/></div>
           </div>
           <div class="form-row">
             <div class="form-group"><label class="form-label">Gender <span class="required">*</span></label>
@@ -1376,6 +1376,7 @@ function attachListeners() {
       address:fd.get('address'),skinTone:fd.get('skinTone'),preferredColor:fd.get('preferredColor'),
       occasion:fd.get('occasion'),username:fd.get('username'),password:fd.get('password')};
     if(!cust.name||!cust.whatsapp||!cust.gender||!cust.size||!cust.username||!cust.password){showToast('Fill all required fields','error');return;}
+    if(!/^[0-9]{10}$/.test(cust.whatsapp)){showToast('WhatsApp number must be exactly 10 digits','error');return;}
     DB.addCustomer(cust);
     DB.setSession({role:'customer',name:cust.name,username:cust.username,id:cust.id,shopId:DB.getShopId()});
     showToast(`Welcome, ${cust.name}!`,'success'); navigate('customer');

@@ -951,7 +951,7 @@ function renderCustomerShop() {
   const cartCount=state.cart.reduce((s,i)=>s+i.qty,0);
   return `<div>
     <header class="app-header">
-      <div class="app-logo"><span class="gold-text">AURA</span><span class="app-logo-lite">Lite</span></div>
+      <div class="app-logo"><span class="gold-text">ZARA</span><span class="app-logo-lite">Aura</span></div>
       <div class="header-actions">
         ${firebaseReady?`<span class="live-indicator" title="Live sync">● LIVE</span>`:''}
         <div class="dash-search" style="min-width:190px;"><span class="dash-search-icon">⌕</span>
@@ -1378,7 +1378,9 @@ function attachListeners() {
     if(!cust.name||!cust.whatsapp||!cust.gender||!cust.size||!cust.username||!cust.password){showToast('Fill all required fields','error');return;}
     if(!/^[0-9]{10}$/.test(cust.whatsapp)){showToast('WhatsApp number must be exactly 10 digits','error');return;}
     DB.addCustomer(cust);
-    DB.setSession({role:'customer',name:cust.name,username:cust.username,id:cust.id,shopId:DB.getShopId()});
+    const custShopId = DB.getShopId();
+    DB.setSession({role:'customer',name:cust.name,username:cust.username,id:cust.id,shopId:custShopId||undefined});
+    if(firebaseReady && custShopId){ state.shopId = custShopId; Sync.start(custShopId); }
     showToast(`Welcome, ${cust.name}!`,'success'); navigate('customer');
   });
 

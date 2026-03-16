@@ -373,10 +373,16 @@ function renderLanding() {
     <div class="landing-bg-pattern"></div><div class="landing-grid"></div>
     <div class="landing-content">
       <div class="landing-inner animate-fadeIn">
-        <div class="landing-badge">✦ &nbsp; Luxury Fashion Management &nbsp; ✦</div>
-        <div class="landing-logo"><span class="gold-text">AURA</span><span class="landing-logo-lite">Lite</span></div>
+        <div class="landing-badge">✦ &nbsp; Fashion Management for Everyone &nbsp; ✦</div>
+        <div class="landing-logo"><span class="gold-text">ZARA</span><span class="landing-logo-lite">Aura</span></div>
         <div class="landing-divider"><span class="landing-divider-icon">◆</span></div>
         <p class="landing-tagline">Elegance in every stitch,<br/>precision in every sale.</p>
+        <div class="landing-highlights">
+          <div class="landing-highlight-item">🏘️ <span>Designed for small &amp; rural boutiques</span></div>
+          <div class="landing-highlight-item">📦 <span>Easy billing, stock &amp; inventory management</span></div>
+          <div class="landing-highlight-item">🔄 <span>Real-time sync across all your devices</span></div>
+          <div class="landing-highlight-item">📵 <span>Simple to use — no technical knowledge needed</span></div>
+        </div>
         ${shop ? `<div class="shop-welcome-chip">✦ &nbsp; ${esc(shop.name)}</div>` : ''}
         <div class="login-options">
           ${loginCard('admin',    '👑', 'Admin',    'Manage shop, products &amp; team')}
@@ -410,7 +416,7 @@ function renderLogin(role) {
       <div style="width:100%;max-width:440px;" class="animate-slideUp">
         <div class="register-card">
           <div style="text-align:center;margin-bottom:28px;">
-            <div class="landing-logo" style="font-size:2.4rem;"><span class="gold-text">AURA</span><span class="landing-logo-lite" style="font-size:0.68rem;">Lite</span></div>
+            <div class="landing-logo" style="font-size:2.4rem;"><span class="gold-text">ZARA</span><span class="landing-logo-lite" style="font-size:0.68rem;">Aura</span></div>
           </div>
           <div class="login-role-badge">${icons[role]||'🔐'} &nbsp; ${labels[role]||'User'} Login</div>
           <h2 style="font-family:var(--font-serif);margin-bottom:6px;">Welcome Back</h2>
@@ -459,9 +465,9 @@ function renderRegisterShop() {
             <textarea class="form-control" name="address" placeholder="Full address…" required style="min-height:72px;"></textarea></div>
           <div class="form-row">
             <div class="form-group"><label class="form-label">Phone Number <span class="required">*</span></label>
-              <input type="tel" class="form-control" name="phone" placeholder="10-digit number" required maxlength="15"/></div>
+              <input type="tel" class="form-control" name="phone" placeholder="10-digit number" required maxlength="10" pattern="[0-9]{10}" title="Enter exactly 10 digits"/></div>
             <div class="form-group"><label class="form-label">GST Number <span class="optional-tag">(Optional)</span></label>
-              <input type="text" class="form-control" name="gst" placeholder="e.g. 29ABCDE1234F1Z5"/></div>
+              <input type="text" class="form-control" name="gst" placeholder="e.g. 29ABCDE1234F1Z5" maxlength="15" pattern="[A-Z0-9]{15}" title="GST must be exactly 15 alphanumeric characters" style="text-transform:uppercase"/></div>
           </div>
           <div style="border-top:1px solid var(--border-light);padding-top:18px;">
             <h4 style="font-family:var(--font-serif);margin-bottom:12px;">Admin Login Credentials</h4>
@@ -489,7 +495,7 @@ function renderRegisterCustomer() {
     <div class="register-card animate-slideUp" style="max-width:660px;">
       <div class="register-header">
         <div class="badge">✦ &nbsp; Customer Registration</div>
-        <h2 style="font-family:var(--font-serif);font-size:2rem;">Join <span class="gold-text">Aura Lite</span></h2>
+        <h2 style="font-family:var(--font-serif);font-size:2rem;">Join <span class="gold-text">Zara Aura</span></h2>
         <p class="text-muted" style="margin-top:6px;">Create your account for a personalised experience</p>
       </div>
       <form id="customer-register-form">
@@ -956,7 +962,7 @@ function renderCustomerShop() {
     </header>
     <div class="shop-hero"><div class="shop-hero-content">
       ${cust?`<div class="shop-hero-greeting">✦ &nbsp; Welcome back, ${esc(cust.name)} &nbsp; ✦</div>`:''}
-      <div class="shop-hero-name gold-text">${esc(shop?.name||'Aura Lite')}</div>
+      <div class="shop-hero-name gold-text">${esc(shop?.name||'Zara Aura')}</div>
       <div class="shop-hero-sub">${esc(shop?.address||'Luxury Fashion Boutique')}</div>
     </div></div>
     <div class="shop-filter-bar">
@@ -1083,7 +1089,7 @@ function renderBillHTML(order, shop, cust) {
   const items=order?.items||[], sub=items.reduce((s,i)=>s+i.qty*i.price,0);
   return `<div class="bill-receipt">
     <div class="bill-header">
-      <div class="bill-shop-name gold-text">${esc(shop?.name||'Aura Lite')}</div>
+      <div class="bill-shop-name gold-text">${esc(shop?.name||'Zara Aura')}</div>
       <div class="bill-shop-address">${esc(shop?.address||'')}</div>
       ${shop?.gst?`<div style="font-size:0.72rem;color:var(--text-light);margin-top:4px;">GST: ${esc(shop.gst)}</div>`:''}
     </div>
@@ -1102,7 +1108,7 @@ function renderBillHTML(order, shop, cust) {
 }
 function buildWhatsAppBill(order, shop, cust) {
   const items=order?.items||[], total=items.reduce((s,i)=>s+i.qty*i.price,0);
-  let m=`*${shop?.name||'Aura Lite'} – Receipt*\n_${shop?.address||''}_\n`;
+  let m=`*${shop?.name||'Zara Aura'} – Receipt*\n_${shop?.address||''}_\n`;
   if(shop?.gst) m+=`GST: ${shop.gst}\n`;
   m+=`\n*Bill No:* #${order?.id?.slice(-8)?.toUpperCase()}\n*Date:* ${fmtDate(order?.date)}\n*Customer:* ${cust?.name||'Guest'}\n\n*Items Purchased:*\n`;
   items.forEach(i=>{ m+=`• ${i.name} (${i.size}) × ${i.qty} = ₹${(i.qty*i.price).toLocaleString('en-IN')}\n`; });
@@ -1149,7 +1155,7 @@ function renderSuperAdminDash() {
       <div class="sa-page-inner">
         <div class="mb-3">
           <div class="dash-page-title">Super Admin Dashboard</div>
-          <div class="dash-page-subtitle">Overview of all registered shops on the Aura Lite platform</div>
+          <div class="dash-page-subtitle">Overview of all registered shops on the Zara Aura platform</div>
         </div>
         <div id="sa-shops-container"><div class="page-loading"><div class="loading-spinner"></div></div></div>
       </div>
@@ -1180,7 +1186,7 @@ async function loadSuperAdminShops() {
     container.innerHTML = `
       <div class="grid-4 mb-3">
         ${statCard('◈','Total Shops',shops.length,'registered')}
-        ${statCard('✦','Platform','Aura Lite','Cloud Synced')}
+        ${statCard('✦','Platform','Zara Aura','Cloud Synced')}
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th>#</th><th>Shop Name</th><th>Owner</th><th>Phone</th><th>Address</th><th>GST</th><th>Registered</th><th>Devices</th><th>Action</th></tr></thead>
@@ -1340,6 +1346,9 @@ function attachListeners() {
     const shop={name:fd.get('name'),ownerName:fd.get('ownerName'),address:fd.get('address'),phone:fd.get('phone'),gst:fd.get('gst'),
       adminUsername:fd.get('adminUsername'),adminPassword:fd.get('adminPassword'),createdAt:Date.now()};
     if(!shop.name||!shop.ownerName||!shop.address||!shop.phone||!shop.adminUsername||!shop.adminPassword){showToast('Fill all required fields','error');return;}
+    if(!/^[0-9]{10}$/.test(shop.phone)){showToast('Phone number must be exactly 10 digits','error');return;}
+    if(shop.gst && !/^[A-Z0-9]{15}$/.test(shop.gst.toUpperCase())){showToast('GST number must be exactly 15 alphanumeric characters','error');return;}
+    if(shop.gst) shop.gst=shop.gst.toUpperCase();
     if(btn){btn.disabled=true;btn.textContent='Setting up…';}
     if(firebaseReady){
       try{
@@ -1353,7 +1362,7 @@ function attachListeners() {
     }
     DB.setShop(shop,_ls(KEYS.shopId));
     DB.setSession({role:'admin',name:shop.ownerName,username:shop.adminUsername});
-    showToast(`Welcome to Aura Lite, ${shop.name}!`,'success');
+    showToast(`Welcome to Zara Aura, ${shop.name}!`,'success');
     navigate('admin');
   });
 

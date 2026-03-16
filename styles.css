@@ -748,10 +748,26 @@ tbody tr:hover td { background: var(--cream); }
   font-weight: 300;
   font-style: italic;
   color: var(--text-medium);
-  margin-bottom: 48px;
+  margin-bottom: 24px;
   line-height: 1.6;
   animation: fadeInDown 0.7s ease 0.3s both;
 }
+.landing-highlights {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-bottom: 32px;
+  animation: fadeInDown 0.7s ease 0.4s both;
+}
+.landing-highlight-item {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--font-sans);
+  font-size: 0.78rem; font-weight: 400;
+  color: var(--text-medium);
+  background: rgba(180,145,90,0.07);
+  border: 1px solid rgba(180,145,90,0.18);
+  border-radius: 20px;
+  padding: 7px 16px;
+}
+.landing-highlight-item span { flex: 1; text-align: left; }
 
 .login-options {
   display: flex;

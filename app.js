@@ -62,7 +62,7 @@ let state = {
   modalOpen: null, editingId: null, loginRole: null,
   viewingProductId: null, viewingOrderId: null, stockProductId: null,
   analyticsPeriod: 'monthly', salaryEmpId: null,
-  fpStep: 1, fpVerifiedUser: null,
+  fpStep: 1, fpVerifiedUser: null, fpOtp: null, fpOtpExpiry: null, fpFoundUser: null,
 };
 
 /* ═══════════════════════════════════════════════════
@@ -476,74 +476,128 @@ function renderLogin(role) {
 }
 
 /* ═══════════════════════════════════════════════════
-   10b. FORGOT PASSWORD
+   10b. FORGOT PASSWORD (OTP via WhatsApp)
 ═══════════════════════════════════════════════════ */
+function generateOtp() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function maskPhone(phone) {
+  if (!phone || phone.length < 4) return '******';
+  return phone.slice(0, 2) + '****' + phone.slice(-2);
+}
+
 function renderForgotPassword(role) {
   const labels = { admin:'Admin', employee:'Employee', customer:'Customer' };
   const icons  = { admin:'👑', employee:'🏷️', customer:'🛍️' };
-  const verifyLabel = role === 'admin' ? 'Shop Phone Number' : role === 'employee' ? 'Registered Phone Number' : 'WhatsApp Number';
 
+  // Step indicator helper
+  function stepBadge(n) {
+    if (state.fpStep > n) return `<div class="fp-step done"><div class="fp-step-num">✓</div><div class="fp-step-label">${['','Username','OTP','Password'][n]}</div></div>`;
+    if (state.fpStep === n) return `<div class="fp-step active"><div class="fp-step-num">${n}</div><div class="fp-step-label">${['','Username','OTP','Password'][n]}</div></div>`;
+    return `<div class="fp-step"><div class="fp-step-num">${n}</div><div class="fp-step-label">${['','Username','OTP','Password'][n]}</div></div>`;
+  }
+  function stepLine(afterStep) {
+    return `<div class="fp-step-line ${state.fpStep > afterStep ? 'done' : ''}"></div>`;
+  }
+
+  const stepIndicator = `
+    <div class="fp-step-indicator">
+      ${stepBadge(1)}${stepLine(1)}${stepBadge(2)}${stepLine(2)}${stepBadge(3)}
+    </div>`;
+
+  /* ── Step 1: Enter username ── */
   const step1Html = `
     <form id="fp-step1-form">
       <div style="display:flex;flex-direction:column;gap:16px;">
         <div class="form-group">
           <label class="form-label">Username <span class="required">*</span></label>
-          <input type="text" class="form-control" name="fp-username" placeholder="Enter your username" required autocomplete="off"/>
+          <input type="text" class="form-control" id="fp-username-input" name="fp-username"
+            placeholder="Enter your username" required autocomplete="off"/>
+          <small class="form-hint">We'll send an OTP to your registered WhatsApp / phone</small>
         </div>
-        <div class="form-group">
-          <label class="form-label">${verifyLabel} <span class="required">*</span></label>
-          <input type="tel" class="form-control" name="fp-phone" placeholder="10-digit number" required maxlength="10" pattern="[0-9]{10}"/>
-          <small class="form-hint">Enter the phone number you registered with</small>
-        </div>
-        <button type="submit" class="btn btn-gold btn-block btn-lg" id="fp-verify-btn">🔍 &nbsp; Verify Identity</button>
+        <button type="submit" class="btn btn-gold btn-block btn-lg" id="fp-send-otp-btn">
+          📱 &nbsp; Send OTP via WhatsApp
+        </button>
       </div>
     </form>`;
 
+  /* ── Step 2: Enter OTP ── */
+  const maskedPhone = maskPhone(state.fpFoundUser?.phone || '');
+  const expMins = state.fpOtpExpiry
+    ? Math.max(0, Math.ceil((state.fpOtpExpiry - Date.now()) / 60000))
+    : 5;
   const step2Html = `
-    <div class="fp-verified-badge">✅ Identity Verified — ${state.fpVerifiedUser?.name || ''}</div>
-    <form id="fp-step2-form">
+    <div class="fp-verified-badge">
+      📱 OTP sent to WhatsApp ending in <strong>${maskedPhone}</strong>
+    </div>
+    <form id="fp-otp-form">
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="form-group">
+          <label class="form-label">Enter 6-digit OTP <span class="required">*</span></label>
+          <input type="text" class="form-control otp-input" id="fp-otp-input" name="fp-otp"
+            placeholder="• • • • • •" required maxlength="6" pattern="[0-9]{6}"
+            inputmode="numeric" autocomplete="one-time-code"
+            style="font-size:1.6rem;letter-spacing:12px;text-align:center;font-weight:700;"/>
+          <small class="form-hint">OTP expires in ${expMins} minute${expMins!==1?'s':''}. Check your WhatsApp.</small>
+        </div>
+        <button type="submit" class="btn btn-gold btn-block btn-lg" id="fp-verify-otp-btn">
+          ✅ &nbsp; Verify OTP
+        </button>
+        <button type="button" class="btn btn-outline btn-block btn-sm" id="fp-resend-otp-btn">
+          🔄 Resend OTP
+        </button>
+      </div>
+    </form>`;
+
+  /* ── Step 3: Set new password ── */
+  const step3Html = `
+    <div class="fp-verified-badge">✅ OTP Verified — ${state.fpFoundUser?.name || ''}</div>
+    <form id="fp-step3-form">
       <div style="display:flex;flex-direction:column;gap:16px;">
         <div class="form-group">
           <label class="form-label">New Password <span class="required">*</span></label>
           <div class="password-input-wrap">
-            <input type="password" class="form-control" id="fp-newpass" name="fp-newpass" placeholder="Enter new password" required minlength="4" autocomplete="new-password"/>
+            <input type="password" class="form-control" id="fp-newpass" name="fp-newpass"
+              placeholder="Enter new password" required minlength="4" autocomplete="new-password"/>
             <button type="button" class="password-toggle-btn" data-target="fp-newpass">👁</button>
           </div>
         </div>
         <div class="form-group">
           <label class="form-label">Confirm Password <span class="required">*</span></label>
           <div class="password-input-wrap">
-            <input type="password" class="form-control" id="fp-confirmpass" name="fp-confirmpass" placeholder="Confirm new password" required minlength="4" autocomplete="new-password"/>
+            <input type="password" class="form-control" id="fp-confirmpass" name="fp-confirmpass"
+              placeholder="Confirm new password" required minlength="4" autocomplete="new-password"/>
             <button type="button" class="password-toggle-btn" data-target="fp-confirmpass">👁</button>
           </div>
         </div>
-        <button type="submit" class="btn btn-gold btn-block btn-lg" id="fp-save-btn">🔐 &nbsp; Reset Password</button>
+        <button type="submit" class="btn btn-gold btn-block btn-lg" id="fp-save-btn">
+          🔐 &nbsp; Reset Password
+        </button>
       </div>
     </form>`;
+
+  const stepContent = [null, step1Html, step2Html, step3Html][state.fpStep] || step1Html;
+  const stepTitles  = ['','Enter Your Username','Verify OTP','Set New Password'];
+  const stepDescs   = ['',
+    'Enter your username to receive an OTP on your WhatsApp',
+    'Enter the 6-digit OTP sent to your registered WhatsApp number',
+    'Choose a strong new password for your account'
+  ];
 
   return `
   <div class="landing"><div class="landing-bg-pattern"></div><div class="landing-grid"></div>
     <div class="landing-content">
-      <div style="width:100%;max-width:440px;" class="animate-slideUp">
+      <div style="width:100%;max-width:460px;" class="animate-slideUp">
         <div class="register-card">
-          <div style="text-align:center;margin-bottom:28px;">
+          <div style="text-align:center;margin-bottom:24px;">
             <div class="landing-logo" style="font-size:2.4rem;"><span class="gold-text">ZARA</span><span class="landing-logo-lite" style="font-size:0.68rem;">Aura</span></div>
           </div>
-          <div class="login-role-badge">🔑 &nbsp; Reset Password — ${icons[role]||'🔐'} ${labels[role]||'User'}</div>
-          <div class="fp-step-indicator">
-            <div class="fp-step ${state.fpStep===1?'active':'done'}">
-              <div class="fp-step-num">${state.fpStep===1?'1':'✓'}</div>
-              <div class="fp-step-label">Verify</div>
-            </div>
-            <div class="fp-step-line ${state.fpStep===2?'done':''}"></div>
-            <div class="fp-step ${state.fpStep===2?'active':''}">
-              <div class="fp-step-num">2</div>
-              <div class="fp-step-label">Reset</div>
-            </div>
-          </div>
-          <h2 style="font-family:var(--font-serif);margin-bottom:6px;">${state.fpStep===1?'Verify Your Identity':'Set New Password'}</h2>
-          <p class="text-muted" style="margin-bottom:24px;">${state.fpStep===1?'Enter your username & registered phone number':'Choose a strong new password for your account'}</p>
-          ${state.fpStep===1 ? step1Html : step2Html}
+          <div class="login-role-badge">🔑 &nbsp; Forgot Password — ${icons[role]||'🔐'} ${labels[role]||'User'}</div>
+          ${stepIndicator}
+          <h2 style="font-family:var(--font-serif);margin-bottom:6px;">${stepTitles[state.fpStep]}</h2>
+          <p class="text-muted" style="margin-bottom:24px;">${stepDescs[state.fpStep]}</p>
+          ${stepContent}
           <div style="text-align:center;margin-top:20px;">
             <button class="btn btn-ghost btn-sm" id="back-to-login-fp">← Back to Login</button>
           </div>
@@ -1837,124 +1891,161 @@ function attachListeners() {
 
   /* Forgot Password — link in login form */
   on('#forgot-password-link','click', ()=>{
-    state.fpStep=1; state.fpVerifiedUser=null;
+    state.fpStep=1; state.fpVerifiedUser=null; state.fpOtp=null;
+    state.fpOtpExpiry=null; state.fpFoundUser=null;
     navigate('forgot-password');
   });
 
-  /* Forgot Password — Step 1: Verify identity */
+  /* ── Helper: look up user by username, return {name,phone,type,id,shopId,username} or null ── */
+  async function fpLookupUser(username, role) {
+    // Try Firebase first
+    if (firebaseReady) {
+      try {
+        const userDoc = await db.collection('users').doc(username).get();
+        if (userDoc.exists) {
+          const u = userDoc.data();
+          if (u.role !== role) return null;
+          let phone = '';
+          if (role === 'admin') {
+            const shopSnap = await db.collection('shops').doc(u.shopId).get();
+            phone = shopSnap.exists ? (shopSnap.data().shopInfo?.phone || '') : '';
+          } else if (role === 'employee') {
+            const empSnap = await db.collection('shops').doc(u.shopId).collection('employees').doc(u.id).get();
+            phone = empSnap.exists ? (empSnap.data().phone || '') : '';
+          } else if (role === 'customer') {
+            const custSnap = await db.collection('shops').doc(u.shopId).collection('customers').doc(u.id).get();
+            phone = custSnap.exists ? (custSnap.data().whatsapp || '') : '';
+          }
+          if (!phone) return null;
+          return { name:u.name, phone, type:role, id:u.id, shopId:u.shopId, username };
+        }
+      } catch(err){ console.error('FP lookup Firebase:',err); }
+    }
+    // Fallback: localStorage
+    if (role === 'admin') {
+      const shop = DB.getShop();
+      if (shop && shop.adminUsername === username && shop.phone)
+        return { name:shop.ownerName, phone:shop.phone, type:'admin', username };
+    } else if (role === 'employee') {
+      const emp = DB.getEmployees().find(e => e.username === username);
+      if (emp && emp.phone) return { name:emp.name, phone:emp.phone, type:'employee', id:emp.id, username };
+    } else if (role === 'customer') {
+      const cust = DB.getCustomers().find(c => c.username === username);
+      if (cust && cust.whatsapp) return { name:cust.name, phone:cust.whatsapp, type:'customer', id:cust.id, username };
+    }
+    return null;
+  }
+
+  /* ── Helper: send OTP via WhatsApp ── */
+  function fpSendOtpWhatsApp(user, otp) {
+    const shop = DB.getShop();
+    const shopName = shop?.name || 'Zara Aura';
+    const msg = `🔐 *${shopName} — Password Reset OTP*\n\nYour one-time password is:\n\n*${otp}*\n\nThis OTP is valid for *5 minutes*.\nDo not share this with anyone.\n\nIf you did not request this, please ignore.`;
+    const waUrl = `https://wa.me/91${user.phone}?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, '_blank');
+  }
+
+  /* Forgot Password — Step 1: Send OTP */
   on('#fp-step1-form','submit', async e=>{
     e.preventDefault();
-    const fd=new FormData(e.target);
-    const username=fd.get('fp-username').trim();
-    const phone=fd.get('fp-phone').trim();
-    const role=state.loginRole;
-    const btn=document.getElementById('fp-verify-btn');
-    if(btn){btn.disabled=true;btn.textContent='Verifying…';}
-    let found=null;
+    const username = document.getElementById('fp-username-input')?.value.trim();
+    if (!username) return;
+    const role = state.loginRole;
+    const btn = document.getElementById('fp-send-otp-btn');
+    if(btn){btn.disabled=true;btn.textContent='Looking up account…';}
 
-    try {
-      if(role==='admin'){
-        const shop=DB.getShop();
-        if(shop && shop.adminUsername===username && shop.phone===phone){
-          found={name:shop.ownerName,type:'admin',username};
-        } else if(firebaseReady){
-          const userDoc=await db.collection('users').doc(username).get();
-          if(userDoc.exists){
-            const u=userDoc.data();
-            if(u.role==='admin'){
-              const shopSnap=await db.collection('shops').doc(u.shopId).get();
-              if(shopSnap.exists && shopSnap.data().shopInfo?.phone===phone){
-                found={name:u.name,type:'admin',username,shopId:u.shopId};
-              }
-            }
-          }
-        }
-      } else if(role==='employee'){
-        const emp=DB.getEmployees().find(e=>e.username===username && e.phone===phone);
-        if(emp) found={name:emp.name,type:'employee',id:emp.id,username};
-        else if(firebaseReady){
-          const userDoc=await db.collection('users').doc(username).get();
-          if(userDoc.exists){
-            const u=userDoc.data();
-            if(u.role==='employee'){
-              const empSnap=await db.collection('shops').doc(u.shopId).collection('employees').doc(u.id).get();
-              if(empSnap.exists && empSnap.data().phone===phone){
-                found={name:u.name,type:'employee',id:u.id,username,shopId:u.shopId};
-              }
-            }
-          }
-        }
-      } else if(role==='customer'){
-        const cust=DB.getCustomers().find(c=>c.username===username && c.whatsapp===phone);
-        if(cust) found={name:cust.name,type:'customer',id:cust.id,username};
-        else if(firebaseReady){
-          const userDoc=await db.collection('users').doc(username).get();
-          if(userDoc.exists){
-            const u=userDoc.data();
-            if(u.role==='customer'){
-              const custSnap=await db.collection('shops').doc(u.shopId).collection('customers').doc(u.id).get();
-              if(custSnap.exists && custSnap.data().whatsapp===phone){
-                found={name:u.name,type:'customer',id:u.id,username,shopId:u.shopId};
-              }
-            }
-          }
-        }
-      }
-    } catch(err){ console.error('FP verify error:',err); }
+    const found = await fpLookupUser(username, role);
 
-    if(btn){btn.disabled=false;btn.textContent='🔍  Verify Identity';}
-    if(found){
-      state.fpVerifiedUser=found; state.fpStep=2;
-      showToast('Identity verified! Set your new password.','success');
-      render(); postRender();
-    } else {
-      showToast('No account found with those details. Check your username and phone number.','error');
+    if(btn){btn.disabled=false;btn.textContent='📱  Send OTP via WhatsApp';}
+    if (!found) {
+      showToast('No account found for this username. Please check and try again.', 'error');
+      return;
     }
+    // Generate OTP
+    const otp = generateOtp();
+    state.fpOtp = otp;
+    state.fpOtpExpiry = Date.now() + 5 * 60 * 1000; // 5 minutes
+    state.fpFoundUser = found;
+    state.fpStep = 2;
+    // Send OTP via WhatsApp
+    fpSendOtpWhatsApp(found, otp);
+    showToast(`OTP sent to WhatsApp ending in ${maskPhone(found.phone)}`, 'success');
+    render(); postRender();
   });
 
-  /* Forgot Password — Step 2: Set new password */
-  on('#fp-step2-form','submit', async e=>{
+  /* Forgot Password — Step 2: Verify OTP */
+  on('#fp-otp-form','submit', e=>{
     e.preventDefault();
-    const fd=new FormData(e.target);
-    const newPass=fd.get('fp-newpass');
-    const confirmPass=fd.get('fp-confirmpass');
-    if(newPass!==confirmPass){showToast('Passwords do not match','error');return;}
-    if(newPass.length<4){showToast('Password must be at least 4 characters','error');return;}
-    const user=state.fpVerifiedUser;
-    const role=state.loginRole;
-    const btn=document.getElementById('fp-save-btn');
+    const entered = document.getElementById('fp-otp-input')?.value.trim();
+    if (!state.fpOtp || !state.fpOtpExpiry) { showToast('Session expired. Please start again.','error'); state.fpStep=1; render(); return; }
+    if (Date.now() > state.fpOtpExpiry) {
+      showToast('OTP expired. Please request a new one.','error');
+      state.fpOtp=null; state.fpStep=2; render(); return;
+    }
+    if (entered !== state.fpOtp) {
+      showToast('Incorrect OTP. Please try again.','error'); return;
+    }
+    // OTP correct
+    state.fpStep = 3;
+    state.fpOtp = null; // clear after use
+    showToast('OTP verified! Set your new password.','success');
+    render(); postRender();
+  });
+
+  /* Forgot Password — Resend OTP */
+  on('#fp-resend-otp-btn','click', ()=>{
+    if (!state.fpFoundUser) { state.fpStep=1; render(); return; }
+    const otp = generateOtp();
+    state.fpOtp = otp;
+    state.fpOtpExpiry = Date.now() + 5 * 60 * 1000;
+    fpSendOtpWhatsApp(state.fpFoundUser, otp);
+    showToast('New OTP sent to your WhatsApp!', 'success');
+    render(); postRender();
+  });
+
+  /* Forgot Password — Step 3: Save new password */
+  on('#fp-step3-form','submit', async e=>{
+    e.preventDefault();
+    const newPass = document.getElementById('fp-newpass')?.value;
+    const confirmPass = document.getElementById('fp-confirmpass')?.value;
+    if (newPass !== confirmPass) { showToast('Passwords do not match','error'); return; }
+    if (newPass.length < 4) { showToast('Password must be at least 4 characters','error'); return; }
+    const user = state.fpFoundUser;
+    const role = state.loginRole;
+    const btn = document.getElementById('fp-save-btn');
     if(btn){btn.disabled=true;btn.textContent='Saving…';}
     try {
-      if(role==='admin'){
-        const shop=DB.getShop();
-        if(shop){shop.adminPassword=newPass;_ls(KEYS.shop,shop);}
-        if(firebaseReady&&user.shopId){
+      if (role === 'admin') {
+        const shop = DB.getShop();
+        if (shop) { shop.adminPassword = newPass; _ls(KEYS.shop, shop); }
+        if (firebaseReady && user.shopId) {
           await db.collection('shops').doc(user.shopId).update({'shopInfo.adminPassword':newPass}).catch(()=>{});
           await db.collection('users').doc(user.username).update({password:newPass}).catch(()=>{});
         }
-      } else if(role==='employee'){
-        const emps=DB.getEmployees();
-        const idx=emps.findIndex(e=>e.username===user.username);
-        if(idx>=0){emps[idx].password=newPass;_ls(KEYS.employees,emps);}
-        if(firebaseReady){
+      } else if (role === 'employee') {
+        const emps = DB.getEmployees();
+        const idx = emps.findIndex(e => e.username === user.username);
+        if (idx >= 0) { emps[idx].password = newPass; _ls(KEYS.employees, emps); }
+        if (firebaseReady) {
           await db.collection('users').doc(user.username).update({password:newPass}).catch(()=>{});
-          if(user.shopId&&user.id)
+          if (user.shopId && user.id)
             await db.collection('shops').doc(user.shopId).collection('employees').doc(user.id).update({password:newPass}).catch(()=>{});
         }
-      } else if(role==='customer'){
-        const custs=DB.getCustomers();
-        const idx=custs.findIndex(c=>c.username===user.username);
-        if(idx>=0){custs[idx].password=newPass;_ls(KEYS.customers,custs);}
-        if(firebaseReady){
+      } else if (role === 'customer') {
+        const custs = DB.getCustomers();
+        const idx = custs.findIndex(c => c.username === user.username);
+        if (idx >= 0) { custs[idx].password = newPass; _ls(KEYS.customers, custs); }
+        if (firebaseReady) {
           await db.collection('users').doc(user.username).update({password:newPass}).catch(()=>{});
-          if(user.shopId&&user.id)
+          if (user.shopId && user.id)
             await db.collection('shops').doc(user.shopId).collection('customers').doc(user.id).update({password:newPass}).catch(()=>{});
         }
       }
       showToast('✅ Password reset successfully! Please login with your new password.','success');
-      state.fpStep=1; state.fpVerifiedUser=null;
+      state.fpStep=1; state.fpVerifiedUser=null; state.fpOtp=null;
+      state.fpOtpExpiry=null; state.fpFoundUser=null;
       navigate('login');
-    } catch(err){
+    } catch(err) {
       console.error('FP reset error:',err);
       showToast('Error resetting password. Please try again.','error');
       if(btn){btn.disabled=false;btn.textContent='🔐  Reset Password';}
@@ -1963,17 +2054,18 @@ function attachListeners() {
 
   /* Forgot Password — Show/hide password toggle */
   onAll('.password-toggle-btn','click', e=>{
-    const targetId=e.currentTarget.dataset.target;
-    const input=document.getElementById(targetId);
-    if(input){
-      input.type=input.type==='password'?'text':'password';
-      e.currentTarget.textContent=input.type==='password'?'👁':'🙈';
+    const targetId = e.currentTarget.dataset.target;
+    const input = document.getElementById(targetId);
+    if (input) {
+      input.type = input.type==='password' ? 'text' : 'password';
+      e.currentTarget.textContent = input.type==='password' ? '👁' : '🙈';
     }
   });
 
   /* Forgot Password — Back to login */
   on('#back-to-login-fp','click', ()=>{
-    state.fpStep=1; state.fpVerifiedUser=null;
+    state.fpStep=1; state.fpVerifiedUser=null; state.fpOtp=null;
+    state.fpOtpExpiry=null; state.fpFoundUser=null;
     navigate('login');
   });
 

@@ -61,7 +61,7 @@ let state = {
   activeFilter: 'all', searchQuery: '',
   modalOpen: null, editingId: null, loginRole: null,
   viewingProductId: null, viewingOrderId: null, stockProductId: null,
-  analyticsPeriod: 'monthly',
+  analyticsPeriod: 'monthly', salaryEmpId: null,
 };
 
 /* ═══════════════════════════════════════════════════
@@ -818,6 +818,8 @@ function renderAdminCategories() {
 
 function renderAdminEmployees() {
   const emps=DB.getEmployees();
+  const q=state.searchQuery.toLowerCase();
+  const filtered=emps.filter(e=>!q||e.name.toLowerCase().includes(q)||e.phone.includes(q));
   return `<div class="animate-fadeIn">
     <div class="dash-page-title">Team Members</div><div class="dash-page-subtitle">Manage your shop staff</div>
     <div class="dash-toolbar">
@@ -825,22 +827,89 @@ function renderAdminEmployees() {
         <input type="text" placeholder="Search employees…" id="emp-search" value="${esc(state.searchQuery)}"/></div>
       <button class="btn btn-gold" id="add-emp-btn">+ Add Employee</button>
     </div>
-    ${emps.length===0?`<div class="empty-state"><div class="empty-state-icon">◉</div><div class="empty-state-title">No employees added</div></div>`:
+    ${filtered.length===0?`<div class="empty-state"><div class="empty-state-icon">◉</div><div class="empty-state-title">No employees added</div></div>`:
     `<div class="table-wrap"><table>
-      <thead><tr><th>Employee</th><th>Phone</th><th>Gender</th><th>Username</th><th>Address</th><th>Actions</th></tr></thead>
-      <tbody>${emps.map(e=>`<tr>
+      <thead><tr><th>Employee</th><th>Phone</th><th>Join Date</th><th>Current Salary</th><th>Actions</th></tr></thead>
+      <tbody>${filtered.map(e=>`<tr>
         <td><div style="display:flex;align-items:center;gap:10px;">
           <div style="width:36px;height:36px;border-radius:50%;background:var(--gold-lighter);border:1px solid var(--gold-light);display:flex;align-items:center;justify-content:center;">${e.gender==='Female'?'👩':'👨'}</div>
-          <div class="td-name">${esc(e.name)}</div></div></td>
-        <td>${esc(e.phone)}</td><td>${esc(e.gender)}</td>
-        <td><code style="font-size:0.8rem;background:var(--cream-2);padding:2px 8px;border-radius:4px;">${esc(e.username)}</code></td>
-        <td style="color:var(--text-light);font-size:0.82rem;">${esc(e.address||'—')}</td>
-        <td><div style="display:flex;gap:8px;">
+          <div><div class="td-name">${esc(e.name)}</div>
+            <div style="font-size:0.72rem;color:var(--text-light);">${esc(e.username)}</div></div></div></td>
+        <td>${esc(e.phone)}</td>
+        <td style="font-size:0.82rem;color:var(--text-light);">${e.joinDate?fmtDate(e.joinDate):'—'}</td>
+        <td>
+          ${e.salary
+            ? `<span style="font-family:var(--font-serif);font-weight:700;color:var(--gold-dark);font-size:1rem;">${fmt(e.salary)}</span>
+               <div style="font-size:0.7rem;color:var(--text-light);">per month · ${(e.salaryHistory||[]).length} entr${(e.salaryHistory||[]).length===1?'y':'ies'}</div>`
+            : `<span style="color:var(--text-xlight);font-size:0.82rem;">Not set</span>`}
+        </td>
+        <td><div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-gold btn-sm" data-salary-emp="${esc(e.id)}">💰 Salary</button>
           <button class="btn btn-outline btn-sm" data-edit-emp="${esc(e.id)}">Edit</button>
           <button class="btn btn-ghost btn-sm" data-delete-emp="${esc(e.id)}">Remove</button>
         </div></td></tr>`).join('')}
       </tbody></table></div>`}
     ${state.modalOpen==='employee'?renderEmployeeModal():''}
+    ${state.modalOpen==='salary'?renderAdminSalaryModal(state.salaryEmpId):''}
+  </div>`;
+}
+
+function renderAdminSalaryModal(empId) {
+  const emp = DB.getEmployees().find(e=>e.id===empId); if(!emp) return '';
+  const history = emp.salaryHistory || [];
+  const today = new Date().toISOString().slice(0,10);
+  return `<div class="modal-overlay" id="salary-modal-overlay">
+    <div class="modal modal-lg animate-slideUp">
+      <div class="modal-header">
+        <div>
+          <div class="login-role-badge">💰 &nbsp; Salary Management</div>
+          <div class="modal-title">${esc(emp.name)}</div>
+        </div>
+        <button class="modal-close" data-close-modal="salary">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="grid-3" style="margin-bottom:20px;">
+          <div class="stat-card"><div class="stat-icon">🏁</div><div class="stat-info">
+            <div class="stat-value">${fmt(history.length?history[0].amount:0)}</div>
+            <div class="stat-label">Starting Salary</div></div></div>
+          <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-info">
+            <div class="stat-value">${fmt(emp.salary||0)}</div>
+            <div class="stat-label">Current Salary</div></div></div>
+          <div class="stat-card"><div class="stat-icon">📈</div><div class="stat-info">
+            <div class="stat-value">${fmt(history.length>1?(emp.salary||0)-(history[0].amount||0):0)}</div>
+            <div class="stat-label">Total Increment</div></div></div>
+        </div>
+        <div style="background:var(--cream-2);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:18px;margin-bottom:20px;">
+          <div style="font-size:0.78rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-medium);margin-bottom:14px;">
+            ${emp.salary ? 'Update Salary' : 'Set Salary'}
+          </div>
+          <form id="salary-form">
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">New Monthly Salary (₹) <span class="required">*</span></label>
+                <input type="number" class="form-control" name="newSalary" value="${esc(emp.salary||'')}" min="0" placeholder="e.g. 18000" required/></div>
+              <div class="form-group"><label class="form-label">Effective Date</label>
+                <input type="date" class="form-control" name="salaryDate" value="${today}"/></div>
+            </div>
+            <div class="form-group"><label class="form-label">Note / Reason</label>
+              <input type="text" class="form-control" name="salaryNote" placeholder="e.g. Annual increment, Promotion, Joining salary"/></div>
+          </form>
+        </div>
+        ${history.length>0?`
+        <h4 style="font-family:var(--font-serif);margin-bottom:12px;">Salary History</h4>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Date</th><th>Amount</th><th>Note</th></tr></thead>
+          <tbody>${[...history].reverse().map((h,i)=>`<tr>
+            <td>${fmtDate(h.date)}</td>
+            <td style="font-family:var(--font-serif);font-weight:700;color:var(--gold-dark);">${fmt(h.amount)}</td>
+            <td style="color:var(--text-light);">${esc(h.note||'—')}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>`:''}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" data-close-modal="salary">Cancel</button>
+        <button class="btn btn-gold" id="save-salary-btn" data-eid="${esc(emp.id)}">💰 &nbsp; Save Salary</button>
+      </div>
+    </div>
   </div>`;
 }
 function renderEmployeeModal() {
@@ -1506,6 +1575,23 @@ function confirmOrder() {
   document.getElementById('checkout-overlay')?.remove();
   document.body.insertAdjacentHTML('beforeend', renderOrderSuccess(order.id));
   document.getElementById('close-success-btn')?.addEventListener('click', ()=>{document.getElementById('success-overlay')?.remove();render();});
+
+  // Send bill via WhatsApp
+  const cust=DB.getCustomers().find(c=>c.id===session?.id);
+  const shop=DB.getShop();
+  if(cust?.whatsapp) {
+    const itemLines = order.items.map(i=>`  • ${i.name} (${i.size}, ${i.color}) × ${i.qty} — ${fmt(i.qty*i.price)}`).join('\n');
+    const msg = `🛍️ *${shop?.name||'Zara Aura'} — Order Receipt*\n`
+      + `Order ID: #${order.id.slice(-6).toUpperCase()}\n`
+      + `Date: ${fmtDate(order.date)}\n\n`
+      + `*Items Purchased:*\n${itemLines}\n\n`
+      + `*Total Amount: ${fmt(total)}*\n\n`
+      + `Thank you for shopping with us! 🙏`;
+    const phone = cust.whatsapp.replace(/\D/g,'');
+    const waUrl = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
+    setTimeout(()=>{ window.open(waUrl,'_blank'); }, 800);
+    showToast('Bill sent via WhatsApp!','success');
+  }
 }
 
 /* ═══════════════════════════════════════════════════
@@ -1734,7 +1820,7 @@ function attachListeners() {
 
   /* Close modals */
   onAll('[data-close-modal]','click', ()=>{state.modalOpen=null;state.editingId=null;render();});
-  ['product-modal-overlay','emp-modal-overlay','stock-modal-overlay','order-bill-overlay','product-detail-overlay'].forEach(id=>{
+  ['product-modal-overlay','emp-modal-overlay','stock-modal-overlay','order-bill-overlay','product-detail-overlay','salary-modal-overlay'].forEach(id=>{
     on(`#${id}`,'click', e=>{if(e.target.id===id){state.modalOpen=null;render();}});
   });
 
@@ -1750,6 +1836,31 @@ function attachListeners() {
 
   /* Employees */
   on('#add-emp-btn','click', ()=>{state.modalOpen='employee';state.editingId=null;render();});
+
+  /* Salary modal (admin sets salary for employee) */
+  onAll('[data-salary-emp]','click', e=>{
+    state.salaryEmpId=e.currentTarget.dataset.salaryEmp;
+    state.modalOpen='salary'; render();
+  });
+  on('#save-salary-btn','click', e=>{
+    const form=document.getElementById('salary-form'); if(!form) return;
+    const fd=new FormData(form);
+    const newSalary=+fd.get('newSalary');
+    const note=fd.get('salaryNote')?.trim()||'Salary update';
+    const dateVal=fd.get('salaryDate');
+    const effectiveDate=dateVal?new Date(dateVal).getTime():Date.now();
+    if(!newSalary||newSalary<=0){showToast('Enter a valid salary amount','error');return;}
+    const emp=DB.getEmployees().find(en=>en.id===e.target.dataset.eid);
+    if(!emp) return;
+    const hist=[...(emp.salaryHistory||[])];
+    // Only add entry if salary actually changed or no history yet
+    if(!hist.length||emp.salary!==newSalary){
+      hist.push({date:effectiveDate,amount:newSalary,note});
+    }
+    DB.updateEmployee(emp.id,{salary:newSalary,salaryHistory:hist,joinDate:emp.joinDate||effectiveDate});
+    showToast(`Salary updated to ${fmt(newSalary)} for ${emp.name}`,'success');
+    state.modalOpen=null; state.salaryEmpId=null; render();
+  });
   onAll('[data-edit-emp]','click', e=>{state.editingId=e.currentTarget.dataset.editEmp;state.modalOpen='employee';render();});
   onAll('[data-delete-emp]','click', e=>{
     const id=e.currentTarget.dataset.deleteEmp, emp=DB.getEmployees().find(em=>em.id===id);

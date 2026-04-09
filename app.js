@@ -858,6 +858,27 @@ function renderAdminSalaryModal(empId) {
   const emp = DB.getEmployees().find(e=>e.id===empId); if(!emp) return '';
   const history = emp.salaryHistory || [];
   const today = new Date().toISOString().slice(0,10);
+  const startSal = history.length ? history[0].amount : 0;
+  const curSal = emp.salary || 0;
+  const totalInc = curSal - startSal;
+  const totalPct = startSal > 0 ? ((totalInc/startSal)*100).toFixed(1) : 0;
+
+  // Build history rows with calculated % per entry
+  const histRows = [...history].reverse().map((h, ri) => {
+    const origIdx = history.length - 1 - ri;
+    const prev = origIdx > 0 ? history[origIdx - 1].amount : null;
+    const pct = prev ? (((h.amount - prev) / prev) * 100).toFixed(1) : null;
+    return `<tr>
+      <td>${fmtDate(h.date)}</td>
+      <td style="font-family:var(--font-serif);font-weight:700;color:var(--gold-dark);">${fmt(h.amount)}</td>
+      <td>${pct!==null
+        ? `<span class="increment-badge ${+pct>=0?'inc-up':'inc-down'}">
+            ${+pct>=0?'▲':'▼'} ${Math.abs(+pct)}%</span>`
+        : '<span style="color:var(--text-xlight);font-size:0.78rem;">Starting</span>'}</td>
+      <td style="color:var(--text-light);font-size:0.82rem;">${esc(h.note||'—')}</td>
+    </tr>`;
+  }).join('');
+
   return `<div class="modal-overlay" id="salary-modal-overlay">
     <div class="modal modal-lg animate-slideUp">
       <div class="modal-header">
@@ -868,41 +889,52 @@ function renderAdminSalaryModal(empId) {
         <button class="modal-close" data-close-modal="salary">✕</button>
       </div>
       <div class="modal-body">
-        <div class="grid-3" style="margin-bottom:20px;">
+        <div class="grid-4" style="margin-bottom:20px;">
           <div class="stat-card"><div class="stat-icon">🏁</div><div class="stat-info">
-            <div class="stat-value">${fmt(history.length?history[0].amount:0)}</div>
+            <div class="stat-value">${fmt(startSal)}</div>
             <div class="stat-label">Starting Salary</div></div></div>
           <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-info">
-            <div class="stat-value">${fmt(emp.salary||0)}</div>
+            <div class="stat-value">${fmt(curSal)}</div>
             <div class="stat-label">Current Salary</div></div></div>
           <div class="stat-card"><div class="stat-icon">📈</div><div class="stat-info">
-            <div class="stat-value">${fmt(history.length>1?(emp.salary||0)-(history[0].amount||0):0)}</div>
+            <div class="stat-value">${fmt(totalInc)}</div>
             <div class="stat-label">Total Increment</div></div></div>
+          <div class="stat-card"><div class="stat-icon">🎯</div><div class="stat-info">
+            <div class="stat-value" style="color:var(--gold-dark);">${totalPct}%</div>
+            <div class="stat-label">% Growth</div></div></div>
         </div>
         <div style="background:var(--cream-2);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:18px;margin-bottom:20px;">
           <div style="font-size:0.78rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-medium);margin-bottom:14px;">
-            ${emp.salary ? 'Update Salary' : 'Set Salary'}
+            ${emp.salary ? `Update Salary &nbsp;<span style="font-weight:400;color:var(--text-light);">(Current: ${fmt(curSal)})</span>` : 'Set Salary'}
           </div>
           <form id="salary-form">
-            <div class="form-row">
+            <div class="form-row" style="align-items:flex-end;">
               <div class="form-group"><label class="form-label">New Monthly Salary (₹) <span class="required">*</span></label>
-                <input type="number" class="form-control" name="newSalary" value="${esc(emp.salary||'')}" min="0" placeholder="e.g. 18000" required/></div>
+                <input type="number" class="form-control" id="new-salary-input" name="newSalary"
+                  value="${esc(emp.salary||'')}" min="0" placeholder="e.g. 20000" required
+                  data-current="${curSal}"/></div>
+              <div class="form-group"><label class="form-label">Increment % <span style="font-size:0.7rem;color:var(--text-light);">(auto-calculated)</span></label>
+                <div style="position:relative;">
+                  <input type="number" class="form-control" id="increment-pct-input" name="incrementPct"
+                    step="0.1" placeholder="e.g. 10"
+                    style="padding-right:36px;"
+                    ${!curSal?'disabled title="Set a current salary first"':''}/>
+                  <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--text-light);font-size:0.85rem;">%</span>
+                </div>
+              </div>
               <div class="form-group"><label class="form-label">Effective Date</label>
                 <input type="date" class="form-control" name="salaryDate" value="${today}"/></div>
             </div>
-            <div class="form-group"><label class="form-label">Note / Reason</label>
-              <input type="text" class="form-control" name="salaryNote" placeholder="e.g. Annual increment, Promotion, Joining salary"/></div>
+            <div class="form-group"><label class="form-label">Note / Reason <span class="required">*</span></label>
+              <input type="text" class="form-control" name="salaryNote"
+                placeholder="e.g. Annual increment, Promotion, Joining salary" required/></div>
           </form>
         </div>
         ${history.length>0?`
         <h4 style="font-family:var(--font-serif);margin-bottom:12px;">Salary History</h4>
         <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Amount</th><th>Note</th></tr></thead>
-          <tbody>${[...history].reverse().map((h,i)=>`<tr>
-            <td>${fmtDate(h.date)}</td>
-            <td style="font-family:var(--font-serif);font-weight:700;color:var(--gold-dark);">${fmt(h.amount)}</td>
-            <td style="color:var(--text-light);">${esc(h.note||'—')}</td>
-          </tr>`).join('')}</tbody>
+          <thead><tr><th>Date</th><th>Amount</th><th>Increment</th><th>Note</th></tr></thead>
+          <tbody>${histRows}</tbody>
         </table></div>`:''}
       </div>
       <div class="modal-footer">
@@ -1160,14 +1192,17 @@ function renderEmpSalary() {
     history.push({ date: emp.joinDate||emp.addedDate||Date.now(), amount: emp.salary, note: 'Starting salary' });
   const current = emp.salary || (history.length ? history[history.length-1].amount : 0);
   const start   = history.length ? history[0].amount : 0;
-  const totalInc = history.length>1 ? current - start : 0;
+  const totalInc = current - start;
+  const totalPct = start > 0 ? ((totalInc / start) * 100).toFixed(1) : 0;
+  const raises   = Math.max(0, history.length - 1);
   return `<div class="animate-fadeIn">
     <div class="dash-page-title">My Salary Progress</div>
     <div class="dash-page-subtitle">Your salary growth since joining${emp.joinDate?` · Joined ${fmtDate(emp.joinDate)}`:''}</div>
-    <div class="grid-3" style="margin-bottom:28px;">
+    <div class="grid-4" style="margin-bottom:28px;">
       ${statCard('🏁','Starting Salary',fmt(start),'on joining')}
-      ${statCard('📈','Total Increment',fmt(totalInc),`${Math.max(0,history.length-1)} raise${history.length!==2?'s':''}`)}
+      ${statCard('📈','Total Increment',fmt(totalInc),`${raises} raise${raises!==1?'s':''}`)}
       ${statCard('💰','Current Salary',fmt(current),'monthly')}
+      ${statCard('🎯','Total % Growth',totalPct+'%',start>0?`from ${fmt(start)}`:'since joining')}
     </div>
     ${history.length===0 ? `<div class="card" style="text-align:center;padding:40px;">
         <p class="text-muted">No salary history yet. Please contact your admin.</p></div>` : `
@@ -1178,12 +1213,23 @@ function renderEmpSalary() {
     <div class="card">
       <h4 style="font-family:var(--font-serif);margin-bottom:14px;">Salary History</h4>
       <div class="table-wrap"><table>
-        <thead><tr><th>Date</th><th>Amount</th><th>Note</th></tr></thead>
-        <tbody>${history.map((h,i)=>`<tr>
-          <td>${fmtDate(h.date)}</td>
-          <td style="font-family:var(--font-serif);font-weight:600;color:var(--gold-dark);">${fmt(h.amount)}</td>
-          <td style="color:var(--text-light);">${esc(h.note||(i===0?'Starting salary':'Increment'))}</td>
-        </tr>`).join('')}</tbody>
+        <thead><tr><th>Date</th><th>Amount</th><th>Increment</th><th>Note</th></tr></thead>
+        <tbody>${history.map((h,i)=>{
+          const prev = i>0?history[i-1].amount:null;
+          const pct  = prev?((( h.amount-prev)/prev)*100).toFixed(1):null;
+          const amt  = prev?(h.amount-prev):null;
+          return `<tr>
+            <td>${fmtDate(h.date)}</td>
+            <td style="font-family:var(--font-serif);font-weight:600;color:var(--gold-dark);">${fmt(h.amount)}</td>
+            <td>${pct!==null
+              ? `<div style="display:flex;align-items:center;gap:6px;">
+                   <span class="increment-badge ${+pct>=0?'inc-up':'inc-down'}">${+pct>=0?'▲':'▼'} ${Math.abs(+pct)}%</span>
+                   <span style="font-size:0.78rem;color:var(--text-light);">+${fmt(amt)}</span>
+                 </div>`
+              : '<span style="color:var(--text-xlight);font-size:0.78rem;">Starting</span>'}</td>
+            <td style="color:var(--text-light);">${esc(h.note||(i===0?'Starting salary':'Increment'))}</td>
+          </tr>`;
+        }).join('')}</tbody>
       </table></div>
     </div>`}
   </div>`;
@@ -1842,20 +1888,39 @@ function attachListeners() {
     state.salaryEmpId=e.currentTarget.dataset.salaryEmp;
     state.modalOpen='salary'; render();
   });
+  /* Salary modal — live auto-calculation between amount ↔ percentage */
+  on('#new-salary-input','input', ()=>{
+    const salIn=document.getElementById('new-salary-input');
+    const pctIn=document.getElementById('increment-pct-input');
+    if(!salIn||!pctIn) return;
+    const cur=+salIn.dataset.current, newSal=+salIn.value;
+    if(cur>0 && newSal>0) pctIn.value=(((newSal-cur)/cur)*100).toFixed(2);
+    else pctIn.value='';
+  });
+  on('#increment-pct-input','input', ()=>{
+    const salIn=document.getElementById('new-salary-input');
+    const pctIn=document.getElementById('increment-pct-input');
+    if(!salIn||!pctIn) return;
+    const cur=+salIn.dataset.current, pct=+pctIn.value;
+    if(cur>0 && !isNaN(pct)) salIn.value=Math.round(cur*(1+pct/100));
+  });
+
   on('#save-salary-btn','click', e=>{
     const form=document.getElementById('salary-form'); if(!form) return;
     const fd=new FormData(form);
     const newSalary=+fd.get('newSalary');
-    const note=fd.get('salaryNote')?.trim()||'Salary update';
+    const note=fd.get('salaryNote')?.trim();
     const dateVal=fd.get('salaryDate');
     const effectiveDate=dateVal?new Date(dateVal).getTime():Date.now();
     if(!newSalary||newSalary<=0){showToast('Enter a valid salary amount','error');return;}
+    if(!note){showToast('Please enter a reason/note for this salary change','error');return;}
     const emp=DB.getEmployees().find(en=>en.id===e.target.dataset.eid);
     if(!emp) return;
     const hist=[...(emp.salaryHistory||[])];
-    // Only add entry if salary actually changed or no history yet
     if(!hist.length||emp.salary!==newSalary){
-      hist.push({date:effectiveDate,amount:newSalary,note});
+      const prev=emp.salary||0;
+      const incrementPct=prev>0?+((((newSalary-prev)/prev)*100).toFixed(2)):0;
+      hist.push({date:effectiveDate,amount:newSalary,note,incrementPct});
     }
     DB.updateEmployee(emp.id,{salary:newSalary,salaryHistory:hist,joinDate:emp.joinDate||effectiveDate});
     showToast(`Salary updated to ${fmt(newSalary)} for ${emp.name}`,'success');

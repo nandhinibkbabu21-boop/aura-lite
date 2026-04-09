@@ -62,6 +62,7 @@ let state = {
   modalOpen: null, editingId: null, loginRole: null,
   viewingProductId: null, viewingOrderId: null, stockProductId: null,
   analyticsPeriod: 'monthly', salaryEmpId: null,
+  fpStep: 1, fpVerifiedUser: null,
 };
 
 /* ═══════════════════════════════════════════════════
@@ -276,6 +277,7 @@ function render() {
   const views = {
     'landing':           renderLanding,
     'login':             () => renderLogin(state.loginRole),
+    'forgot-password':   () => renderForgotPassword(state.loginRole),
     'register-shop':     renderRegisterShop,
     'register-customer': renderRegisterCustomer,
     'admin':             renderAdminDash,
@@ -454,7 +456,11 @@ function renderLogin(role) {
               <div class="form-group"><label class="form-label">Username <span class="required">*</span></label>
                 <input type="text" class="form-control" name="username" placeholder="Enter your username" required autocomplete="username"/></div>
               <div class="form-group"><label class="form-label">Password <span class="required">*</span></label>
-                <input type="password" class="form-control" name="password" placeholder="Enter your password" required autocomplete="current-password"/></div>
+                <input type="password" class="form-control" name="password" placeholder="Enter your password" required autocomplete="current-password"/>
+                <div style="text-align:right;margin-top:6px;">
+                  ${role !== 'super-admin' ? `<button type="button" class="btn-forgot-link" id="forgot-password-link">Forgot Password?</button>` : ''}
+                </div>
+              </div>
               <button type="submit" class="btn btn-gold btn-block btn-lg" id="login-submit-btn">Sign In</button>
             </div>
           </form>
@@ -462,6 +468,84 @@ function renderLogin(role) {
             <button class="btn btn-outline btn-block" id="go-register-customer">Create Customer Account</button>` : ''}
           <div style="text-align:center;margin-top:20px;">
             <button class="btn btn-ghost btn-sm" id="back-to-landing">← Back</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ═══════════════════════════════════════════════════
+   10b. FORGOT PASSWORD
+═══════════════════════════════════════════════════ */
+function renderForgotPassword(role) {
+  const labels = { admin:'Admin', employee:'Employee', customer:'Customer' };
+  const icons  = { admin:'👑', employee:'🏷️', customer:'🛍️' };
+  const verifyLabel = role === 'admin' ? 'Shop Phone Number' : role === 'employee' ? 'Registered Phone Number' : 'WhatsApp Number';
+
+  const step1Html = `
+    <form id="fp-step1-form">
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="form-group">
+          <label class="form-label">Username <span class="required">*</span></label>
+          <input type="text" class="form-control" name="fp-username" placeholder="Enter your username" required autocomplete="off"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">${verifyLabel} <span class="required">*</span></label>
+          <input type="tel" class="form-control" name="fp-phone" placeholder="10-digit number" required maxlength="10" pattern="[0-9]{10}"/>
+          <small class="form-hint">Enter the phone number you registered with</small>
+        </div>
+        <button type="submit" class="btn btn-gold btn-block btn-lg" id="fp-verify-btn">🔍 &nbsp; Verify Identity</button>
+      </div>
+    </form>`;
+
+  const step2Html = `
+    <div class="fp-verified-badge">✅ Identity Verified — ${state.fpVerifiedUser?.name || ''}</div>
+    <form id="fp-step2-form">
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="form-group">
+          <label class="form-label">New Password <span class="required">*</span></label>
+          <div class="password-input-wrap">
+            <input type="password" class="form-control" id="fp-newpass" name="fp-newpass" placeholder="Enter new password" required minlength="4" autocomplete="new-password"/>
+            <button type="button" class="password-toggle-btn" data-target="fp-newpass">👁</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm Password <span class="required">*</span></label>
+          <div class="password-input-wrap">
+            <input type="password" class="form-control" id="fp-confirmpass" name="fp-confirmpass" placeholder="Confirm new password" required minlength="4" autocomplete="new-password"/>
+            <button type="button" class="password-toggle-btn" data-target="fp-confirmpass">👁</button>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-gold btn-block btn-lg" id="fp-save-btn">🔐 &nbsp; Reset Password</button>
+      </div>
+    </form>`;
+
+  return `
+  <div class="landing"><div class="landing-bg-pattern"></div><div class="landing-grid"></div>
+    <div class="landing-content">
+      <div style="width:100%;max-width:440px;" class="animate-slideUp">
+        <div class="register-card">
+          <div style="text-align:center;margin-bottom:28px;">
+            <div class="landing-logo" style="font-size:2.4rem;"><span class="gold-text">ZARA</span><span class="landing-logo-lite" style="font-size:0.68rem;">Aura</span></div>
+          </div>
+          <div class="login-role-badge">🔑 &nbsp; Reset Password — ${icons[role]||'🔐'} ${labels[role]||'User'}</div>
+          <div class="fp-step-indicator">
+            <div class="fp-step ${state.fpStep===1?'active':'done'}">
+              <div class="fp-step-num">${state.fpStep===1?'1':'✓'}</div>
+              <div class="fp-step-label">Verify</div>
+            </div>
+            <div class="fp-step-line ${state.fpStep===2?'done':''}"></div>
+            <div class="fp-step ${state.fpStep===2?'active':''}">
+              <div class="fp-step-num">2</div>
+              <div class="fp-step-label">Reset</div>
+            </div>
+          </div>
+          <h2 style="font-family:var(--font-serif);margin-bottom:6px;">${state.fpStep===1?'Verify Your Identity':'Set New Password'}</h2>
+          <p class="text-muted" style="margin-bottom:24px;">${state.fpStep===1?'Enter your username & registered phone number':'Choose a strong new password for your account'}</p>
+          ${state.fpStep===1 ? step1Html : step2Html}
+          <div style="text-align:center;margin-top:20px;">
+            <button class="btn btn-ghost btn-sm" id="back-to-login-fp">← Back to Login</button>
           </div>
         </div>
       </div>
@@ -1750,6 +1834,148 @@ function attachListeners() {
   on('#go-register-customer','click', ()=>navigate('register-customer'));
   on('#back-to-landing','click', ()=>navigate('landing'));
   on('#back-to-login-customer','click', ()=>{state.loginRole='customer';navigate('login');});
+
+  /* Forgot Password — link in login form */
+  on('#forgot-password-link','click', ()=>{
+    state.fpStep=1; state.fpVerifiedUser=null;
+    navigate('forgot-password');
+  });
+
+  /* Forgot Password — Step 1: Verify identity */
+  on('#fp-step1-form','submit', async e=>{
+    e.preventDefault();
+    const fd=new FormData(e.target);
+    const username=fd.get('fp-username').trim();
+    const phone=fd.get('fp-phone').trim();
+    const role=state.loginRole;
+    const btn=document.getElementById('fp-verify-btn');
+    if(btn){btn.disabled=true;btn.textContent='Verifying…';}
+    let found=null;
+
+    try {
+      if(role==='admin'){
+        const shop=DB.getShop();
+        if(shop && shop.adminUsername===username && shop.phone===phone){
+          found={name:shop.ownerName,type:'admin',username};
+        } else if(firebaseReady){
+          const userDoc=await db.collection('users').doc(username).get();
+          if(userDoc.exists){
+            const u=userDoc.data();
+            if(u.role==='admin'){
+              const shopSnap=await db.collection('shops').doc(u.shopId).get();
+              if(shopSnap.exists && shopSnap.data().shopInfo?.phone===phone){
+                found={name:u.name,type:'admin',username,shopId:u.shopId};
+              }
+            }
+          }
+        }
+      } else if(role==='employee'){
+        const emp=DB.getEmployees().find(e=>e.username===username && e.phone===phone);
+        if(emp) found={name:emp.name,type:'employee',id:emp.id,username};
+        else if(firebaseReady){
+          const userDoc=await db.collection('users').doc(username).get();
+          if(userDoc.exists){
+            const u=userDoc.data();
+            if(u.role==='employee'){
+              const empSnap=await db.collection('shops').doc(u.shopId).collection('employees').doc(u.id).get();
+              if(empSnap.exists && empSnap.data().phone===phone){
+                found={name:u.name,type:'employee',id:u.id,username,shopId:u.shopId};
+              }
+            }
+          }
+        }
+      } else if(role==='customer'){
+        const cust=DB.getCustomers().find(c=>c.username===username && c.whatsapp===phone);
+        if(cust) found={name:cust.name,type:'customer',id:cust.id,username};
+        else if(firebaseReady){
+          const userDoc=await db.collection('users').doc(username).get();
+          if(userDoc.exists){
+            const u=userDoc.data();
+            if(u.role==='customer'){
+              const custSnap=await db.collection('shops').doc(u.shopId).collection('customers').doc(u.id).get();
+              if(custSnap.exists && custSnap.data().whatsapp===phone){
+                found={name:u.name,type:'customer',id:u.id,username,shopId:u.shopId};
+              }
+            }
+          }
+        }
+      }
+    } catch(err){ console.error('FP verify error:',err); }
+
+    if(btn){btn.disabled=false;btn.textContent='🔍  Verify Identity';}
+    if(found){
+      state.fpVerifiedUser=found; state.fpStep=2;
+      showToast('Identity verified! Set your new password.','success');
+      render(); postRender();
+    } else {
+      showToast('No account found with those details. Check your username and phone number.','error');
+    }
+  });
+
+  /* Forgot Password — Step 2: Set new password */
+  on('#fp-step2-form','submit', async e=>{
+    e.preventDefault();
+    const fd=new FormData(e.target);
+    const newPass=fd.get('fp-newpass');
+    const confirmPass=fd.get('fp-confirmpass');
+    if(newPass!==confirmPass){showToast('Passwords do not match','error');return;}
+    if(newPass.length<4){showToast('Password must be at least 4 characters','error');return;}
+    const user=state.fpVerifiedUser;
+    const role=state.loginRole;
+    const btn=document.getElementById('fp-save-btn');
+    if(btn){btn.disabled=true;btn.textContent='Saving…';}
+    try {
+      if(role==='admin'){
+        const shop=DB.getShop();
+        if(shop){shop.adminPassword=newPass;_ls(KEYS.shop,shop);}
+        if(firebaseReady&&user.shopId){
+          await db.collection('shops').doc(user.shopId).update({'shopInfo.adminPassword':newPass}).catch(()=>{});
+          await db.collection('users').doc(user.username).update({password:newPass}).catch(()=>{});
+        }
+      } else if(role==='employee'){
+        const emps=DB.getEmployees();
+        const idx=emps.findIndex(e=>e.username===user.username);
+        if(idx>=0){emps[idx].password=newPass;_ls(KEYS.employees,emps);}
+        if(firebaseReady){
+          await db.collection('users').doc(user.username).update({password:newPass}).catch(()=>{});
+          if(user.shopId&&user.id)
+            await db.collection('shops').doc(user.shopId).collection('employees').doc(user.id).update({password:newPass}).catch(()=>{});
+        }
+      } else if(role==='customer'){
+        const custs=DB.getCustomers();
+        const idx=custs.findIndex(c=>c.username===user.username);
+        if(idx>=0){custs[idx].password=newPass;_ls(KEYS.customers,custs);}
+        if(firebaseReady){
+          await db.collection('users').doc(user.username).update({password:newPass}).catch(()=>{});
+          if(user.shopId&&user.id)
+            await db.collection('shops').doc(user.shopId).collection('customers').doc(user.id).update({password:newPass}).catch(()=>{});
+        }
+      }
+      showToast('✅ Password reset successfully! Please login with your new password.','success');
+      state.fpStep=1; state.fpVerifiedUser=null;
+      navigate('login');
+    } catch(err){
+      console.error('FP reset error:',err);
+      showToast('Error resetting password. Please try again.','error');
+      if(btn){btn.disabled=false;btn.textContent='🔐  Reset Password';}
+    }
+  });
+
+  /* Forgot Password — Show/hide password toggle */
+  onAll('.password-toggle-btn','click', e=>{
+    const targetId=e.currentTarget.dataset.target;
+    const input=document.getElementById(targetId);
+    if(input){
+      input.type=input.type==='password'?'text':'password';
+      e.currentTarget.textContent=input.type==='password'?'👁':'🙈';
+    }
+  });
+
+  /* Forgot Password — Back to login */
+  on('#back-to-login-fp','click', ()=>{
+    state.fpStep=1; state.fpVerifiedUser=null;
+    navigate('login');
+  });
 
   /* Shop registration */
   on('#shop-register-form','submit', async e=>{

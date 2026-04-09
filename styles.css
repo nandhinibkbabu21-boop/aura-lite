@@ -1399,3 +1399,122 @@ tbody tr:hover td { background: var(--cream); }
   .grid-4 { grid-template-columns: repeat(2, 1fr); }
   .analytics-filter-bar { flex-wrap: wrap; }
 }
+
+/* ── Forgot Password ─────────────────────────────── */
+.btn-forgot-link {
+  background: none;
+  border: none;
+  color: var(--gold-dark);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.2s;
+}
+.btn-forgot-link:hover {
+  color: var(--gold);
+}
+
+/* Step indicator */
+.fp-step-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 24px;
+}
+.fp-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.fp-step-num {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--cream-3);
+  border: 2px solid var(--border);
+  color: var(--text-light);
+  font-weight: 700;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+}
+.fp-step.active .fp-step-num {
+  background: var(--gold);
+  border-color: var(--gold-dark);
+  color: #fff;
+  box-shadow: 0 0 0 4px var(--shadow-gold);
+}
+.fp-step.done .fp-step-num {
+  background: #2E7D32;
+  border-color: #1B5E20;
+  color: #fff;
+}
+.fp-step-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-light);
+}
+.fp-step.active .fp-step-label { color: var(--gold-dark); }
+.fp-step.done  .fp-step-label  { color: #2E7D32; }
+
+.fp-step-line {
+  width: 60px;
+  height: 2px;
+  background: var(--border);
+  margin: 0 8px;
+  margin-bottom: 20px;
+  border-radius: 2px;
+  transition: background 0.3s;
+}
+.fp-step-line.done { background: #2E7D32; }
+
+/* Verified badge */
+.fp-verified-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #E8F5E9;
+  border: 1px solid #A5D6A7;
+  color: #2E7D32;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  margin-bottom: 20px;
+}
+
+/* Password toggle wrapper */
+.password-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.password-input-wrap .form-control {
+  padding-right: 44px;
+}
+.password-toggle-btn {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 4px;
+  color: var(--text-light);
+}
+.password-toggle-btn:hover { color: var(--gold); }
+
+/* Hint text below input */
+.form-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-light);
+  margin-top: 5px;
+}

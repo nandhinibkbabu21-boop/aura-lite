@@ -61,6 +61,7 @@ let state = {
   activeFilter: 'all', searchQuery: '',
   modalOpen: null, editingId: null, loginRole: null,
   viewingProductId: null, viewingOrderId: null, stockProductId: null,
+  analyticsPeriod: 'monthly',
 };
 
 /* ═══════════════════════════════════════════════════
@@ -108,7 +109,7 @@ let _renderPending = false;
 function safeRender() {
   if (_renderPending) return;
   _renderPending = true;
-  requestAnimationFrame(() => { _renderPending = false; render(); });
+  requestAnimationFrame(() => { _renderPending = false; render(); postRender(); });
 }
 
 /* ═══════════════════════════════════════════════════
@@ -248,8 +249,20 @@ function showToast(msg, type = 'info') {
 function navigate(route, subRoute = 'overview') {
   state.route = route; state.subRoute = subRoute;
   state.cartOpen = false; state.modalOpen = null;
-  render(); window.scrollTo(0, 0);
+  const hash = (route === 'landing') ? '' : '#' + route;
+  const newUrl = window.location.pathname + (hash || '');
+  if (window.location.href !== window.location.origin + newUrl)
+    window.history.pushState({ route, subRoute }, '', newUrl);
+  render(); postRender(); window.scrollTo(0, 0);
 }
+
+window.addEventListener('popstate', e => {
+  if (e.state && e.state.route) {
+    state.route = e.state.route;
+    state.subRoute = e.state.subRoute || 'overview';
+    render(); postRender();
+  }
+});
 
 function render() {
   const app = document.getElementById('app'); if (!app) return;
@@ -567,12 +580,22 @@ function renderRegisterCustomer() {
    13. SHARED LAYOUT
 ═══════════════════════════════════════════════════ */
 function renderAppHeader({ shopName, userName }) {
+  const session = DB.getSession();
+  const isAdmin = session?.role === 'admin';
+  const roleSwitcher = isAdmin ? `
+    <div class="role-switcher no-print">
+      <span class="role-switcher-label">View as:</span>
+      <button class="role-switch-btn${state.route==='admin'?' active':''}" data-switch-role="admin">👑 Admin</button>
+      <button class="role-switch-btn${state.route==='employee'?' active':''}" data-switch-role="employee">🏷️ Employee</button>
+      <button class="role-switch-btn${state.route==='customer'?' active':''}" data-switch-role="customer">🛍️ Customer</button>
+    </div>` : '';
   return `
   <header class="app-header no-print">
     <div class="app-logo">
       <span class="gold-text">AURA</span><span class="app-logo-lite">Lite</span>
       ${shopName ? `<span class="header-shop-name">· ${esc(shopName)}</span>` : ''}
     </div>
+    ${roleSwitcher}
     <div class="header-actions">
       ${firebaseReady ? `<span class="live-indicator" title="Real-time sync active">● LIVE</span>` : ''}
       <span class="header-user">
@@ -586,7 +609,10 @@ function renderAppHeader({ shopName, userName }) {
 function renderSidebar(role) {
   const links = role === 'admin'
     ? [['overview','◈','Overview'],['products','✦','Products'],['categories','◻','Categories'],
-       ['employees','◉','Employees'],['customers','◎','Customers'],['orders','◊','Orders']]
+       ['employees','◉','Employees'],['customers','◎','Customers'],['orders','◊','Orders'],
+       ['analytics','📊','Analytics']]
+    : role === 'employee'
+    ? [['products','✦','Products'],['stock','◻','Stock'],['salary','💰','My Salary']]
     : [['products','✦','Products'],['stock','◻','Stock']];
   const session = DB.getSession();
   return `
@@ -613,7 +639,8 @@ function renderAdminDash() {
   const session = DB.getSession(), shop = DB.getShop();
   const subViews = { overview:renderAdminOverview, products:renderAdminProducts,
     categories:renderAdminCategories, employees:renderAdminEmployees,
-    customers:renderAdminCustomers, orders:renderAdminOrders };
+    customers:renderAdminCustomers, orders:renderAdminOrders,
+    analytics:renderAdminAnalytics };
   return `<div>${renderAppHeader({ shopName:shop?.name, userName:session?.name })}
     <div class="dash-layout">${renderSidebar('admin')}
       <main class="dash-main">${(subViews[state.subRoute]||renderAdminOverview)()}</main>
@@ -835,6 +862,14 @@ function renderEmployeeModal() {
             `<label class="radio-item"><input type="radio" name="gender" value="${g}"${v.gender===g?' checked':''}/> ${g}</label>`).join('')}</div></div>
         <div class="form-group"><label class="form-label">Address <span class="optional-tag">(Optional)</span></label>
           <textarea class="form-control" name="address">${esc(v.address||'')}</textarea></div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Monthly Salary (₹) <span class="optional-tag">(Optional)</span></label>
+            <input type="number" class="form-control" name="salary" value="${esc(v.salary||'')}" min="0" placeholder="e.g. 15000"/></div>
+          <div class="form-group"><label class="form-label">Join Date <span class="optional-tag">(Optional)</span></label>
+            <input type="date" class="form-control" name="joinDate" value="${v.joinDate?new Date(v.joinDate).toISOString().slice(0,10):''}"/></div>
+        </div>
+        ${emp?`<div class="form-group"><label class="form-label">Salary Increment Note <span class="optional-tag">(Optional)</span></label>
+          <input type="text" class="form-control" name="salaryNote" placeholder="e.g. Annual increment, Promotion"/></div>`:''}
         ${!emp?`<div style="background:var(--cream-2);border-radius:var(--radius-md);padding:14px;border:1px solid var(--border-light);">
           <div style="font-size:0.78rem;color:var(--text-medium);font-weight:600;margin-bottom:12px;">Login Credentials</div>
           <div class="form-row">
@@ -909,13 +944,106 @@ function renderOrderBillModal(orderId) {
 }
 
 /* ═══════════════════════════════════════════════════
+   14b. ADMIN ANALYTICS
+═══════════════════════════════════════════════════ */
+function getAnalyticsData(period) {
+  const orders = DB.getOrders();
+  const now = new Date();
+  if (period === 'weekly') {
+    const weeks = [];
+    for (let i = 7; i >= 0; i--) {
+      const d = new Date(now); d.setDate(d.getDate() - i * 7); weeks.push(d);
+    }
+    const labels = weeks.map((d,i) => i===weeks.length-1?'This Week':'Wk '+fmtDate(d));
+    const revenue = weeks.map((d,i) => {
+      const s=d.getTime(), e=i<weeks.length-1?weeks[i+1].getTime():Date.now();
+      return orders.filter(o=>o.date>=s&&o.date<e).reduce((acc,o)=>acc+(+o.total||0),0);
+    });
+    const ords = weeks.map((d,i) => {
+      const s=d.getTime(), e=i<weeks.length-1?weeks[i+1].getTime():Date.now();
+      return orders.filter(o=>o.date>=s&&o.date<e).length;
+    });
+    return { labels, revenue, orders: ords };
+  }
+  if (period === 'yearly') {
+    const years = [now.getFullYear()-2, now.getFullYear()-1, now.getFullYear()];
+    const labels = years.map(y => String(y));
+    const revenue = years.map(y => orders.filter(o=>new Date(o.date).getFullYear()===y).reduce((s,o)=>s+(+o.total||0),0));
+    const ords = years.map(y => orders.filter(o=>new Date(o.date).getFullYear()===y).length);
+    return { labels, revenue, orders: ords };
+  }
+  // Default: monthly (last 6 months)
+  const months = [];
+  for (let i = 5; i >= 0; i--) months.push(new Date(now.getFullYear(), now.getMonth()-i, 1));
+  const labels = months.map(d => d.toLocaleDateString('en-IN',{month:'short',year:'2-digit'}));
+  const revenue = months.map((d,i) => {
+    const s=d.getTime(), e=i<months.length-1?months[i+1].getTime():Date.now();
+    return orders.filter(o=>o.date>=s&&o.date<e).reduce((acc,o)=>acc+(+o.total||0),0);
+  });
+  const ords = months.map((d,i) => {
+    const s=d.getTime(), e=i<months.length-1?months[i+1].getTime():Date.now();
+    return orders.filter(o=>o.date>=s&&o.date<e).length;
+  });
+  return { labels, revenue, orders: ords };
+}
+
+function renderAdminAnalytics() {
+  const orders=DB.getOrders(), custs=DB.getCustomers();
+  const period = state.analyticsPeriod || 'monthly';
+  const totalRev = orders.reduce((s,o)=>s+(+o.total||0),0);
+  const now = new Date();
+  const monthOrds = orders.filter(o=>{ const d=new Date(o.date); return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear(); });
+  const monthRev = monthOrds.reduce((s,o)=>s+(+o.total||0),0);
+  const avgOrder = orders.length ? Math.round(totalRev/orders.length) : 0;
+  const data = getAnalyticsData(period);
+  return `<div class="animate-fadeIn">
+    <div class="dash-page-title">Shop Analytics</div>
+    <div class="dash-page-subtitle">Track your boutique's performance</div>
+    <div class="grid-4" style="margin-bottom:28px;">
+      ${statCard('◊','Total Revenue',fmt(totalRev),`${orders.length} orders`)}
+      ${statCard('📈','This Month',fmt(monthRev),`${monthOrds.length} orders`)}
+      ${statCard('◎','Total Customers',custs.length,'registered')}
+      ${statCard('◈','Avg Order Value',fmt(avgOrder),'per order')}
+    </div>
+    <div class="analytics-filter-bar">
+      ${['weekly','monthly','yearly'].map(p=>`<button class="analytics-filter-btn${period===p?' active':''}" data-analytics-period="${p}">${p.charAt(0).toUpperCase()+p.slice(1)}</button>`).join('')}
+    </div>
+    <div class="grid-2" style="margin-bottom:24px;">
+      <div class="card">
+        <h4 style="font-family:var(--font-serif);margin-bottom:16px;">Revenue Trend</h4>
+        <div class="chart-container"><canvas id="chart-revenue"></canvas></div>
+      </div>
+      <div class="card">
+        <h4 style="font-family:var(--font-serif);margin-bottom:16px;">Orders Trend</h4>
+        <div class="chart-container"><canvas id="chart-orders"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <h4 style="font-family:var(--font-serif);margin-bottom:14px;">Period Summary</h4>
+      ${orders.length===0?`<p class="text-muted">No orders yet.</p>`:`
+      <div class="table-wrap"><table>
+        <thead><tr><th>Period</th><th>Orders</th><th>Revenue</th></tr></thead>
+        <tbody>${data.labels.map((lbl,i)=>`<tr>
+          <td>${lbl}</td>
+          <td>${data.orders[i]}</td>
+          <td style="font-family:var(--font-serif);font-weight:600;color:var(--gold-dark);">${fmt(data.revenue[i])}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>
+  </div>`;
+}
+
+/* ═══════════════════════════════════════════════════
    15. EMPLOYEE DASHBOARD
 ═══════════════════════════════════════════════════ */
 function renderEmployeeDash() {
   const session=DB.getSession(), shop=DB.getShop();
+  const mainView = state.subRoute==='stock' ? renderEmpStock()
+                 : state.subRoute==='salary' ? renderEmpSalary()
+                 : renderEmpProducts();
   return `<div>${renderAppHeader({ shopName:shop?.name, userName:session?.name })}
     <div class="dash-layout">${renderSidebar('employee')}
-      <main class="dash-main">${state.subRoute==='stock'?renderEmpStock():renderEmpProducts()}</main>
+      <main class="dash-main">${mainView}</main>
     </div></div>`;
 }
 function renderEmpProducts() {
@@ -948,6 +1076,47 @@ function renderEmpStock() {
         <td><button class="btn btn-outline btn-sm" data-stock-product="${esc(p.id)}">Update</button></td>
       </tr>`).join('')}</tbody></table></div>
     ${state.modalOpen==='stock'?renderStockModal(state.stockProductId):''}
+  </div>`;
+}
+
+function renderEmpSalary() {
+  const session=DB.getSession();
+  const emp=DB.getEmployees().find(e=>e.id===session?.id);
+  if (!emp) return `<div class="animate-fadeIn"><div class="empty-state"><div class="empty-state-icon">💰</div>
+    <div class="empty-state-title">No salary data</div>
+    <p class="text-muted" style="margin-top:8px;">Contact your admin to set up your salary information.</p>
+  </div></div>`;
+  const history = emp.salaryHistory || [];
+  if (history.length===0 && emp.salary)
+    history.push({ date: emp.joinDate||emp.addedDate||Date.now(), amount: emp.salary, note: 'Starting salary' });
+  const current = emp.salary || (history.length ? history[history.length-1].amount : 0);
+  const start   = history.length ? history[0].amount : 0;
+  const totalInc = history.length>1 ? current - start : 0;
+  return `<div class="animate-fadeIn">
+    <div class="dash-page-title">My Salary Progress</div>
+    <div class="dash-page-subtitle">Your salary growth since joining${emp.joinDate?` · Joined ${fmtDate(emp.joinDate)}`:''}</div>
+    <div class="grid-3" style="margin-bottom:28px;">
+      ${statCard('🏁','Starting Salary',fmt(start),'on joining')}
+      ${statCard('📈','Total Increment',fmt(totalInc),`${Math.max(0,history.length-1)} raise${history.length!==2?'s':''}`)}
+      ${statCard('💰','Current Salary',fmt(current),'monthly')}
+    </div>
+    ${history.length===0 ? `<div class="card" style="text-align:center;padding:40px;">
+        <p class="text-muted">No salary history yet. Please contact your admin.</p></div>` : `
+    <div class="card" style="margin-bottom:24px;">
+      <h4 style="font-family:var(--font-serif);margin-bottom:16px;">Salary Growth Chart</h4>
+      <div class="chart-container"><canvas id="chart-salary"></canvas></div>
+    </div>
+    <div class="card">
+      <h4 style="font-family:var(--font-serif);margin-bottom:14px;">Salary History</h4>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Date</th><th>Amount</th><th>Note</th></tr></thead>
+        <tbody>${history.map((h,i)=>`<tr>
+          <td>${fmtDate(h.date)}</td>
+          <td style="font-family:var(--font-serif);font-weight:600;color:var(--gold-dark);">${fmt(h.amount)}</td>
+          <td style="color:var(--text-light);">${esc(h.note||(i===0?'Starting salary':'Increment'))}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`}
   </div>`;
 }
 
@@ -1340,6 +1509,83 @@ function confirmOrder() {
 }
 
 /* ═══════════════════════════════════════════════════
+   22b. CHART INITIALIZATION
+═══════════════════════════════════════════════════ */
+let _charts = {};
+function postRender() {
+  // Destroy old chart instances before creating new ones
+  Object.values(_charts).forEach(c => { try { c.destroy(); } catch(_) {} });
+  _charts = {};
+
+  const chartDefaults = {
+    responsive: true,
+    maintainAspectRatio: true,
+    plugins: { legend: { display: false } },
+  };
+
+  // Admin Analytics – Revenue chart
+  const revenueCanvas = document.getElementById('chart-revenue');
+  if (revenueCanvas && typeof Chart !== 'undefined') {
+    const d = getAnalyticsData(state.analyticsPeriod || 'monthly');
+    _charts.revenue = new Chart(revenueCanvas, {
+      type: 'bar',
+      data: {
+        labels: d.labels,
+        datasets: [{ label:'Revenue (₹)', data: d.revenue,
+          backgroundColor: 'rgba(201,168,76,0.45)', borderColor:'#C9A84C',
+          borderWidth: 2, borderRadius: 6 }]
+      },
+      options: { ...chartDefaults, scales: { y: { beginAtZero:true,
+        ticks:{ callback: v=>'₹'+Number(v).toLocaleString('en-IN') } } } }
+    });
+  }
+
+  // Admin Analytics – Orders chart
+  const ordersCanvas = document.getElementById('chart-orders');
+  if (ordersCanvas && typeof Chart !== 'undefined') {
+    const d = getAnalyticsData(state.analyticsPeriod || 'monthly');
+    _charts.orders = new Chart(ordersCanvas, {
+      type: 'line',
+      data: {
+        labels: d.labels,
+        datasets: [{ label:'Orders', data: d.orders,
+          borderColor:'#6B8CAE', backgroundColor:'rgba(107,140,174,0.12)',
+          borderWidth: 2.5, tension: 0.4, fill: true,
+          pointBackgroundColor:'#6B8CAE', pointRadius: 5 }]
+      },
+      options: { ...chartDefaults, scales: { y: { beginAtZero:true, ticks:{stepSize:1} } } }
+    });
+  }
+
+  // Employee Salary chart
+  const salaryCanvas = document.getElementById('chart-salary');
+  if (salaryCanvas && typeof Chart !== 'undefined') {
+    const session = DB.getSession();
+    const emp = DB.getEmployees().find(e => e.id === session?.id);
+    let history = emp ? [...(emp.salaryHistory || [])] : [];
+    if (history.length === 0 && emp?.salary)
+      history.push({ date: emp.joinDate||emp.addedDate||Date.now(), amount: emp.salary, note:'Starting salary' });
+    const labels  = history.map(h => fmtDate(h.date));
+    const amounts = history.map(h => h.amount);
+    _charts.salary = new Chart(salaryCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{ label:'Salary (₹)', data: amounts,
+          borderColor:'#C9A84C', backgroundColor:'rgba(201,168,76,0.12)',
+          borderWidth: 2.5, tension: 0.4, fill: true,
+          pointBackgroundColor:'#C9A84C', pointRadius: 7, pointHoverRadius: 9 }]
+      },
+      options: { ...chartDefaults,
+        plugins: { ...chartDefaults.plugins,
+          tooltip: { callbacks: { label: ctx=>'₹'+Number(ctx.parsed.y).toLocaleString('en-IN') } } },
+        scales: { y: { beginAtZero:false,
+          ticks:{ callback: v=>'₹'+Number(v).toLocaleString('en-IN') } } } }
+    });
+  }
+}
+
+/* ═══════════════════════════════════════════════════
    23. EVENT LISTENERS
 ═══════════════════════════════════════════════════ */
 function attachListeners() {
@@ -1431,8 +1677,21 @@ function attachListeners() {
   on('#logout-btn','click', logout);
   on('#logout-btn-sidebar','click', logout);
 
+  /* Role switching (Admin can switch view without logout) */
+  onAll('[data-switch-role]','click', e=>{
+    const role=e.currentTarget.dataset.switchRole;
+    state.subRoute='overview'; state.searchQuery=''; state.modalOpen=null;
+    navigate(role);
+  });
+
+  /* Analytics period filter */
+  onAll('[data-analytics-period]','click', e=>{
+    state.analyticsPeriod=e.currentTarget.dataset.analyticsPeriod;
+    render(); postRender();
+  });
+
   /* Sidebar nav */
-  onAll('.sidebar-nav-item','click', e=>{state.subRoute=e.currentTarget.dataset.sub;state.searchQuery='';state.modalOpen=null;render();});
+  onAll('.sidebar-nav-item','click', e=>{state.subRoute=e.currentTarget.dataset.sub;state.searchQuery='';state.modalOpen=null;render();postRender();});
 
   /* Search */
   on('#product-search','input', e=>{state.searchQuery=e.target.value;render();});
@@ -1500,12 +1759,29 @@ function attachListeners() {
     const form=document.getElementById('emp-form');if(!form) return;
     const fd=new FormData(form),gender=form.querySelector('input[name="gender"]:checked')?.value;
     if(state.editingId){
+      const existing=DB.getEmployees().find(e=>e.id===state.editingId);
+      const newSalary=fd.get('salary')?+fd.get('salary'):undefined;
       const data={name:fd.get('name')?.trim(),phone:fd.get('phone')?.trim(),gender,address:fd.get('address')?.trim()};
       if(!data.name||!data.phone||!gender){showToast('Fill required fields','error');return;}
+      if(newSalary!==undefined){
+        data.salary=newSalary;
+        if(existing&&existing.salary!==newSalary){
+          const hist=[...(existing.salaryHistory||[])];
+          hist.push({date:Date.now(),amount:newSalary,note:fd.get('salaryNote')?.trim()||'Salary update'});
+          data.salaryHistory=hist;
+        }
+      }
+      const joinDateVal=fd.get('joinDate');
+      if(joinDateVal) data.joinDate=new Date(joinDateVal).getTime();
       DB.updateEmployee(state.editingId,data);showToast('Employee updated','success');
     }else{
       if(DB.getEmployees().find(e=>e.username===fd.get('username'))){showToast('Username taken','error');return;}
-      const emp={id:uid(),name:fd.get('name')?.trim(),phone:fd.get('phone')?.trim(),gender,address:fd.get('address')?.trim(),username:fd.get('username')?.trim(),password:fd.get('password')};
+      const joinDate=fd.get('joinDate')?new Date(fd.get('joinDate')).getTime():Date.now();
+      const salary=fd.get('salary')?+fd.get('salary'):0;
+      const salaryHistory=salary?[{date:joinDate,amount:salary,note:'Starting salary'}]:[];
+      const emp={id:uid(),name:fd.get('name')?.trim(),phone:fd.get('phone')?.trim(),gender,address:fd.get('address')?.trim(),
+        username:fd.get('username')?.trim(),password:fd.get('password'),
+        salary,joinDate,salaryHistory,addedDate:Date.now()};
       if(!emp.name||!emp.phone||!emp.gender||!emp.username||!emp.password){showToast('Fill required fields','error');return;}
       DB.addEmployee(emp);showToast(`Employee ${emp.name} added. Username: ${emp.username}`,'success');
     }
@@ -1574,7 +1850,12 @@ async function init() {
   if(session){
     state.session=session; state.shopId=DB.getShopId();
     if(firebaseReady&&state.shopId&&session.role!=='super-admin') Sync.start(state.shopId);
-    if(session.role==='admin') navigate('admin');
+    // Admin can restore their last view from URL hash
+    const hash = window.location.hash.slice(1);
+    const switchable = ['admin','employee','customer'];
+    if(session.role==='admin' && hash && switchable.includes(hash)){
+      navigate(hash);
+    } else if(session.role==='admin') navigate('admin');
     else if(session.role==='employee') navigate('employee');
     else if(session.role==='super-admin'){navigate('super-admin');loadSuperAdminShops();}
     else navigate('customer');

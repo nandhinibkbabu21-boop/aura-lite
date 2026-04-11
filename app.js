@@ -1,6 +1,33 @@
 'use strict';
 
 /* ═══════════════════════════════════════════════════
+   0. BACKEND CONFIG
+   Set BACKEND_URL to your deployed backend URL.
+   Leave empty to disable SMS features (app still works).
+═══════════════════════════════════════════════════ */
+const BACKEND_URL = (typeof backendConfig !== 'undefined' && backendConfig.url)
+  ? backendConfig.url.replace(/\/$/, '')
+  : '';                    // e.g. "https://aura-lite-backend.onrender.com"
+
+const ADMIN_SECRET = (typeof backendConfig !== 'undefined' && backendConfig.adminSecret)
+  ? backendConfig.adminSecret : '';
+
+async function apiPost(path, body, adminAuth = false) {
+  if (!BACKEND_URL) return { success: false, error: 'Backend not configured' };
+  const headers = { 'Content-Type': 'application/json' };
+  if (adminAuth && ADMIN_SECRET) headers['x-admin-token'] = ADMIN_SECRET;
+  const res = await fetch(`${BACKEND_URL}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+  return res.json();
+}
+async function apiGet(path, adminAuth = false) {
+  if (!BACKEND_URL) return { success: false, error: 'Backend not configured' };
+  const headers = {};
+  if (adminAuth && ADMIN_SECRET) headers['x-admin-token'] = ADMIN_SECRET;
+  const res = await fetch(`${BACKEND_URL}${path}`, { headers });
+  return res.json();
+}
+
+/* ═══════════════════════════════════════════════════
    1. FIREBASE INIT
 ═══════════════════════════════════════════════════ */
 let db = null;
@@ -514,10 +541,10 @@ function renderForgotPassword(role) {
           <label class="form-label">Username <span class="required">*</span></label>
           <input type="text" class="form-control" id="fp-username-input" name="fp-username"
             placeholder="Enter your username" required autocomplete="off"/>
-          <small class="form-hint">We'll send an OTP to your registered WhatsApp / phone</small>
+          <small class="form-hint">We'll send an OTP directly to your registered phone number via SMS</small>
         </div>
         <button type="submit" class="btn btn-gold btn-block btn-lg" id="fp-send-otp-btn">
-          📱 &nbsp; Send OTP via WhatsApp
+          📱 &nbsp; Send OTP via SMS
         </button>
       </div>
     </form>`;
@@ -529,7 +556,7 @@ function renderForgotPassword(role) {
     : 5;
   const step2Html = `
     <div class="fp-verified-badge">
-      📱 OTP sent to WhatsApp ending in <strong>${maskedPhone}</strong>
+      📱 OTP sent via SMS to number ending in <strong>${maskedPhone}</strong>
     </div>
     <form id="fp-otp-form">
       <div style="display:flex;flex-direction:column;gap:16px;">
@@ -539,7 +566,7 @@ function renderForgotPassword(role) {
             placeholder="• • • • • •" required maxlength="6" pattern="[0-9]{6}"
             inputmode="numeric" autocomplete="one-time-code"
             style="font-size:1.6rem;letter-spacing:12px;text-align:center;font-weight:700;"/>
-          <small class="form-hint">OTP expires in ${expMins} minute${expMins!==1?'s':''}. Check your WhatsApp.</small>
+          <small class="form-hint">OTP expires in ${expMins} minute${expMins!==1?'s':''}. Check your SMS inbox.</small>
         </div>
         <button type="submit" class="btn btn-gold btn-block btn-lg" id="fp-verify-otp-btn">
           ✅ &nbsp; Verify OTP
@@ -580,8 +607,8 @@ function renderForgotPassword(role) {
   const stepContent = [null, step1Html, step2Html, step3Html][state.fpStep] || step1Html;
   const stepTitles  = ['','Enter Your Username','Verify OTP','Set New Password'];
   const stepDescs   = ['',
-    'Enter your username to receive an OTP on your WhatsApp',
-    'Enter the 6-digit OTP sent to your registered WhatsApp number',
+    'Enter your username to receive a one-time password via SMS',
+    'Enter the 6-digit OTP sent to your registered phone number',
     'Choose a strong new password for your account'
   ];
 
@@ -704,6 +731,10 @@ function renderRegisterCustomer() {
                 <input type="password" class="form-control" name="password" required placeholder="Choose password" autocomplete="new-password"/></div>
             </div>
           </div>
+          <label class="sms-consent-label">
+            <input type="checkbox" name="smsConsent" value="yes" class="sms-consent-checkbox"/>
+            <span>📱 I agree to receive <strong>exclusive offers & updates via SMS</strong> from the shop</span>
+          </label>
           <button type="submit" class="btn btn-gold btn-block btn-lg">✦ &nbsp; Create My Account</button>
         </div>
       </form>
@@ -748,10 +779,10 @@ function renderSidebar(role) {
   const links = role === 'admin'
     ? [['overview','◈','Overview'],['products','✦','Products'],['categories','◻','Categories'],
        ['employees','◉','Employees'],['customers','◎','Customers'],['orders','◊','Orders'],
-       ['analytics','📊','Analytics']]
+       ['analytics','📊','Analytics'],['sms','📣','Send Offers'],['feedback','⭐','Feedback']]
     : role === 'employee'
     ? [['products','✦','Products'],['stock','◻','Stock'],['salary','💰','My Salary']]
-    : [['products','✦','Products'],['stock','◻','Stock']];
+    : [['products','✦','Products'],['stock','◻','Stock'],['feedback','⭐','My Feedback']];
   const session = DB.getSession();
   return `
   <nav class="dash-sidebar no-print">
@@ -778,11 +809,32 @@ function renderAdminDash() {
   const subViews = { overview:renderAdminOverview, products:renderAdminProducts,
     categories:renderAdminCategories, employees:renderAdminEmployees,
     customers:renderAdminCustomers, orders:renderAdminOrders,
-    analytics:renderAdminAnalytics };
+    analytics:renderAdminAnalytics, sms:renderAdminSms, feedback:renderAdminFeedback };
   return `<div>${renderAppHeader({ shopName:shop?.name, userName:session?.name })}
     <div class="dash-layout">${renderSidebar('admin')}
       <main class="dash-main">${(subViews[state.subRoute]||renderAdminOverview)()}</main>
     </div></div>`;
+}
+
+/* Wrapper: customer feedback page in the customer shop layout */
+function renderCustomerFeedbackPage() {
+  const shop = DB.getShop(), session = DB.getSession();
+  const cartCount = state.cart.reduce((s,i) => s+i.qty, 0);
+  state.feedbackRating = state.feedbackRating || 0;
+  return `<div>
+    <header class="app-header">
+      <div class="app-logo"><span class="gold-text">ZARA</span><span class="app-logo-lite">Aura</span></div>
+      <div class="header-actions">
+        <button class="btn btn-ghost btn-sm" data-sub="products" id="back-to-shop-btn">← Shop</button>
+        <button class="btn btn-ghost btn-sm cart-btn" id="cart-toggle-btn">🛍️ Cart${cartCount>0?` <span class="cart-badge">${cartCount}</span>`:''}</button>
+        <button class="btn btn-ghost btn-sm" id="logout-btn">⎋ Sign Out</button>
+      </div>
+    </header>
+    <div class="dash-layout">
+      ${renderSidebar('customer')}
+      <main class="dash-main">${renderCustomerFeedbackForm()}</main>
+    </div>
+  </div>`;
 }
 
 function renderAdminOverview() {
@@ -1377,6 +1429,7 @@ function renderEmpSalary() {
    16. CUSTOMER SHOP
 ═══════════════════════════════════════════════════ */
 function renderCustomerShop() {
+  if (state.subRoute === 'feedback') return renderCustomerFeedbackPage();
   const shop=DB.getShop(), session=DB.getSession();
   const cust=DB.getCustomers().find(c=>c.id===session?.id);
   const prods=DB.getProducts().filter(p=>+p.quantity>0);
@@ -1760,26 +1813,183 @@ function confirmOrder() {
   document.body.insertAdjacentHTML('beforeend', renderOrderSuccess(order.id));
   document.getElementById('close-success-btn')?.addEventListener('click', ()=>{document.getElementById('success-overlay')?.remove();render();});
 
-  // Send bill via WhatsApp
+  // Send thank-you SMS via backend (falls back to WhatsApp if backend not set up)
   const cust=DB.getCustomers().find(c=>c.id===session?.id);
   const shop=DB.getShop();
   if(cust?.whatsapp) {
-    const itemLines = order.items.map(i=>`  • ${i.name} (${i.size}, ${i.color}) × ${i.qty} — ${fmt(i.qty*i.price)}`).join('\n');
-    const msg = `🛍️ *${shop?.name||'Zara Aura'} — Order Receipt*\n`
-      + `Order ID: #${order.id.slice(-6).toUpperCase()}\n`
-      + `Date: ${fmtDate(order.date)}\n\n`
-      + `*Items Purchased:*\n${itemLines}\n\n`
-      + `*Total Amount: ${fmt(total)}*\n\n`
-      + `Thank you for shopping with us! 🙏`;
     const phone = cust.whatsapp.replace(/\D/g,'');
-    const waUrl = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
-    setTimeout(()=>{ window.open(waUrl,'_blank'); }, 800);
-    showToast('Bill sent via WhatsApp!','success');
+    if (BACKEND_URL) {
+      // Auto-send via backend Twilio SMS (silent, no popup)
+      apiPost('/api/sms/send-thankyou', {
+        phone,
+        customerName: cust.name,
+        shopName: shop?.name || 'Zara Aura',
+        orderId: order.id,
+        total,
+        items: order.items.map(i => ({ name: i.name, qty: i.qty }))
+      }).then(r => {
+        if (r.success) showToast('Thank you SMS sent to your phone!', 'success');
+      }).catch(() => {});
+    } else {
+      // Fallback: WhatsApp deep link
+      const itemLines = order.items.map(i=>`  • ${i.name} (${i.size}, ${i.color}) × ${i.qty} — ${fmt(i.qty*i.price)}`).join('\n');
+      const msg = `🛍️ *${shop?.name||'Zara Aura'} — Order Receipt*\nOrder ID: #${order.id.slice(-6).toUpperCase()}\nDate: ${fmtDate(order.date)}\n\n*Items:*\n${itemLines}\n\n*Total: ${fmt(total)}*\n\nThank you for shopping! 🙏`;
+      setTimeout(()=>{ window.open(`https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`,'_blank'); }, 800);
+      showToast('Bill sent via WhatsApp!','success');
+    }
   }
 }
 
 /* ═══════════════════════════════════════════════════
-   22b. CHART INITIALIZATION
+   22a. ADMIN SMS — SEND OFFERS
+═══════════════════════════════════════════════════ */
+function renderAdminSms() {
+  const shop = DB.getShop();
+  const customers = DB.getCustomers();
+  const optedIn = customers.filter(c => c.smsConsent).length;
+  const backendOk = !!BACKEND_URL;
+
+  return `
+  <div class="section-header">
+    <h2 class="section-title">📣 Send Offers via SMS</h2>
+    <p class="text-muted" style="margin-top:4px;">Send promotional SMS directly to opted-in customers</p>
+  </div>
+
+  ${!backendOk ? `<div class="alert-banner alert-warning">
+    ⚠️ Backend not configured. Set up the backend server and add <code>backendConfig</code> to your app to enable real SMS sending.
+    <a href="#" style="color:inherit;font-weight:700;display:block;margin-top:4px;">See setup guide →</a>
+  </div>` : ''}
+
+  <div class="grid-3" style="margin-bottom:24px;">
+    <div class="stat-card">
+      <div class="stat-value">${customers.length}</div>
+      <div class="stat-label">Total Customers</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:var(--gold)">${optedIn}</div>
+      <div class="stat-label">SMS Opted-In</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:#2E7D32">${backendOk ? 'Active' : 'Inactive'}</div>
+      <div class="stat-label">SMS Service</div>
+    </div>
+  </div>
+
+  <div class="card" style="padding:28px;max-width:600px;">
+    <h3 style="font-family:var(--font-serif);margin-bottom:18px;">Compose Offer Message</h3>
+    <form id="sms-offer-form">
+      <div class="form-group" style="margin-bottom:16px;">
+        <label class="form-label">Message <span class="required">*</span></label>
+        <textarea class="form-control" id="sms-offer-msg" name="message"
+          placeholder="e.g. 🎉 Big Sale! Up to 50% off on all kurtas. Visit us today!"
+          rows="4" maxlength="320" required
+          style="resize:vertical;"></textarea>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;">
+          <small class="form-hint">Will be sent to <strong>${optedIn} opted-in</strong> customer${optedIn!==1?'s':''}</small>
+          <small class="form-hint" id="sms-char-count">0 / 320</small>
+        </div>
+      </div>
+
+      <div style="background:var(--cream-2);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:16px;">
+        <div style="font-size:0.78rem;color:var(--text-medium);font-weight:600;margin-bottom:6px;">📱 Preview (as seen on phone)</div>
+        <div id="sms-preview" style="font-size:0.88rem;color:var(--text-dark);white-space:pre-wrap;min-height:40px;"></div>
+      </div>
+
+      <button type="submit" class="btn btn-gold btn-lg" id="sms-offer-btn" ${!backendOk||optedIn===0?'disabled':''}>
+        📣 &nbsp; Send to ${optedIn} Customer${optedIn!==1?'s':''}
+      </button>
+      ${optedIn===0?`<p class="form-hint" style="margin-top:8px;color:var(--text-light);">No opted-in customers yet. Customers can opt-in during registration.</p>`:''}
+    </form>
+    <div id="sms-result" style="margin-top:16px;display:none;"></div>
+  </div>`;
+}
+
+/* ═══════════════════════════════════════════════════
+   22b. FEEDBACK — CUSTOMER FORM
+═══════════════════════════════════════════════════ */
+function renderCustomerFeedbackForm() {
+  const session = DB.getSession();
+  const shopId  = DB.getShopId();
+  return `
+  <div class="section-header">
+    <h2 class="section-title">⭐ Share Your Feedback</h2>
+    <p class="text-muted" style="margin-top:4px;">We'd love to hear about your experience!</p>
+  </div>
+  <div class="card" style="padding:28px;max-width:560px;">
+    <form id="customer-feedback-form">
+      <div style="display:flex;flex-direction:column;gap:18px;">
+        <div class="form-group">
+          <label class="form-label">Your Rating <span class="required">*</span></label>
+          <div class="star-rating" id="star-rating-widget">
+            ${[1,2,3,4,5].map(n=>`
+              <button type="button" class="star-btn${state.feedbackRating>=n?' active':''}" data-star="${n}" title="${n} star${n>1?'s':''}">★</button>`).join('')}
+          </div>
+          <input type="hidden" id="feedback-rating-hidden" name="rating" value="${state.feedbackRating||''}"/>
+          <small class="form-hint">${['','Poor','Fair','Good','Very Good','Excellent'][state.feedbackRating]||'Click to rate'}</small>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Your Experience <span class="optional-tag">(Optional)</span></label>
+          <textarea class="form-control" name="message" placeholder="Tell us what you liked or how we can improve…"
+            rows="3" maxlength="500" style="resize:vertical;"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Would you recommend us?</label>
+          <div style="display:flex;gap:12px;margin-top:8px;">
+            <label class="radio-chip"><input type="radio" name="recommend" value="yes"/> 👍 Yes, definitely!</label>
+            <label class="radio-chip"><input type="radio" name="recommend" value="no"/> 👎 Not right now</label>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-gold btn-lg" id="feedback-submit-btn">
+          ✉️ &nbsp; Submit Feedback
+        </button>
+      </div>
+    </form>
+    <div id="feedback-success" style="display:none;text-align:center;padding:24px 0;">
+      <div style="font-size:3rem;">🙏</div>
+      <h3 style="font-family:var(--font-serif);margin:12px 0 8px;">Thank You!</h3>
+      <p class="text-muted">Your feedback means a lot to us. We'll keep improving!</p>
+    </div>
+  </div>`;
+}
+
+/* ═══════════════════════════════════════════════════
+   22c. ADMIN FEEDBACK VIEW
+═══════════════════════════════════════════════════ */
+function renderAdminFeedback() {
+  const shopId = DB.getShopId();
+  return `
+  <div class="section-header">
+    <h2 class="section-title">⭐ Customer Feedback</h2>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <select class="form-control" id="feedback-filter-rating" style="width:auto;padding:6px 12px;font-size:0.85rem;">
+        <option value="">All Ratings</option>
+        <option value="5">⭐⭐⭐⭐⭐ 5 Stars</option>
+        <option value="4">⭐⭐⭐⭐ 4 Stars</option>
+        <option value="3">⭐⭐⭐ 3 Stars</option>
+        <option value="2">⭐⭐ 2 Stars</option>
+        <option value="1">⭐ 1 Star</option>
+      </select>
+      <button class="btn btn-sm btn-outline" id="feedback-refresh-btn">🔄 Refresh</button>
+    </div>
+  </div>
+
+  <div id="feedback-stats-row" class="grid-4" style="margin-bottom:24px;">
+    <div class="stat-card"><div class="stat-value" id="fb-total">—</div><div class="stat-label">Total Feedback</div></div>
+    <div class="stat-card"><div class="stat-value" id="fb-avg" style="color:var(--gold)">—</div><div class="stat-label">Avg. Rating</div></div>
+    <div class="stat-card"><div class="stat-value" id="fb-positive" style="color:#2E7D32">—</div><div class="stat-label">Positive (4-5★)</div></div>
+    <div class="stat-card"><div class="stat-value" id="fb-negative" style="color:#C62828">—</div><div class="stat-label">Needs Attention (≤2★)</div></div>
+  </div>
+
+  <div id="feedback-list">
+    <div style="text-align:center;padding:40px;color:var(--text-light);">Loading feedback…</div>
+  </div>`;
+}
+
+/* ═══════════════════════════════════════════════════
+   22d. CHART INITIALIZATION
 ═══════════════════════════════════════════════════ */
 let _charts = {};
 function postRender() {
@@ -1936,13 +2146,38 @@ function attachListeners() {
     return null;
   }
 
-  /* ── Helper: send OTP via WhatsApp ── */
-  function fpSendOtpWhatsApp(user, otp) {
+  /* ── Helper: send OTP via backend (Twilio SMS) ── */
+  async function fpSendOtp(phone) {
+    if (BACKEND_URL) {
+      try {
+        const r = await apiPost('/api/otp/send', { phone });
+        if (r.success) return { ok: true, via: 'sms' };
+        return { ok: false, error: r.error };
+      } catch(err) { console.warn('Backend OTP send failed, falling back to WhatsApp:', err); }
+    }
+    // Fallback: local OTP + WhatsApp (when backend not configured)
+    const otp = generateOtp();
+    state.fpOtp = otp;
+    state.fpOtpExpiry = Date.now() + 5 * 60 * 1000;
     const shop = DB.getShop();
-    const shopName = shop?.name || 'Zara Aura';
-    const msg = `🔐 *${shopName} — Password Reset OTP*\n\nYour one-time password is:\n\n*${otp}*\n\nThis OTP is valid for *5 minutes*.\nDo not share this with anyone.\n\nIf you did not request this, please ignore.`;
-    const waUrl = `https://wa.me/91${user.phone}?text=${encodeURIComponent(msg)}`;
-    window.open(waUrl, '_blank');
+    const msg = `🔐 *${shop?.name||'Zara Aura'} — Password Reset OTP*\n\nYour OTP: *${otp}*\n\nValid for 5 minutes. Do not share.`;
+    window.open(`https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+    return { ok: true, via: 'whatsapp' };
+  }
+
+  /* ── Helper: verify OTP via backend (Twilio Verify) ── */
+  async function fpVerifyOtp(phone, code) {
+    if (BACKEND_URL && !state.fpOtp) {
+      // Using Twilio Verify — backend checks the code
+      try {
+        const r = await apiPost('/api/otp/verify', { phone, code });
+        return r.success;
+      } catch(err) { console.warn('Backend OTP verify failed:', err); return false; }
+    }
+    // Fallback: local check
+    if (!state.fpOtp || !state.fpOtpExpiry) return false;
+    if (Date.now() > state.fpOtpExpiry) return false;
+    return code === state.fpOtp;
   }
 
   /* Forgot Password — Step 1: Send OTP */
@@ -1955,52 +2190,55 @@ function attachListeners() {
     if(btn){btn.disabled=true;btn.textContent='Looking up account…';}
 
     const found = await fpLookupUser(username, role);
-
-    if(btn){btn.disabled=false;btn.textContent='📱  Send OTP via WhatsApp';}
     if (!found) {
+      if(btn){btn.disabled=false;btn.textContent='📱  Send OTP';}
       showToast('No account found for this username. Please check and try again.', 'error');
       return;
     }
-    // Generate OTP
-    const otp = generateOtp();
-    state.fpOtp = otp;
-    state.fpOtpExpiry = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+    if(btn){btn.textContent='Sending OTP…';}
+    const result = await fpSendOtp(found.phone);
+    if(btn){btn.disabled=false;btn.textContent='📱  Send OTP';}
+
+    if (!result.ok) {
+      showToast(result.error || 'Failed to send OTP. Please try again.', 'error');
+      return;
+    }
     state.fpFoundUser = found;
     state.fpStep = 2;
-    // Send OTP via WhatsApp
-    fpSendOtpWhatsApp(found, otp);
-    showToast(`OTP sent to WhatsApp ending in ${maskPhone(found.phone)}`, 'success');
+    const via = result.via === 'sms' ? 'SMS' : 'WhatsApp';
+    showToast(`OTP sent via ${via} to number ending in ${maskPhone(found.phone)}`, 'success');
     render(); postRender();
   });
 
   /* Forgot Password — Step 2: Verify OTP */
-  on('#fp-otp-form','submit', e=>{
+  on('#fp-otp-form','submit', async e=>{
     e.preventDefault();
     const entered = document.getElementById('fp-otp-input')?.value.trim();
-    if (!state.fpOtp || !state.fpOtpExpiry) { showToast('Session expired. Please start again.','error'); state.fpStep=1; render(); return; }
-    if (Date.now() > state.fpOtpExpiry) {
-      showToast('OTP expired. Please request a new one.','error');
-      state.fpOtp=null; state.fpStep=2; render(); return;
+    const btn = document.getElementById('fp-verify-otp-btn');
+    if(btn){btn.disabled=true;btn.textContent='Verifying…';}
+
+    const ok = await fpVerifyOtp(state.fpFoundUser?.phone, entered);
+    if(btn){btn.disabled=false;btn.textContent='✅  Verify OTP';}
+
+    if (!ok) {
+      showToast('Incorrect or expired OTP. Please try again.', 'error'); return;
     }
-    if (entered !== state.fpOtp) {
-      showToast('Incorrect OTP. Please try again.','error'); return;
-    }
-    // OTP correct
     state.fpStep = 3;
-    state.fpOtp = null; // clear after use
-    showToast('OTP verified! Set your new password.','success');
+    state.fpOtp = null;
+    showToast('OTP verified! Set your new password.', 'success');
     render(); postRender();
   });
 
   /* Forgot Password — Resend OTP */
-  on('#fp-resend-otp-btn','click', ()=>{
+  on('#fp-resend-otp-btn','click', async ()=>{
     if (!state.fpFoundUser) { state.fpStep=1; render(); return; }
-    const otp = generateOtp();
-    state.fpOtp = otp;
-    state.fpOtpExpiry = Date.now() + 5 * 60 * 1000;
-    fpSendOtpWhatsApp(state.fpFoundUser, otp);
-    showToast('New OTP sent to your WhatsApp!', 'success');
-    render(); postRender();
+    const btn = document.getElementById('fp-resend-otp-btn');
+    if(btn){btn.disabled=true;btn.textContent='Sending…';}
+    const result = await fpSendOtp(state.fpFoundUser.phone);
+    if(btn){btn.disabled=false;btn.textContent='🔄 Resend OTP';}
+    if (result.ok) showToast('New OTP sent!', 'success');
+    else showToast(result.error || 'Failed to resend OTP.', 'error');
   });
 
   /* Forgot Password — Step 3: Save new password */
@@ -2113,7 +2351,8 @@ function attachListeners() {
     }
     const cust={id:uid(),name:fd.get('name'),whatsapp:fd.get('whatsapp'),gender:fd.get('gender'),size:fd.get('size'),
       address:fd.get('address'),skinTone:fd.get('skinTone'),preferredColor:fd.get('preferredColor'),
-      occasion:fd.get('occasion'),username:fd.get('username'),password:fd.get('password')};
+      occasion:fd.get('occasion'),username:fd.get('username'),password:fd.get('password'),
+      smsConsent: fd.get('smsConsent') === 'yes'};
     if(!cust.name||!cust.whatsapp||!cust.gender||!cust.size||!cust.username||!cust.password){showToast('Fill all required fields','error');return;}
     if(!/^[0-9]{10}$/.test(cust.whatsapp)){showToast('WhatsApp number must be exactly 10 digits','error');return;}
     DB.addCustomer(cust);
@@ -2141,7 +2380,203 @@ function attachListeners() {
   });
 
   /* Sidebar nav */
-  onAll('.sidebar-nav-item','click', e=>{state.subRoute=e.currentTarget.dataset.sub;state.searchQuery='';state.modalOpen=null;render();postRender();});
+  onAll('.sidebar-nav-item','click', e=>{
+    state.subRoute=e.currentTarget.dataset.sub;
+    state.searchQuery='';state.modalOpen=null;
+    if(state.subRoute==='feedback') { state.feedbackRating=0; }
+    render(); postRender();
+    // If admin navigates to feedback tab, auto-load from backend
+    if(state.subRoute==='feedback' && state.route==='admin') loadAdminFeedback();
+  });
+
+  /* ── SMS Offer ── */
+  on('#sms-offer-msg','input', e=>{
+    const msg=e.target.value;
+    const preview=document.getElementById('sms-preview');
+    const counter=document.getElementById('sms-char-count');
+    if(preview) preview.textContent=msg;
+    if(counter) counter.textContent=`${msg.length} / 320`;
+  });
+  on('#sms-offer-form','submit', async e=>{
+    e.preventDefault();
+    const msg = document.getElementById('sms-offer-msg')?.value.trim();
+    const btn = document.getElementById('sms-offer-btn');
+    const result = document.getElementById('sms-result');
+    if(!msg) return;
+    if(btn){btn.disabled=true;btn.textContent='Sending…';}
+    const shopId = DB.getShopId();
+    try {
+      const r = await apiPost('/api/sms/send-offer', { shopId, message: msg }, true);
+      if(btn){btn.disabled=false;btn.textContent='📣  Send Offer';}
+      if(result){
+        result.style.display='block';
+        if(r.success){
+          result.innerHTML=`<div class="alert-banner alert-success">✅ Sent <strong>${r.sent}</strong> messages. Failed: ${r.failed}.</div>`;
+          showToast(`SMS sent to ${r.sent} customers!`,'success');
+        } else {
+          result.innerHTML=`<div class="alert-banner alert-error">❌ ${r.error||'Failed to send SMS.'}</div>`;
+          showToast(r.error||'SMS sending failed.','error');
+        }
+      }
+    } catch(err){
+      if(btn){btn.disabled=false;btn.textContent='📣  Send Offer';}
+      showToast('Network error. Check backend connection.','error');
+    }
+  });
+
+  /* ── Feedback: star rating widget ── */
+  onAll('.star-btn','click', e=>{
+    const n=+e.currentTarget.dataset.star;
+    state.feedbackRating=n;
+    document.getElementById('feedback-rating-hidden')?.setAttribute('value',n);
+    // Update star visuals
+    document.querySelectorAll('.star-btn').forEach((btn,i)=>{
+      btn.classList.toggle('active', i<n);
+    });
+    // Update hint
+    const hint = document.querySelector('#star-rating-widget + input + small.form-hint');
+    if(hint) hint.textContent=['','Poor','Fair','Good','Very Good','Excellent'][n]||'';
+  });
+
+  /* ── Feedback: submit (customer) ── */
+  on('#customer-feedback-form','submit', async e=>{
+    e.preventDefault();
+    const fd=new FormData(e.target);
+    const rating=state.feedbackRating;
+    if(!rating){showToast('Please select a rating (1-5 stars).','error');return;}
+    const session=DB.getSession();
+    const cust=DB.getCustomers().find(c=>c.id===session?.id);
+    const shopId=DB.getShopId();
+    const btn=document.getElementById('feedback-submit-btn');
+    if(btn){btn.disabled=true;btn.textContent='Submitting…';}
+
+    const payload={
+      shopId, customerId:session?.id, customerName:session?.name||'Customer',
+      phone:cust?.whatsapp||null, rating,
+      message:fd.get('message')||'',
+      recommend: fd.get('recommend')||null
+    };
+
+    let saved=false;
+    // Try backend first
+    if(BACKEND_URL){
+      try{
+        const r=await apiPost('/api/feedback',payload);
+        if(r.success) saved=true;
+      }catch(_){}
+    }
+    // Fallback: save directly to Firestore
+    if(!saved && firebaseReady && shopId){
+      try{
+        await db.collection('shops').doc(shopId).collection('feedback').add({
+          ...payload, createdAt:Date.now(),
+          timestamp:firebase.firestore.FieldValue.serverTimestamp()
+        });
+        saved=true;
+      }catch(_){}
+    }
+    // Last resort: localStorage
+    if(!saved){
+      const key=`aura_feedback_${shopId}`;
+      const list=JSON.parse(localStorage.getItem(key)||'[]');
+      list.push({...payload, id:`local_${Date.now()}`, createdAt:Date.now()});
+      localStorage.setItem(key, JSON.stringify(list));
+      saved=true;
+    }
+
+    if(btn){btn.disabled=false;btn.textContent='✉️  Submit Feedback';}
+    if(saved){
+      document.getElementById('customer-feedback-form').style.display='none';
+      document.getElementById('feedback-success').style.display='block';
+      showToast('Thank you for your feedback!','success');
+    } else {
+      showToast('Failed to submit feedback. Please try again.','error');
+    }
+  });
+
+  /* ── Admin feedback: load on demand ── */
+  async function loadAdminFeedback(filterRating='') {
+    const shopId=DB.getShopId();
+    const container=document.getElementById('feedback-list');
+    if(!container) return;
+
+    let items=[];
+    // Try backend
+    if(BACKEND_URL){
+      try{
+        const url=`/api/feedback/${shopId}${filterRating?`?minRating=${filterRating}&maxRating=${filterRating}`:''}`;
+        const r=await apiGet(url, true);
+        if(r.success){
+          items=r.feedback;
+          // Update stat cards
+          const s=r.stats;
+          const tot=document.getElementById('fb-total');
+          const avg=document.getElementById('fb-avg');
+          const pos=document.getElementById('fb-positive');
+          const neg=document.getElementById('fb-negative');
+          if(tot) tot.textContent=s.total;
+          if(avg) avg.textContent=s.avgRating+'★';
+          if(pos) pos.textContent=(s.distribution[4]||0)+(s.distribution[5]||0);
+          if(neg) neg.textContent=(s.distribution[1]||0)+(s.distribution[2]||0);
+        }
+      }catch(_){}
+    }
+    // Fallback: Firestore
+    if(!items.length && firebaseReady && shopId){
+      try{
+        let q=db.collection('shops').doc(shopId).collection('feedback').orderBy('createdAt','desc').limit(100);
+        const snap=await q.get();
+        items=snap.docs.map(d=>({id:d.id,...d.data()}));
+        if(filterRating) items=items.filter(f=>f.rating===+filterRating);
+        const tot=document.getElementById('fb-total');
+        const avg=document.getElementById('fb-avg');
+        const pos=document.getElementById('fb-positive');
+        const neg=document.getElementById('fb-negative');
+        if(tot) tot.textContent=items.length;
+        if(avg) avg.textContent=items.length?(items.reduce((s,f)=>s+f.rating,0)/items.length).toFixed(1)+'★':'-';
+        if(pos) pos.textContent=items.filter(f=>f.rating>=4).length;
+        if(neg) neg.textContent=items.filter(f=>f.rating<=2).length;
+      }catch(_){}
+    }
+    // Fallback: localStorage
+    if(!items.length && shopId){
+      const key=`aura_feedback_${shopId}`;
+      items=JSON.parse(localStorage.getItem(key)||'[]');
+      if(filterRating) items=items.filter(f=>f.rating===+filterRating);
+    }
+
+    if(!items.length){
+      container.innerHTML=`<div style="text-align:center;padding:40px;color:var(--text-light);">No feedback yet. Encourage customers to leave a review!</div>`;
+      return;
+    }
+    const starsHtml=(n)=>'★'.repeat(n)+'☆'.repeat(5-n);
+    container.innerHTML=`
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        ${items.map(f=>`
+          <div class="feedback-card${f.rating<=2?' feedback-negative':''}">
+            <div class="feedback-card-header">
+              <div>
+                <div class="feedback-customer-name">${esc(f.customerName)}</div>
+                <div class="feedback-date">${f.createdAt?new Date(f.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):''}</div>
+              </div>
+              <div>
+                <div class="feedback-stars" style="color:${f.rating<=2?'#e53935':'var(--gold)'}">${starsHtml(f.rating)}</div>
+                ${f.recommend!=null?`<div class="feedback-recommend">${f.recommend==='yes'?'👍 Would recommend':'👎 Would not recommend'}</div>`:''}
+              </div>
+            </div>
+            ${f.message?`<p class="feedback-message">${esc(f.message)}</p>`:''}
+          </div>`).join('')}
+      </div>`;
+  }
+
+  on('#feedback-refresh-btn','click', ()=>{
+    const filter=document.getElementById('feedback-filter-rating')?.value||'';
+    loadAdminFeedback(filter);
+  });
+  on('#feedback-filter-rating','change', e=>loadAdminFeedback(e.target.value));
+
+  /* Back to shop btn in customer feedback page */
+  on('#back-to-shop-btn','click', ()=>{state.subRoute='products';render();postRender();});
 
   /* Search */
   on('#product-search','input', e=>{state.searchQuery=e.target.value;render();});

@@ -1447,6 +1447,7 @@ function renderCustomerShop() {
         <div class="dash-search" style="min-width:190px;"><span class="dash-search-icon">⌕</span>
           <input type="text" placeholder="Search…" id="shop-search" value="${esc(state.searchQuery)}" style="padding:8px 14px 8px 34px;border-radius:20px;"/></div>
         <div class="cart-btn" id="open-cart-btn">🛍${cartCount>0?`<span class="cart-count">${cartCount}</span>`:''}</div>
+        <button class="btn btn-feedback-header" id="customer-feedback-nav-btn" title="Leave Feedback">⭐ Feedback</button>
         <button class="btn btn-ghost btn-sm" id="logout-btn">Sign Out</button>
       </div>
     </header>
@@ -1472,6 +1473,11 @@ function renderCustomerShop() {
         `<div class="shop-grid">${filtered.map(renderShopCard).join('')}</div>`}
     </div>
     ${state.modalOpen==='product-detail'?renderProductDetailModal(state.viewingProductId):''}
+    <!-- Floating Feedback Button -->
+    <div class="feedback-float-btn" id="float-feedback-btn" title="Share your experience">
+      <span class="feedback-float-icon">⭐</span>
+      <span class="feedback-float-label">Rate Us</span>
+    </div>
   </div>`;
 }
 function renderShopCard(p) {
@@ -1959,32 +1965,49 @@ function renderCustomerFeedbackForm() {
    22c. ADMIN FEEDBACK VIEW
 ═══════════════════════════════════════════════════ */
 function renderAdminFeedback() {
-  const shopId = DB.getShopId();
   return `
   <div class="section-header">
-    <h2 class="section-title">⭐ Customer Feedback</h2>
-    <div style="display:flex;align-items:center;gap:12px;">
-      <select class="form-control" id="feedback-filter-rating" style="width:auto;padding:6px 12px;font-size:0.85rem;">
-        <option value="">All Ratings</option>
-        <option value="5">⭐⭐⭐⭐⭐ 5 Stars</option>
-        <option value="4">⭐⭐⭐⭐ 4 Stars</option>
-        <option value="3">⭐⭐⭐ 3 Stars</option>
-        <option value="2">⭐⭐ 2 Stars</option>
-        <option value="1">⭐ 1 Star</option>
+    <h2 class="section-title">⭐ Ratings &amp; Reviews</h2>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <select class="form-control" id="feedback-filter-rating" style="width:auto;padding:6px 14px;font-size:0.84rem;border-radius:20px;">
+        <option value="">All Stars</option>
+        <option value="5">★★★★★ 5 Stars</option>
+        <option value="4">★★★★☆ 4 Stars</option>
+        <option value="3">★★★☆☆ 3 Stars</option>
+        <option value="2">★★☆☆☆ 2 Stars</option>
+        <option value="1">★☆☆☆☆ 1 Star</option>
       </select>
       <button class="btn btn-sm btn-outline" id="feedback-refresh-btn">🔄 Refresh</button>
     </div>
   </div>
 
-  <div id="feedback-stats-row" class="grid-4" style="margin-bottom:24px;">
-    <div class="stat-card"><div class="stat-value" id="fb-total">—</div><div class="stat-label">Total Feedback</div></div>
-    <div class="stat-card"><div class="stat-value" id="fb-avg" style="color:var(--gold)">—</div><div class="stat-label">Avg. Rating</div></div>
-    <div class="stat-card"><div class="stat-value" id="fb-positive" style="color:#2E7D32">—</div><div class="stat-label">Positive (4-5★)</div></div>
-    <div class="stat-card"><div class="stat-value" id="fb-negative" style="color:#C62828">—</div><div class="stat-label">Needs Attention (≤2★)</div></div>
+  <!-- Summary row -->
+  <div class="feedback-summary-row" id="feedback-summary-row" style="display:none;margin-bottom:22px;">
+    <div class="feedback-summary-card">
+      <div class="fscard-val" id="fb-total">0</div>
+      <div class="fscard-lbl">Total Reviews</div>
+    </div>
+    <div class="feedback-summary-card">
+      <div class="fscard-val gold" id="fb-avg">—</div>
+      <div class="fscard-lbl">Avg. Rating</div>
+      <div class="fscard-stars" id="fb-avg-stars"></div>
+    </div>
+    <div class="feedback-summary-card">
+      <div class="fscard-val green" id="fb-positive">0</div>
+      <div class="fscard-lbl">😊 Happy (4-5★)</div>
+    </div>
+    <div class="feedback-summary-card">
+      <div class="fscard-val red" id="fb-negative">0</div>
+      <div class="fscard-lbl">😟 Needs Care (≤2★)</div>
+    </div>
   </div>
 
+  <!-- Reviews list -->
   <div id="feedback-list">
-    <div style="text-align:center;padding:40px;color:var(--text-light);">Loading feedback…</div>
+    <div class="feedback-loading">
+      <div style="font-size:2rem;">⭐</div>
+      <div style="margin-top:10px;color:var(--text-light);font-size:0.9rem;">Loading reviews…</div>
+    </div>
   </div>`;
 }
 
@@ -1996,6 +2019,11 @@ function postRender() {
   // Destroy old chart instances before creating new ones
   Object.values(_charts).forEach(c => { try { c.destroy(); } catch(_) {} });
   _charts = {};
+
+  // Auto-load admin feedback when on feedback tab
+  if (state.route === 'admin' && state.subRoute === 'feedback') {
+    setTimeout(() => loadAdminFeedback(), 100);
+  }
 
   const chartDefaults = {
     responsive: true,
@@ -2494,79 +2522,82 @@ function attachListeners() {
     }
   });
 
-  /* ── Admin feedback: load on demand ── */
+  /* ── Admin feedback: load reviews ── */
   async function loadAdminFeedback(filterRating='') {
     const shopId=DB.getShopId();
     const container=document.getElementById('feedback-list');
     if(!container) return;
 
+    container.innerHTML=`<div class="feedback-loading"><div style="font-size:2rem;">⭐</div><div style="margin-top:10px;color:var(--text-light);font-size:0.9rem;">Loading reviews…</div></div>`;
+
     let items=[];
-    // Try backend
-    if(BACKEND_URL){
+
+    // Try Firestore first
+    if(firebaseReady && shopId){
       try{
-        const url=`/api/feedback/${shopId}${filterRating?`?minRating=${filterRating}&maxRating=${filterRating}`:''}`;
-        const r=await apiGet(url, true);
-        if(r.success){
-          items=r.feedback;
-          // Update stat cards
-          const s=r.stats;
-          const tot=document.getElementById('fb-total');
-          const avg=document.getElementById('fb-avg');
-          const pos=document.getElementById('fb-positive');
-          const neg=document.getElementById('fb-negative');
-          if(tot) tot.textContent=s.total;
-          if(avg) avg.textContent=s.avgRating+'★';
-          if(pos) pos.textContent=(s.distribution[4]||0)+(s.distribution[5]||0);
-          if(neg) neg.textContent=(s.distribution[1]||0)+(s.distribution[2]||0);
-        }
-      }catch(_){}
-    }
-    // Fallback: Firestore
-    if(!items.length && firebaseReady && shopId){
-      try{
-        let q=db.collection('shops').doc(shopId).collection('feedback').orderBy('createdAt','desc').limit(100);
-        const snap=await q.get();
+        const snap=await db.collection('shops').doc(shopId).collection('feedback').orderBy('createdAt','desc').limit(200).get();
         items=snap.docs.map(d=>({id:d.id,...d.data()}));
-        if(filterRating) items=items.filter(f=>f.rating===+filterRating);
-        const tot=document.getElementById('fb-total');
-        const avg=document.getElementById('fb-avg');
-        const pos=document.getElementById('fb-positive');
-        const neg=document.getElementById('fb-negative');
-        if(tot) tot.textContent=items.length;
-        if(avg) avg.textContent=items.length?(items.reduce((s,f)=>s+f.rating,0)/items.length).toFixed(1)+'★':'-';
-        if(pos) pos.textContent=items.filter(f=>f.rating>=4).length;
-        if(neg) neg.textContent=items.filter(f=>f.rating<=2).length;
       }catch(_){}
     }
     // Fallback: localStorage
     if(!items.length && shopId){
       const key=`aura_feedback_${shopId}`;
       items=JSON.parse(localStorage.getItem(key)||'[]');
-      if(filterRating) items=items.filter(f=>f.rating===+filterRating);
+    }
+
+    // Apply star filter
+    if(filterRating) items=items.filter(f=>f.rating===+filterRating);
+
+    // Update summary
+    const summaryRow=document.getElementById('feedback-summary-row');
+    if(summaryRow && items.length){
+      summaryRow.style.display='flex';
+      const all=filterRating?JSON.parse(localStorage.getItem(`aura_feedback_${shopId}`)||'[]'):items;
+      const avgVal=items.length?(items.reduce((s,f)=>s+f.rating,0)/items.length):0;
+      document.getElementById('fb-total').textContent=items.length;
+      document.getElementById('fb-avg').textContent=avgVal.toFixed(1)+'★';
+      document.getElementById('fb-avg-stars').textContent='★'.repeat(Math.round(avgVal))+'☆'.repeat(5-Math.round(avgVal));
+      document.getElementById('fb-positive').textContent=items.filter(f=>f.rating>=4).length;
+      document.getElementById('fb-negative').textContent=items.filter(f=>f.rating<=2).length;
     }
 
     if(!items.length){
-      container.innerHTML=`<div style="text-align:center;padding:40px;color:var(--text-light);">No feedback yet. Encourage customers to leave a review!</div>`;
+      container.innerHTML=`
+        <div style="text-align:center;padding:60px 20px;">
+          <div style="font-size:3rem;margin-bottom:12px;">📭</div>
+          <div style="font-size:1rem;font-weight:600;color:var(--text-medium);margin-bottom:6px;">No reviews yet</div>
+          <div style="color:var(--text-light);font-size:0.85rem;">Encourage customers to share their experience!</div>
+        </div>`;
       return;
     }
-    const starsHtml=(n)=>'★'.repeat(n)+'☆'.repeat(5-n);
-    container.innerHTML=`
-      <div style="display:flex;flex-direction:column;gap:14px;">
-        ${items.map(f=>`
-          <div class="feedback-card${f.rating<=2?' feedback-negative':''}">
-            <div class="feedback-card-header">
+
+    // Render review cards — only star rating + review text
+    const starsHtml=(n,low)=>`<span style="color:${low?'#e53935':'#C9A84C'};font-size:1.15rem;letter-spacing:2px;">${'★'.repeat(n)}${'☆'.repeat(5-n)}</span>`;
+    const ratingLabel=['','😤 Poor','😕 Fair','🙂 Good','😊 Very Good','🤩 Excellent'];
+
+    container.innerHTML=`<div class="review-list">
+      ${items.map(f=>{
+        const low=f.rating<=2;
+        const date=f.createdAt?new Date(f.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'';
+        return `<div class="review-card${low?' review-negative':''}">
+          <div class="review-top">
+            <div class="review-left">
+              <div class="review-avatar">${(f.customerName||'?')[0].toUpperCase()}</div>
               <div>
-                <div class="feedback-customer-name">${esc(f.customerName)}</div>
-                <div class="feedback-date">${f.createdAt?new Date(f.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):''}</div>
-              </div>
-              <div>
-                <div class="feedback-stars" style="color:${f.rating<=2?'#e53935':'var(--gold)'}">${starsHtml(f.rating)}</div>
-                ${f.recommend!=null?`<div class="feedback-recommend">${f.recommend==='yes'?'👍 Would recommend':'👎 Would not recommend'}</div>`:''}
+                <div class="review-name">${esc(f.customerName||'Customer')}</div>
+                <div class="review-date">${date}</div>
               </div>
             </div>
-            ${f.message?`<p class="feedback-message">${esc(f.message)}</p>`:''}
-          </div>`).join('')}
-      </div>`;
+            <div class="review-right">
+              ${starsHtml(f.rating,low)}
+              <div class="review-rating-label" style="color:${low?'#e53935':'var(--text-light)'}">${ratingLabel[f.rating]||''}</div>
+            </div>
+          </div>
+          ${f.message?`<p class="review-message">${esc(f.message)}</p>`:'<p class="review-message" style="color:var(--text-xlight);font-style:italic;">No written review</p>'}
+          ${f.recommend!=null?`<div class="review-recommend">${f.recommend==='yes'?'👍 Would recommend':'👎 Would not recommend'}</div>`:''}
+        </div>`;
+      }).join('')}
+    </div>`;
   }
 
   on('#feedback-refresh-btn','click', ()=>{
@@ -2574,6 +2605,10 @@ function attachListeners() {
     loadAdminFeedback(filter);
   });
   on('#feedback-filter-rating','change', e=>loadAdminFeedback(e.target.value));
+
+  /* Feedback nav — header button + floating button in customer shop */
+  on('#customer-feedback-nav-btn','click', ()=>{ state.subRoute='feedback'; state.feedbackRating=0; render(); postRender(); });
+  on('#float-feedback-btn','click', ()=>{ state.subRoute='feedback'; state.feedbackRating=0; render(); postRender(); });
 
   /* Back to shop btn in customer feedback page */
   on('#back-to-shop-btn','click', ()=>{state.subRoute='products';render();postRender();});

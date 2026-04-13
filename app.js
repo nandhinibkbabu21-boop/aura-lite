@@ -790,7 +790,7 @@ function renderAppHeader({ shopName, userName }) {
   return `
   <header class="app-header no-print">
     <div class="app-logo">
-      <span class="gold-text">AURA</span><span class="app-logo-lite">Lite</span>
+      <span class="gold-text">ZARA</span><span class="app-logo-lite">Aura</span>
       ${shopName ? `<span class="header-shop-name">· ${esc(shopName)}</span>` : ''}
     </div>
     ${roleSwitcher}
@@ -1530,22 +1530,54 @@ function renderCustomerShop() {
       <div class="shop-hero-name gold-text">${esc(shop?.name||'Zara Aura')}</div>
       <div class="shop-hero-sub">${esc(shop?.address||'Luxury Fashion Boutique')}</div>
     </div></div>
-    <div class="shop-filter-bar">
-      ${cats.map(cat=>`<div class="filter-chip${af===cat?' active':''}" data-filter="${esc(cat)}">${cat==='all'?'✦ All':esc(cat)}</div>`).join('')}
+    <!-- Category Sections -->
+    <div class="category-nav-bar">
+      ${[{id:'all',icon:'✦',label:'All'},{id:'Men',icon:'👔',label:'Men'},{id:'Women',icon:'👗',label:'Women'},{id:'Kids',icon:'🧒',label:'Kids'},{id:'Newborn',icon:'🍼',label:'Newborn'}]
+        .map(c=>`<button class="cat-nav-btn${af===c.id?' active':''}" data-filter="${c.id}">
+          <span class="cat-nav-icon">${c.icon}</span>
+          <span class="cat-nav-label">${c.label}</span>
+          ${c.id!=='all'?`<span class="cat-nav-count">${prods.filter(p=>p.category===c.id).length}</span>`:''}
+        </button>`).join('')}
     </div>
-    ${recs.length?`<div class="shop-section" style="background:var(--cream);border-bottom:1px solid var(--border-light);">
+    ${recs.length&&af==='all'?`<div class="shop-section" style="background:var(--cream);border-bottom:1px solid var(--border-light);">
       <div class="shop-section-header"><div>
         <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:4px;">✦ Curated For You</div>
         <div class="shop-section-title">Recommended</div></div><div class="shop-section-line"></div></div>
       <div class="shop-grid">${recs.map(renderShopCard).join('')}</div>
     </div>`:''}
-    <div class="shop-section">
-      <div class="shop-section-header"><div>
-        <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-light);font-weight:600;margin-bottom:4px;">${af==='all'?'Complete Collection':esc(af)}</div>
-        <div class="shop-section-title">${filtered.length} Item${filtered.length!==1?'s':''}</div></div><div class="shop-section-line"></div></div>
-      ${filtered.length===0?`<div class="empty-state"><div class="empty-state-icon">✦</div><div class="empty-state-title">No products found</div></div>`:
-        `<div class="shop-grid">${filtered.map(renderShopCard).join('')}</div>`}
-    </div>
+    ${af==='all'
+      ? PRODUCT_CATEGORIES.map(cat=>{
+          const catProds=prods.filter(p=>p.category===cat);
+          if(!catProds.length) return '';
+          const icons={'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼'};
+          return `<div class="shop-section">
+            <div class="shop-section-header">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:1.6rem;">${icons[cat]||'👕'}</span>
+                <div>
+                  <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-light);font-weight:600;margin-bottom:2px;">Collection</div>
+                  <div class="shop-section-title">${cat}</div>
+                </div>
+              </div>
+              <div class="shop-section-line"></div>
+              <button class="btn btn-ghost btn-sm" data-filter="${cat}" style="white-space:nowrap;">View All ${catProds.length} →</button>
+            </div>
+            <div class="shop-grid">${catProds.slice(0,6).map(renderShopCard).join('')}</div>
+          </div>`;
+        }).join('')
+      : `<div class="shop-section">
+          <div class="shop-section-header"><div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:1.4rem;">${{'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼'}[af]||'👕'}</span>
+            <div>
+              <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-light);font-weight:600;margin-bottom:2px;">${af} Collection</div>
+              <div class="shop-section-title">${filtered.length} Item${filtered.length!==1?'s':''}</div>
+            </div>
+          </div><div class="shop-section-line"></div></div>
+          ${filtered.length===0
+            ?`<div class="empty-state"><div class="empty-state-icon">✦</div><div class="empty-state-title">No ${af} products found</div></div>`
+            :`<div class="shop-grid">${filtered.map(renderShopCard).join('')}</div>`}
+        </div>`
+    }
     ${state.modalOpen==='product-detail'?renderProductDetailModal(state.viewingProductId):''}
     <!-- Floating Feedback Button -->
     <div class="feedback-float-btn" id="float-feedback-btn" title="Share your experience">
@@ -1743,7 +1775,7 @@ function renderSuperAdminDash() {
   return `<div>
     <header class="app-header sa-header no-print">
       <div class="app-logo">
-        <span class="gold-text">AURA</span><span class="app-logo-lite">Lite</span>
+        <span class="gold-text">ZARA</span><span class="app-logo-lite">Aura</span>
         <span class="sa-badge">⚡ Super Admin</span>
       </div>
       <div class="header-actions">
@@ -1960,66 +1992,84 @@ function confirmOrder() {
 }
 
 /* ═══════════════════════════════════════════════════
-   22a. ADMIN SMS — SEND OFFERS
+   22a. ADMIN WHATSAPP OFFERS
 ═══════════════════════════════════════════════════ */
 function renderAdminSms() {
-  const shop = DB.getShop();
   const customers = DB.getCustomers();
-  const optedIn = customers.filter(c => c.smsConsent).length;
-  const backendOk = !!BACKEND_URL;
+  const shop = DB.getShop();
 
   return `
   <div class="section-header">
-    <h2 class="section-title">📣 Send Offers via SMS</h2>
-    <p class="text-muted" style="margin-top:4px;">Send promotional SMS directly to opted-in customers</p>
+    <h2 class="section-title">📣 Send Offers via WhatsApp</h2>
+    <p class="text-muted" style="margin-top:4px;">Send promotional messages directly to your customers on WhatsApp</p>
   </div>
 
-  ${!backendOk ? `<div class="alert-banner alert-warning">
-    ⚠️ Backend not configured. Set up the backend server and add <code>backendConfig</code> to your app to enable real SMS sending.
-    <a href="#" style="color:inherit;font-weight:700;display:block;margin-top:4px;">See setup guide →</a>
-  </div>` : ''}
-
-  <div class="grid-3" style="margin-bottom:24px;">
+  <div class="grid-2" style="margin-bottom:24px;max-width:500px;">
     <div class="stat-card">
       <div class="stat-value">${customers.length}</div>
       <div class="stat-label">Total Customers</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value" style="color:var(--gold)">${optedIn}</div>
-      <div class="stat-label">SMS Opted-In</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value" style="color:#2E7D32">${backendOk ? 'Active' : 'Inactive'}</div>
-      <div class="stat-label">SMS Service</div>
+      <div class="stat-value" style="color:#25D366">${customers.filter(c=>c.whatsapp).length}</div>
+      <div class="stat-label">With WhatsApp</div>
     </div>
   </div>
 
-  <div class="card" style="padding:28px;max-width:600px;">
-    <h3 style="font-family:var(--font-serif);margin-bottom:18px;">Compose Offer Message</h3>
-    <form id="sms-offer-form">
-      <div class="form-group" style="margin-bottom:16px;">
-        <label class="form-label">Message <span class="required">*</span></label>
-        <textarea class="form-control" id="sms-offer-msg" name="message"
-          placeholder="e.g. 🎉 Big Sale! Up to 50% off on all kurtas. Visit us today!"
-          rows="4" maxlength="320" required
-          style="resize:vertical;"></textarea>
-        <div style="display:flex;justify-content:space-between;margin-top:6px;">
-          <small class="form-hint">Will be sent to <strong>${optedIn} opted-in</strong> customer${optedIn!==1?'s':''}</small>
-          <small class="form-hint" id="sms-char-count">0 / 320</small>
-        </div>
-      </div>
+  <div class="card" style="padding:28px;max-width:680px;">
+    <h3 style="font-family:var(--font-serif);margin-bottom:20px;">Compose &amp; Send Offer</h3>
 
-      <div style="background:var(--cream-2);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:16px;">
-        <div style="font-size:0.78rem;color:var(--text-medium);font-weight:600;margin-bottom:6px;">📱 Preview (as seen on phone)</div>
-        <div id="sms-preview" style="font-size:0.88rem;color:var(--text-dark);white-space:pre-wrap;min-height:40px;"></div>
+    <!-- Step 1: Select recipients -->
+    <div class="form-group" style="margin-bottom:18px;">
+      <label class="form-label">Send To <span class="required">*</span></label>
+      <div class="radio-group" style="margin-bottom:14px;">
+        <label class="radio-item"><input type="radio" name="wa-target" value="all" id="wa-target-all" checked/> All Customers (${customers.length})</label>
+        <label class="radio-item"><input type="radio" name="wa-target" value="specific" id="wa-target-specific"/> Specific Customers</label>
       </div>
+      <!-- Specific customer checkboxes -->
+      <div id="wa-customer-list" style="display:none;max-height:220px;overflow-y:auto;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px;background:var(--cream-2);">
+        ${customers.length===0
+          ?`<p class="text-muted" style="text-align:center;padding:16px;">No customers registered yet.</p>`
+          :customers.map(c=>`
+          <label style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--border-light);cursor:pointer;">
+            <input type="checkbox" class="wa-cust-check" value="${esc(c.whatsapp)}" data-name="${esc(c.name)}" ${c.whatsapp?'':'disabled'}/>
+            <div style="flex:1;">
+              <div style="font-weight:600;font-size:0.88rem;">${esc(c.name)}</div>
+              <div style="font-size:0.76rem;color:var(--text-light);">${c.whatsapp?`📱 ${esc(c.whatsapp)}`:'No WhatsApp number'}</div>
+            </div>
+          </label>`).join('')}
+      </div>
+    </div>
 
-      <button type="submit" class="btn btn-gold btn-lg" id="sms-offer-btn" ${!backendOk||optedIn===0?'disabled':''}>
-        📣 &nbsp; Send to ${optedIn} Customer${optedIn!==1?'s':''}
-      </button>
-      ${optedIn===0?`<p class="form-hint" style="margin-top:8px;color:var(--text-light);">No opted-in customers yet. Customers can opt-in during registration.</p>`:''}
-    </form>
-    <div id="sms-result" style="margin-top:16px;display:none;"></div>
+    <!-- Step 2: Compose message -->
+    <div class="form-group" style="margin-bottom:16px;">
+      <label class="form-label">Message <span class="required">*</span></label>
+      <textarea class="form-control" id="wa-offer-msg"
+        placeholder="e.g. 🎉 Big Sale at ${esc(shop?.name||'our store')}! Up to 50% off. Visit us today! 🛍️"
+        rows="4" style="resize:vertical;">${shop?`🎉 *${esc(shop.name)}* Special Offer!\n\n`:''}</textarea>
+      <small class="form-hint" id="wa-char-count">0 chars</small>
+    </div>
+
+    <!-- Preview -->
+    <div style="background:var(--cream-2);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:18px;">
+      <div style="font-size:0.76rem;color:var(--text-medium);font-weight:700;margin-bottom:6px;">📱 Message Preview</div>
+      <div id="wa-preview" style="font-size:0.88rem;color:var(--text-dark);white-space:pre-wrap;min-height:36px;line-height:1.6;"></div>
+    </div>
+
+    <!-- Send button -->
+    <button class="btn btn-gold btn-lg" id="wa-offer-send-btn" ${customers.length===0?'disabled':''}>
+      <span style="font-size:1.1rem;">💬</span> &nbsp; Prepare WhatsApp Messages
+    </button>
+    ${customers.length===0?`<p class="form-hint" style="margin-top:8px;">No customers yet.</p>`:''}
+  </div>
+
+  <!-- Send Queue (appears after clicking Prepare) -->
+  <div id="wa-send-queue" style="display:none;margin-top:28px;max-width:680px;">
+    <div class="card" style="padding:24px;">
+      <h4 style="font-family:var(--font-serif);margin-bottom:6px;">Send Queue</h4>
+      <p class="text-muted" style="margin-bottom:18px;font-size:0.85rem;">Click each button to open WhatsApp with the message pre-filled. Mark as sent after sending.</p>
+      <div id="wa-queue-list"></div>
+      <div id="wa-queue-summary" style="margin-top:16px;font-size:0.85rem;color:var(--text-medium);"></div>
+    </div>
   </div>`;
 }
 
@@ -2530,39 +2580,72 @@ function attachListeners() {
     if(state.subRoute==='feedback' && state.route==='admin') loadAdminFeedback();
   });
 
-  /* ── SMS Offer ── */
-  on('#sms-offer-msg','input', e=>{
+  /* ── WhatsApp Offer ── */
+  on('#wa-offer-msg','input', e=>{
     const msg=e.target.value;
-    const preview=document.getElementById('sms-preview');
-    const counter=document.getElementById('sms-char-count');
-    if(preview) preview.textContent=msg;
-    if(counter) counter.textContent=`${msg.length} / 320`;
+    const preview=document.getElementById('wa-preview');
+    const counter=document.getElementById('wa-char-count');
+    if(preview) preview.textContent=msg||'Your message will appear here…';
+    if(counter) counter.textContent=`${msg.length} chars`;
   });
-  on('#sms-offer-form','submit', async e=>{
-    e.preventDefault();
-    const msg = document.getElementById('sms-offer-msg')?.value.trim();
-    const btn = document.getElementById('sms-offer-btn');
-    const result = document.getElementById('sms-result');
-    if(!msg) return;
-    if(btn){btn.disabled=true;btn.textContent='Sending…';}
-    const shopId = DB.getShopId();
-    try {
-      const r = await apiPost('/api/sms/send-offer', { shopId, message: msg }, true);
-      if(btn){btn.disabled=false;btn.textContent='📣  Send Offer';}
-      if(result){
-        result.style.display='block';
-        if(r.success){
-          result.innerHTML=`<div class="alert-banner alert-success">✅ Sent <strong>${r.sent}</strong> messages. Failed: ${r.failed}.</div>`;
-          showToast(`SMS sent to ${r.sent} customers!`,'success');
-        } else {
-          result.innerHTML=`<div class="alert-banner alert-error">❌ ${r.error||'Failed to send SMS.'}</div>`;
-          showToast(r.error||'SMS sending failed.','error');
-        }
-      }
-    } catch(err){
-      if(btn){btn.disabled=false;btn.textContent='📣  Send Offer';}
-      showToast('Network error. Check backend connection.','error');
+  // Initialize preview on load
+  const waMsg=document.getElementById('wa-offer-msg');
+  if(waMsg&&waMsg.value){
+    const prev=document.getElementById('wa-preview');
+    if(prev) prev.textContent=waMsg.value;
+  }
+  // Toggle specific customer list
+  onAll('input[name="wa-target"]','change', e=>{
+    const list=document.getElementById('wa-customer-list');
+    if(list) list.style.display=e.target.value==='specific'?'block':'none';
+  });
+  // Prepare WhatsApp send queue
+  on('#wa-offer-send-btn','click', ()=>{
+    const msg=(document.getElementById('wa-offer-msg')?.value||'').trim();
+    if(!msg){showToast('Please enter a message','error');return;}
+    const targetAll=document.querySelector('input[name="wa-target"]:checked')?.value==='all';
+    let recipients=[];
+    if(targetAll){
+      recipients=DB.getCustomers().filter(c=>c.whatsapp).map(c=>({name:c.name,phone:c.whatsapp}));
+    } else {
+      document.querySelectorAll('.wa-cust-check:checked').forEach(cb=>{
+        recipients.push({name:cb.dataset.name,phone:cb.value});
+      });
     }
+    if(recipients.length===0){showToast('No customers selected or no WhatsApp numbers available','error');return;}
+    // Build queue
+    const queueEl=document.getElementById('wa-queue-list');
+    const queueWrap=document.getElementById('wa-send-queue');
+    const summary=document.getElementById('wa-queue-summary');
+    if(!queueEl||!queueWrap) return;
+    queueWrap.style.display='block';
+    queueWrap.scrollIntoView({behavior:'smooth',block:'nearest'});
+    let sentCount=0;
+    queueEl.innerHTML=recipients.map((r,i)=>{
+      const waUrl=`https://wa.me/91${r.phone}?text=${encodeURIComponent(msg)}`;
+      return `<div class="wa-queue-item" id="wa-qi-${i}" style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-light);">
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:0.88rem;">${esc(r.name)}</div>
+          <div style="font-size:0.76rem;color:var(--text-light);">📱 ${esc(r.phone)}</div>
+        </div>
+        <a href="${waUrl}" target="_blank" class="btn btn-gold btn-sm wa-send-link" data-idx="${i}" style="text-decoration:none;white-space:nowrap;">
+          💬 Open WhatsApp
+        </a>
+        <span class="wa-sent-badge" id="wa-badge-${i}" style="display:none;font-size:0.76rem;font-weight:700;color:#2E7D32;white-space:nowrap;">✅ Sent</span>
+      </div>`;
+    }).join('');
+    if(summary) summary.textContent=`${recipients.length} message${recipients.length!==1?'s':''} queued. Click each button to open WhatsApp.`;
+    // Mark as sent when link clicked
+    document.querySelectorAll('.wa-send-link').forEach(link=>{
+      link.addEventListener('click', ()=>{
+        const idx=link.dataset.idx;
+        const badge=document.getElementById(`wa-badge-${idx}`);
+        if(badge){badge.style.display='inline';sentCount++;}
+        link.textContent='✓ Opened';
+        link.classList.replace('btn-gold','btn-ghost');
+        if(summary) summary.textContent=`${sentCount} of ${recipients.length} sent via WhatsApp.`;
+      });
+    });
   });
 
   /* ── Feedback: star rating widget ── */

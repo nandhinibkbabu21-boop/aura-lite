@@ -1864,3 +1864,70 @@ tbody tr:hover td { background: var(--cream); }
   color: var(--gold-dark);
   border: 1px solid var(--gold-light);
 }
+
+/* ── Category Nav Bar (Customer Shop) ───────────── */
+.category-nav-bar {
+  display: flex;
+  gap: 10px;
+  padding: 16px 24px;
+  background: var(--white);
+  border-bottom: 1px solid var(--border-light);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 2px 12px rgba(201,168,76,0.08);
+}
+.category-nav-bar::-webkit-scrollbar { display: none; }
+
+.cat-nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 20px;
+  border: 2px solid var(--border-light);
+  border-radius: 16px;
+  background: var(--cream-2);
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 72px;
+  white-space: nowrap;
+  position: relative;
+}
+.cat-nav-btn:hover {
+  border-color: var(--gold-light);
+  background: var(--gold-lighter);
+  transform: translateY(-2px);
+}
+.cat-nav-btn.active {
+  border-color: var(--gold-dark);
+  background: var(--gold);
+  color: #fff;
+  box-shadow: 0 4px 16px var(--shadow-gold);
+}
+.cat-nav-icon { font-size: 1.4rem; }
+.cat-nav-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.cat-nav-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--gold-dark);
+  color: #fff;
+  font-size: 0.64rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+}
+.cat-nav-btn.active .cat-nav-count { background: rgba(0,0,0,0.25); }
+
+/* ── WhatsApp Send Queue ─────────────────────────── */
+.wa-queue-item:last-child { border-bottom: none; }

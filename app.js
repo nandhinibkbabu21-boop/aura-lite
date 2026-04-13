@@ -67,6 +67,25 @@ const KEYS = {
 
 const SUPER_ADMIN_CREDS = { username: 'superadmin', password: '1234567890@' };
 
+/* ── Product category & size system ─────────────── */
+const PRODUCT_CATEGORIES = ['Men','Women','Kids','Newborn'];
+const CATEGORY_SIZES = {
+  'Men':     ['XXS','XS','S','M','L','XL','XXL','2XL','3XL'],
+  'Women':   ['XXS','XS','S','M','L','XL','XXL','2XL','3XL'],
+  'Kids':    ['0-1Y','1-2Y','2-3Y','3-4Y','4-5Y','5-6Y','6-7Y','7-8Y','8-9Y','9-10Y','10-11Y','11-12Y'],
+  'Newborn': ['0-3M','3-6M','6-9M','9-12M'],
+};
+function getSizesForCategory(cat) { return CATEGORY_SIZES[cat] || CATEGORY_SIZES['Men']; }
+function getProductSizes(p) {
+  if (p.sizes && p.sizes.length) return p.sizes;
+  if (p.size) return [{ size: p.size, price: +(p.price||0) }];
+  return [];
+}
+function getProductBasePrice(p) {
+  const ss = getProductSizes(p);
+  return ss.length ? Math.min(...ss.map(s=>+s.price)) : +(p.price||0);
+}
+
 function getDeviceId() {
   let id = localStorage.getItem('aura_device_id');
   if (!id) { id = uid(); localStorage.setItem('aura_device_id', id); }
@@ -483,7 +502,10 @@ function renderLogin(role) {
               <div class="form-group"><label class="form-label">Username <span class="required">*</span></label>
                 <input type="text" class="form-control" name="username" placeholder="Enter your username" required autocomplete="username"/></div>
               <div class="form-group"><label class="form-label">Password <span class="required">*</span></label>
-                <input type="password" class="form-control" name="password" placeholder="Enter your password" required autocomplete="current-password"/>
+                <div class="password-input-wrap">
+                  <input type="password" class="form-control" name="password" id="login-password" placeholder="Enter your password" required autocomplete="current-password"/>
+                  <button type="button" class="password-toggle-btn" data-target="login-password">👁</button>
+                </div>
                 <div style="text-align:right;margin-top:6px;">
                   ${role !== 'super-admin' ? `<button type="button" class="btn-forgot-link" id="forgot-password-link">Forgot Password?</button>` : ''}
                 </div>
@@ -659,8 +681,9 @@ function renderRegisterShop() {
           <div class="form-row">
             <div class="form-group"><label class="form-label">Phone Number <span class="required">*</span></label>
               <input type="tel" class="form-control" name="phone" placeholder="10-digit number" required maxlength="10" pattern="[0-9]{10}" title="Enter exactly 10 digits"/></div>
-            <div class="form-group"><label class="form-label">GST Number <span class="optional-tag">(Optional)</span></label>
-              <input type="text" class="form-control" name="gst" placeholder="e.g. 29ABCDE1234F1Z5" maxlength="15" pattern="[A-Z0-9]{15}" title="GST must be exactly 15 alphanumeric characters" style="text-transform:uppercase"/></div>
+            <div class="form-group"><label class="form-label">GST Number <span class="required">*</span></label>
+              <input type="text" class="form-control" name="gst" placeholder="e.g. 29ABCDE1234F1Z5" maxlength="15" minlength="15" pattern="[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}" title="Enter valid 15-character GST number (e.g. 29ABCDE1234F1Z5)" style="text-transform:uppercase" required/>
+              <small class="form-hint">Format: 2 digits + 5 letters + 4 digits + letter + digit + Z + alphanumeric</small></div>
           </div>
           <div style="border-top:1px solid var(--border-light);padding-top:18px;">
             <h4 style="font-family:var(--font-serif);margin-bottom:12px;">Admin Login Credentials</h4>
@@ -668,7 +691,10 @@ function renderRegisterShop() {
               <div class="form-group"><label class="form-label">Admin Username <span class="required">*</span></label>
                 <input type="text" class="form-control" name="adminUsername" placeholder="Choose a username" required autocomplete="new-password"/></div>
               <div class="form-group"><label class="form-label">Admin Password <span class="required">*</span></label>
-                <input type="password" class="form-control" name="adminPassword" placeholder="Choose a password" required autocomplete="new-password"/></div>
+                <div class="password-input-wrap">
+                  <input type="password" class="form-control" name="adminPassword" id="admin-pwd" placeholder="Choose a password" required autocomplete="new-password"/>
+                  <button type="button" class="password-toggle-btn" data-target="admin-pwd">👁</button>
+                </div></div>
             </div>
           </div>
           <button type="submit" class="btn btn-gold btn-block btn-lg" id="shop-register-btn">✦ &nbsp; Launch My Boutique</button>
@@ -728,7 +754,10 @@ function renderRegisterCustomer() {
               <div class="form-group"><label class="form-label">Username <span class="required">*</span></label>
                 <input type="text" class="form-control" name="username" required placeholder="Choose username" autocomplete="new-password"/></div>
               <div class="form-group"><label class="form-label">Password <span class="required">*</span></label>
-                <input type="password" class="form-control" name="password" required placeholder="Choose password" autocomplete="new-password"/></div>
+                <div class="password-input-wrap">
+                  <input type="password" class="form-control" name="password" id="cust-reg-pwd" required placeholder="Choose password" autocomplete="new-password"/>
+                  <button type="button" class="password-toggle-btn" data-target="cust-reg-pwd">👁</button>
+                </div></div>
             </div>
           </div>
           <label class="sms-consent-label">
@@ -905,18 +934,23 @@ function renderAdminProducts() {
 }
 function renderProductCard(p) {
   const qty=+p.quantity, sc=qty===0?'badge-red':qty<=5?'badge-gold':'badge-green', sl=qty===0?'Out of Stock':qty<=5?`Low: ${qty}`:`In Stock: ${qty}`;
+  const sizes=getProductSizes(p);
+  const priceDisplay=sizes.length>1?`From ${fmt(Math.min(...sizes.map(s=>+s.price)))}`:sizes.length===1?fmt(sizes[0].price):fmt(p.price||0);
+  const sizeTagsHtml=sizes.slice(0,4).map(s=>`<span class="product-tag size-tag-sm">${esc(s.size)}</span>`).join('')+(sizes.length>4?`<span class="product-tag" style="color:var(--text-light);">+${sizes.length-4}</span>`:'');
   return `<div class="product-card">
     <div class="product-card-img">${p.image?`<img src="${p.image}" alt="${esc(p.name)}"/>`:
       `<div class="no-img"><span style="font-size:2.5rem;">👗</span><span style="font-size:0.72rem;">No Image</span></div>`}</div>
     <div class="product-card-body">
       <div class="product-card-name">${esc(p.name)}</div>
       <div class="product-card-meta">
-        <span class="product-tag gold">${esc(p.category)}</span><span class="product-tag">${esc(p.size)}</span>
+        <span class="product-tag gold">${esc(p.category)}</span>
+        ${p.material?`<span class="product-tag">${esc(p.material)}</span>`:''}
         <span class="product-tag" style="display:flex;align-items:center;gap:4px;">
-          <span class="color-dot" style="background:${esc(p.color.toLowerCase())};"></span>${esc(p.color)}</span>
+          <span class="color-dot" style="background:${esc((p.color||'#ccc').toLowerCase())};"></span>${esc(p.color||'')}</span>
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;">
-        <div class="product-card-price">${fmt(p.price)}</div><span class="td-badge ${sc}">${sl}</span></div>
+      ${sizeTagsHtml?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;">${sizeTagsHtml}</div>`:''}
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+        <div class="product-card-price">${priceDisplay}</div><span class="td-badge ${sc}">${sl}</span></div>
       <div class="product-card-actions">
         <button class="btn btn-outline btn-sm" data-edit-product="${esc(p.id)}" style="flex:1;">Edit</button>
         <button class="btn btn-ghost btn-sm" data-stock-product="${esc(p.id)}">Stock</button>
@@ -926,32 +960,64 @@ function renderProductCard(p) {
   </div>`;
 }
 function renderProductModal() {
-  const cats=DB.getCategories(), editing=state.editingId?DB.getProducts().find(p=>p.id===state.editingId):null, v=editing||{};
+  const editing=state.editingId?DB.getProducts().find(p=>p.id===state.editingId):null, v=editing||{};
+  const curCat = v.category || 'Men';
+  const availSizes = getSizesForCategory(curCat);
+  const existingSizes = getProductSizes(v);
+
+  const sizeRows = existingSizes.length
+    ? existingSizes.map(s=>`<tr class="size-row">
+        <td><select class="form-control form-control-sm size-size-sel">
+          ${availSizes.map(sz=>`<option value="${sz}"${sz===s.size?' selected':''}>${sz}</option>`).join('')}
+        </select></td>
+        <td><input type="number" class="form-control form-control-sm size-price-inp" min="0" value="${s.price}" placeholder="0"/></td>
+        <td><button type="button" class="btn-icon remove-size-row" style="width:28px;height:28px;font-size:0.8rem;">✕</button></td>
+      </tr>`).join('')
+    : `<tr class="size-row">
+        <td><select class="form-control form-control-sm size-size-sel">
+          ${availSizes.map(sz=>`<option value="${sz}">${sz}</option>`).join('')}
+        </select></td>
+        <td><input type="number" class="form-control form-control-sm size-price-inp" min="0" placeholder="0"/></td>
+        <td><button type="button" class="btn-icon remove-size-row" style="width:28px;height:28px;font-size:0.8rem;">✕</button></td>
+      </tr>`;
+
   return `<div class="modal-overlay" id="product-modal-overlay">
     <div class="modal modal-lg animate-slideUp">
       <div class="modal-header"><div><div class="login-role-badge">✦ &nbsp; ${editing?'Edit Product':'Add Product'}</div>
         <div class="modal-title">${editing?esc(editing.name):'New Product'}</div></div>
         <button class="modal-close" data-close-modal="product">✕</button></div>
-      <div class="modal-body"><form id="product-form"><div style="display:flex;gap:22px;">
-        <div style="flex:1;display:flex;flex-direction:column;gap:14px;">
+      <div class="modal-body"><form id="product-form"><div style="display:flex;gap:22px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:260px;display:flex;flex-direction:column;gap:14px;">
           <div class="form-group"><label class="form-label">Product Name <span class="required">*</span></label>
-            <input type="text" class="form-control" name="name" value="${esc(v.name||'')}" placeholder="e.g. Silk Anarkali Kurta" required/></div>
+            <input type="text" class="form-control" name="name" id="prod-name" value="${esc(v.name||'')}" placeholder="e.g. Silk Anarkali Kurta" required/></div>
           <div class="form-row">
             <div class="form-group"><label class="form-label">Category <span class="required">*</span></label>
-              <input type="text" class="form-control" name="category" value="${esc(v.category||'')}" placeholder="e.g. Kurta, Saree" list="cat-list" required/>
-              <datalist id="cat-list">${cats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
-            <div class="form-group"><label class="form-label">Size <span class="required">*</span></label>
-              <select class="form-control" name="size" required><option value="">Select</option>
-                ${['XS','S','M','L','XL','XXL','3XL','Free Size'].map(s=>`<option value="${s}"${v.size===s?' selected':''}>${s}</option>`).join('')}</select></div>
-          </div>
-          <div class="form-row">
+              <select class="form-control" name="category" id="prod-category-sel" required>
+                <option value="">Select category</option>
+                ${PRODUCT_CATEGORIES.map(c=>`<option value="${c}"${c===curCat?' selected':''}>${c}</option>`).join('')}
+              </select></div>
             <div class="form-group"><label class="form-label">Color <span class="required">*</span></label>
               <input type="text" class="form-control" name="color" value="${esc(v.color||'')}" placeholder="e.g. Royal Blue" required/></div>
-            <div class="form-group"><label class="form-label">Price (₹) <span class="required">*</span></label>
-              <input type="number" class="form-control" name="price" value="${esc(v.price||'')}" min="0" required/></div>
           </div>
-          <div class="form-group"><label class="form-label">Available Quantity <span class="required">*</span></label>
-            <input type="number" class="form-control" name="quantity" value="${esc(v.quantity||'')}" min="0" required/></div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Material / Type <span class="optional-tag">(Optional)</span></label>
+              <input type="text" class="form-control" name="material" value="${esc(v.material||'')}" placeholder="e.g. Cotton, Silk"/></div>
+            <div class="form-group"><label class="form-label">Available Quantity <span class="required">*</span></label>
+              <input type="number" class="form-control" name="quantity" value="${esc(v.quantity||'')}" min="0" required/></div>
+          </div>
+          <div class="form-group"><label class="form-label">Description <span class="optional-tag">(Optional)</span></label>
+            <textarea class="form-control" name="description" placeholder="Product description, features…" style="min-height:58px;">${esc(v.description||'')}</textarea></div>
+          <!-- Sizes & Prices -->
+          <div class="form-group">
+            <label class="form-label">Sizes &amp; Prices <span class="required">*</span></label>
+            <div class="size-price-wrap">
+              <table class="size-price-table">
+                <thead><tr><th>Size</th><th>Price (₹)</th><th></th></tr></thead>
+                <tbody id="sizes-tbody">${sizeRows}</tbody>
+              </table>
+              <button type="button" id="add-size-row-btn" class="btn btn-outline btn-sm" style="margin-top:8px;">+ Add Size</button>
+            </div>
+          </div>
         </div>
         <div style="width:190px;flex-shrink:0;">
           <label class="form-label" style="display:block;margin-bottom:8px;">Image <span class="optional-tag">(Optional)</span></label>
@@ -1154,11 +1220,14 @@ function renderEmployeeModal() {
         <div class="form-group"><label class="form-label">Address <span class="optional-tag">(Optional)</span></label>
           <textarea class="form-control" name="address">${esc(v.address||'')}</textarea></div>
         <div class="form-row">
-          <div class="form-group"><label class="form-label">Monthly Salary (₹) <span class="optional-tag">(Optional)</span></label>
-            <input type="number" class="form-control" name="salary" value="${esc(v.salary||'')}" min="0" placeholder="e.g. 15000"/></div>
-          <div class="form-group"><label class="form-label">Join Date <span class="optional-tag">(Optional)</span></label>
-            <input type="date" class="form-control" name="joinDate" value="${v.joinDate?new Date(v.joinDate).toISOString().slice(0,10):''}"/></div>
+          <div class="form-group"><label class="form-label">Monthly Salary (₹) <span class="required">*</span></label>
+            <input type="number" class="form-control" name="salary" value="${esc(v.salary||'')}" min="0" placeholder="e.g. 15000" required/></div>
+          <div class="form-group"><label class="form-label">Join Date <span class="required">*</span></label>
+            <input type="date" class="form-control" name="joinDate" value="${v.joinDate?new Date(v.joinDate).toISOString().slice(0,10):''}" required/></div>
         </div>
+        <div class="form-group"><label class="form-label">Employment Type <span class="required">*</span></label>
+          <div class="radio-group">${['Full-Time','Part-Time'].map(t=>
+            `<label class="radio-item"><input type="radio" name="employmentType" value="${t}"${(v.employmentType||'Full-Time')===t?' checked':''}/> ${t}</label>`).join('')}</div></div>
         ${emp?`<div class="form-group"><label class="form-label">Salary Increment Note <span class="optional-tag">(Optional)</span></label>
           <input type="text" class="form-control" name="salaryNote" placeholder="e.g. Annual increment, Promotion"/></div>`:''}
         ${!emp?`<div style="background:var(--cream-2);border-radius:var(--radius-md);padding:14px;border:1px solid var(--border-light);">
@@ -1167,7 +1236,10 @@ function renderEmployeeModal() {
             <div class="form-group"><label class="form-label">Username <span class="required">*</span></label>
               <input type="text" class="form-control" name="username" required autocomplete="new-password"/></div>
             <div class="form-group"><label class="form-label">Password <span class="required">*</span></label>
-              <input type="password" class="form-control" name="password" required autocomplete="new-password"/></div>
+              <div class="password-input-wrap">
+                <input type="password" class="form-control" name="password" id="emp-pwd" required autocomplete="new-password"/>
+                <button type="button" class="password-toggle-btn" data-target="emp-pwd">👁</button>
+              </div></div>
           </div></div>`:''}
       </div></form></div>
       <div class="modal-footer">
@@ -1359,13 +1431,15 @@ function renderEmpStock() {
     <div class="dash-page-title">Stock Management</div><div class="dash-page-subtitle">Monitor and update stock levels</div>
     ${low.length?`<div class="alert alert-warning" style="margin-bottom:20px;">⚠ &nbsp; ${low.length} product${low.length!==1?'s':''} with low or zero stock</div>`:''}
     <div class="table-wrap"><table>
-      <thead><tr><th>Product</th><th>Category</th><th>Size</th><th>Price</th><th>Stock</th><th>Update</th></tr></thead>
-      <tbody>${prods.map(p=>`<tr>
-        <td class="td-name">${esc(p.name)}</td><td>${esc(p.category)}</td><td>${esc(p.size)}</td>
-        <td style="font-family:var(--font-serif);font-weight:600;color:var(--gold-dark);">${fmt(p.price)}</td>
+      <thead><tr><th>Product</th><th>Category</th><th>Sizes</th><th>Price Range</th><th>Stock</th><th>Update</th></tr></thead>
+      <tbody>${prods.map(p=>{const szs=getProductSizes(p);const minP=szs.length?Math.min(...szs.map(s=>+s.price)):+(p.price||0);const maxP=szs.length?Math.max(...szs.map(s=>+s.price)):+(p.price||0);
+      return `<tr>
+        <td class="td-name">${esc(p.name)}</td><td>${esc(p.category)}</td>
+        <td style="font-size:0.78rem;">${szs.map(s=>`<span class="product-tag size-tag-sm" style="margin:1px;">${esc(s.size)}</span>`).join('')||'—'}</td>
+        <td style="font-family:var(--font-serif);font-weight:600;color:var(--gold-dark);">${minP===maxP?fmt(minP):fmt(minP)+' – '+fmt(maxP)}</td>
         <td><span class="td-badge ${+p.quantity===0?'badge-red':+p.quantity<=5?'badge-gold':'badge-green'}">${+p.quantity===0?'Out of Stock':p.quantity+' units'}</span></td>
         <td><button class="btn btn-outline btn-sm" data-stock-product="${esc(p.id)}">Update</button></td>
-      </tr>`).join('')}</tbody></table></div>
+      </tr>`}).join('')}</tbody></table></div>
     ${state.modalOpen==='stock'?renderStockModal(state.stockProductId):''}
   </div>`;
 }
@@ -1481,7 +1555,11 @@ function renderCustomerShop() {
   </div>`;
 }
 function renderShopCard(p) {
-  const inCart=state.cart.find(i=>i.id===p.id);
+  const sizes=getProductSizes(p);
+  const minPrice=sizes.length?Math.min(...sizes.map(s=>+s.price)):+(p.price||0);
+  const maxPrice=sizes.length?Math.max(...sizes.map(s=>+s.price)):+(p.price||0);
+  const priceStr=minPrice===maxPrice?`₹${minPrice.toLocaleString('en-IN')}`:`₹${minPrice.toLocaleString('en-IN')} – ₹${maxPrice.toLocaleString('en-IN')}`;
+  const inCart=state.cart.some(i=>i.id===p.id);
   return `<div class="shop-card" data-product-detail="${esc(p.id)}">
     <div class="shop-card-img">
       ${p.image?`<img src="${p.image}" alt="${esc(p.name)}" loading="lazy"/>`:
@@ -1489,47 +1567,73 @@ function renderShopCard(p) {
       <span class="shop-card-badge">${esc(p.category)}</span>
     </div>
     <div class="shop-card-body">
-      <div class="shop-card-category">${esc(p.category)}</div>
+      <div class="shop-card-category">${esc(p.category)}${p.material?` · ${esc(p.material)}`:''}</div>
       <div class="shop-card-name">${esc(p.name)}</div>
-      <div class="shop-card-tags">
-        <span class="product-tag">${esc(p.size)}</span>
+      <div class="shop-card-tags" style="flex-wrap:wrap;gap:4px;">
+        ${sizes.slice(0,5).map(s=>`<span class="product-tag size-tag-sm">${esc(s.size)}</span>`).join('')}
+        ${sizes.length>5?`<span class="product-tag" style="color:var(--text-light);">+${sizes.length-5}</span>`:''}
         <span class="product-tag" style="display:flex;align-items:center;gap:4px;">
-          <span class="color-dot" style="background:${esc(p.color.toLowerCase())};"></span>${esc(p.color)}</span>
+          <span class="color-dot" style="background:${esc((p.color||'#ccc').toLowerCase())};"></span>${esc(p.color||'')}</span>
       </div>
       <div class="shop-card-footer">
-        <div class="shop-card-price"><span class="currency">₹</span>${(+p.price).toLocaleString('en-IN')}</div>
-        ${+p.quantity<=5?`<span class="stock-badge low">Only ${p.quantity} left</span>`:`<span class="stock-badge">In Stock</span>`}
+        <div class="shop-card-price">${priceStr}</div>
+        ${+p.quantity<=5&&+p.quantity>0?`<span class="stock-badge low">Only ${p.quantity} left</span>`:+p.quantity===0?`<span class="stock-badge" style="background:#fee;color:#c00;">Out of Stock</span>`:`<span class="stock-badge">In Stock</span>`}
       </div>
-      <button class="btn ${inCart?'btn-outline':'btn-gold'} btn-sm btn-block" style="margin-top:12px;" data-add-cart="${esc(p.id)}">
-        ${inCart?`✓ Added (${inCart.qty})`:'+ Add to Cart'}</button>
+      <button class="btn ${inCart?'btn-outline':'btn-gold'} btn-sm btn-block" style="margin-top:12px;" data-product-detail="${esc(p.id)}">
+        ${inCart?'✓ View &amp; Size':'Select Size &amp; Add'}</button>
     </div>
   </div>`;
 }
 function renderProductDetailModal(pid) {
   const p=DB.getProducts().find(pr=>pr.id===pid); if(!p) return '';
-  const inCart=state.cart.find(i=>i.id===p.id);
+  const sizes=getProductSizes(p);
+  const firstSize=sizes[0]||null;
+  const outOfStock=+p.quantity===0;
   return `<div class="modal-overlay" id="product-detail-overlay">
     <div class="modal modal-lg animate-slideUp">
       <div class="modal-header"><div class="modal-title">${esc(p.name)}</div>
         <button class="modal-close" data-close-modal="product-detail">✕</button></div>
       <div class="modal-body"><div style="display:flex;gap:24px;flex-wrap:wrap;">
-        <div style="flex:0 0 200px;">
-          ${p.image?`<img src="${p.image}" style="width:100%;border-radius:var(--radius-lg);object-fit:cover;aspect-ratio:3/4;">`:
-            `<div style="width:100%;aspect-ratio:3/4;background:var(--cream-2);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;font-size:4rem;">👗</div>`}
+        <!-- Image -->
+        <div style="flex:0 0 220px;">
+          ${p.image
+            ?`<img src="${p.image}" id="detail-zoom-img" style="width:100%;border-radius:var(--radius-lg);object-fit:cover;aspect-ratio:3/4;cursor:zoom-in;transition:transform 0.2s;" onclick="this.style.transform=this.style.transform?'':'scale(1.5)';"/>`
+            :`<div style="width:100%;aspect-ratio:3/4;background:var(--cream-2);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;font-size:4rem;">👗</div>`}
+          ${p.image?`<p style="font-size:0.72rem;color:var(--text-xlight);text-align:center;margin-top:6px;">Tap image to zoom</p>`:''}
         </div>
+        <!-- Details -->
         <div style="flex:1;min-width:200px;">
-          <div style="font-size:0.72rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:8px;">${esc(p.category)}</div>
-          <h2 style="font-family:var(--font-serif);margin-bottom:14px;">${esc(p.name)}</h2>
-          <div style="font-family:var(--font-serif);font-size:1.8rem;font-weight:700;color:var(--gold-dark);margin-bottom:20px;">${fmt(p.price)}</div>
-          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;font-size:0.85rem;">
-            <div style="display:flex;gap:12px;"><span style="color:var(--text-light);width:70px;">Size</span><span class="product-tag gold">${esc(p.size)}</span></div>
-            <div style="display:flex;align-items:center;gap:12px;"><span style="color:var(--text-light);width:70px;">Color</span>
-              <span style="display:flex;align-items:center;gap:6px;"><span class="color-dot" style="background:${esc(p.color.toLowerCase())};width:14px;height:14px;"></span>${esc(p.color)}</span></div>
-            <div style="display:flex;align-items:center;gap:12px;"><span style="color:var(--text-light);width:70px;">Stock</span>
-              <span class="td-badge ${+p.quantity===0?'badge-red':+p.quantity<=5?'badge-gold':'badge-green'}">${+p.quantity===0?'Out of Stock':+p.quantity<=5?`Only ${p.quantity} left`:'In Stock'}</span></div>
+          <div style="font-size:0.72rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:4px;">${esc(p.category)}${p.material?' · '+esc(p.material):''}</div>
+          <h2 style="font-family:var(--font-serif);margin-bottom:10px;">${esc(p.name)}</h2>
+          ${p.description?`<p style="font-size:0.85rem;color:var(--text-medium);margin-bottom:14px;line-height:1.6;">${esc(p.description)}</p>`:''}
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;font-size:0.85rem;">
+            <span style="color:var(--text-light);width:60px;">Color</span>
+            <span style="display:flex;align-items:center;gap:6px;"><span class="color-dot" style="background:${esc((p.color||'#ccc').toLowerCase())};width:14px;height:14px;"></span>${esc(p.color||'')}</span>
           </div>
-          <button class="btn ${inCart?'btn-outline':'btn-gold'} btn-block btn-lg" data-add-cart="${esc(p.id)}" ${+p.quantity===0?'disabled':''}>
-            ${+p.quantity===0?'Out of Stock':inCart?`✓ In Cart (${inCart.qty} added)`:'+ Add to Cart'}</button>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;font-size:0.85rem;">
+            <span style="color:var(--text-light);width:60px;">Stock</span>
+            <span class="td-badge ${outOfStock?'badge-red':+p.quantity<=5?'badge-gold':'badge-green'}">${outOfStock?'Out of Stock':+p.quantity<=5?`Only ${p.quantity} left`:'In Stock'}</span>
+          </div>
+          ${sizes.length?`
+          <div style="margin-bottom:20px;">
+            <div style="font-size:0.78rem;font-weight:700;color:var(--text-medium);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:10px;">Select Size</div>
+            <div class="detail-size-btns" style="display:flex;flex-wrap:wrap;gap:8px;">
+              ${sizes.map((s,i)=>`<button type="button" class="detail-size-btn${i===0?' active':''}" data-sz="${esc(s.size)}" data-price="${s.price}" ${outOfStock?'disabled':''}>
+                ${esc(s.size)}<span class="size-price-tag">₹${(+s.price).toLocaleString('en-IN')}</span>
+              </button>`).join('')}
+            </div>
+          </div>
+          <div id="detail-price-display" style="font-family:var(--font-serif);font-size:2rem;font-weight:700;color:var(--gold-dark);margin-bottom:20px;">
+            ${firstSize?fmt(firstSize.price):fmt(p.price||0)}
+          </div>`:`
+          <div id="detail-price-display" style="font-family:var(--font-serif);font-size:2rem;font-weight:700;color:var(--gold-dark);margin-bottom:20px;">${fmt(p.price||0)}</div>`}
+          <button class="btn ${outOfStock?'btn-ghost':'btn-gold'} btn-block btn-lg" id="detail-add-cart-btn"
+            data-pid="${esc(p.id)}"
+            data-sz="${esc(firstSize?.size||p.size||'')}"
+            data-price="${firstSize?.price||p.price||0}"
+            ${outOfStock?'disabled':''}>
+            ${outOfStock?'Out of Stock':'+ Add to Cart'}
+          </button>
         </div>
       </div></div>
     </div>
@@ -1557,16 +1661,16 @@ function renderCartSidebar() {
           `<div class="cart-item-img" style="display:flex;align-items:center;justify-content:center;font-size:1.5rem;">👗</div>`}
         <div class="cart-item-info">
           <div class="cart-item-name">${esc(item.name)}</div>
-          <div class="cart-item-meta">${esc(item.size)} · ${esc(item.color)}</div>
+          <div class="cart-item-meta">${esc(item.size)} · ${esc(item.color)} · ${fmt(item.price)}</div>
           <div class="cart-item-controls"><div class="qty-control">
-            <button class="qty-btn" data-cart-dec="${esc(item.id)}">−</button>
+            <button class="qty-btn" data-cart-dec="${esc(item.cartKey||item.id)}">−</button>
             <span class="qty-value">${item.qty}</span>
-            <button class="qty-btn" data-cart-inc="${esc(item.id)}">+</button>
+            <button class="qty-btn" data-cart-inc="${esc(item.cartKey||item.id)}">+</button>
           </div></div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
           <div class="cart-item-price">${fmt(item.qty*item.price)}</div>
-          <span class="cart-item-remove" data-cart-remove="${esc(item.id)}">✕ Remove</span>
+          <span class="cart-item-remove" data-cart-remove="${esc(item.cartKey||item.id)}">✕ Remove</span>
         </div>
       </div>`).join('')}
     </div>
@@ -1764,21 +1868,30 @@ function getRecommendations(products, cust) {
 /* ═══════════════════════════════════════════════════
    21. CART LOGIC
 ═══════════════════════════════════════════════════ */
-function addToCart(productId) {
+function addToCart(productId, selectedSize, selectedPrice) {
   const p=DB.getProducts().find(pr=>pr.id===productId); if(!p) return;
-  const existing=state.cart.find(i=>i.id===productId);
-  if(existing){ if(existing.qty>=+p.quantity){showToast(`Only ${p.quantity} units available`,'error');return;} existing.qty++; }
-  else { if(+p.quantity===0){showToast('Out of stock','error');return;} state.cart.push({id:p.id,name:p.name,size:p.size,color:p.color,price:+p.price,image:p.image,qty:1}); }
-  showToast(`${p.name} added to cart`,'success'); render();
+  if(+p.quantity===0){showToast('Out of stock','error');return;}
+  const sizes=getProductSizes(p);
+  const sz = selectedSize || (sizes.length?sizes[0].size:p.size||'');
+  const pr = selectedPrice!==undefined?+selectedPrice:(sizes.length?sizes[0].price:+(p.price||0));
+  const cartKey = p.id + '|' + sz;
+  const existing = state.cart.find(i=>i.cartKey===cartKey);
+  if(existing){
+    if(existing.qty>=+p.quantity){showToast(`Only ${p.quantity} units available`,'error');return;}
+    existing.qty++;
+  } else {
+    state.cart.push({cartKey,id:p.id,name:p.name,size:sz,color:p.color,price:pr,image:p.image,qty:1});
+  }
+  showToast(`${p.name} (${sz}) added to cart`,'success'); render();
 }
-function updateCartQty(productId, delta) {
-  const item=state.cart.find(i=>i.id===productId); if(!item) return;
-  const p=DB.getProducts().find(pr=>pr.id===productId), newQty=item.qty+delta;
-  if(newQty<=0){removeFromCart(productId);return;}
+function updateCartQty(cartKey, delta) {
+  const item=state.cart.find(i=>(i.cartKey||i.id)===cartKey); if(!item) return;
+  const p=DB.getProducts().find(pr=>pr.id===item.id), newQty=item.qty+delta;
+  if(newQty<=0){removeFromCart(cartKey);return;}
   if(p&&newQty>+p.quantity){showToast('Not enough stock','error');return;}
   item.qty=newQty; render();
 }
-function removeFromCart(productId) { state.cart=state.cart.filter(i=>i.id!==productId); render(); }
+function removeFromCart(cartKey) { state.cart=state.cart.filter(i=>(i.cartKey||i.id)!==cartKey); render(); }
 
 /* ═══════════════════════════════════════════════════
    22. CHECKOUT
@@ -2634,6 +2747,41 @@ function attachListeners() {
     if(isNaN(qty)||qty<0){showToast('Invalid quantity','error');return;}
     DB.updateProduct(pid,{quantity:qty});showToast('Stock updated','success');state.modalOpen=null;render();
   });
+  /* Product form — category change updates size options */
+  on('#prod-category-sel','change', e=>{
+    const cat=e.target.value;
+    const sizes=getSizesForCategory(cat);
+    document.querySelectorAll('#sizes-tbody .size-size-sel').forEach(sel=>{
+      const cur=sel.value;
+      sel.innerHTML=sizes.map(s=>`<option value="${s}"${s===cur?' selected':''}>${s}</option>`).join('');
+    });
+  });
+
+  /* Product form — add size row */
+  on('#add-size-row-btn','click', ()=>{
+    const cat=document.getElementById('prod-category-sel')?.value||'Men';
+    const sizes=getSizesForCategory(cat);
+    const tbody=document.getElementById('sizes-tbody'); if(!tbody) return;
+    const row=document.createElement('tr');row.className='size-row';
+    row.innerHTML=`<td><select class="form-control form-control-sm size-size-sel">
+      ${sizes.map(s=>`<option value="${s}">${s}</option>`).join('')}
+    </select></td>
+    <td><input type="number" class="form-control form-control-sm size-price-inp" min="0" placeholder="0"/></td>
+    <td><button type="button" class="btn-icon remove-size-row" style="width:28px;height:28px;font-size:0.8rem;">✕</button></td>`;
+    tbody.appendChild(row);
+    row.querySelector('.remove-size-row').addEventListener('click',()=>row.remove());
+  });
+
+  /* Product form — remove size row (delegated) */
+  document.addEventListener('click', e=>{
+    if(e.target.closest('.remove-size-row')){
+      const row=e.target.closest('.size-row');
+      const tbody=document.getElementById('sizes-tbody');
+      if(tbody&&tbody.querySelectorAll('.size-row').length>1) row?.remove();
+      else showToast('At least one size is required','error');
+    }
+  },{capture:false});
+
   on('#img-file-input','change', async e=>{
     const file=e.target.files[0]; if(!file) return;
     const compressed=await compressImage(file);
@@ -2645,8 +2793,27 @@ function attachListeners() {
   on('#save-product-btn','click', ()=>{
     const form=document.getElementById('product-form');if(!form) return;
     const fd=new FormData(form), imageData=document.getElementById('image-data-input')?.value||'';
-    const prod={name:fd.get('name')?.trim(),category:fd.get('category')?.trim(),size:fd.get('size'),color:fd.get('color')?.trim(),price:+fd.get('price'),quantity:+fd.get('quantity'),image:imageData};
-    if(!prod.name||!prod.category||!prod.size||!prod.color||isNaN(prod.price)){showToast('Fill all required fields','error');return;}
+    // Collect sizes from table
+    const sizesData=[];
+    document.querySelectorAll('#sizes-tbody .size-row').forEach(row=>{
+      const sz=row.querySelector('.size-size-sel')?.value;
+      const pr=+row.querySelector('.size-price-inp')?.value;
+      if(sz && !isNaN(pr) && pr>=0) sizesData.push({size:sz,price:pr});
+    });
+    if(sizesData.length===0){showToast('Add at least one size with a price','error');return;}
+    const prod={
+      name:fd.get('name')?.trim(),
+      category:fd.get('category')?.trim(),
+      material:fd.get('material')?.trim()||'',
+      description:fd.get('description')?.trim()||'',
+      color:fd.get('color')?.trim(),
+      quantity:+fd.get('quantity'),
+      sizes:sizesData,
+      // Keep legacy fields for backward compat
+      size:sizesData[0].size, price:sizesData[0].price,
+      image:imageData
+    };
+    if(!prod.name||!prod.category||!prod.color||isNaN(prod.quantity)){showToast('Fill all required fields','error');return;}
     if(state.editingId){DB.updateProduct(state.editingId,prod);showToast('Product updated','success');}
     else{prod.id=uid();prod.addedDate=Date.now();DB.addProduct(prod);DB.addCategory(prod.category);showToast('Product added','success');}
     state.modalOpen=null;state.editingId=null;render();
@@ -2721,13 +2888,19 @@ function attachListeners() {
   });
   on('#save-emp-btn','click', ()=>{
     const form=document.getElementById('emp-form');if(!form) return;
-    const fd=new FormData(form),gender=form.querySelector('input[name="gender"]:checked')?.value;
+    const fd=new FormData(form);
+    const gender=form.querySelector('input[name="gender"]:checked')?.value;
+    const empType=form.querySelector('input[name="employmentType"]:checked')?.value||'Full-Time';
     if(state.editingId){
       const existing=DB.getEmployees().find(e=>e.id===state.editingId);
       const newSalary=fd.get('salary')?+fd.get('salary'):undefined;
-      const data={name:fd.get('name')?.trim(),phone:fd.get('phone')?.trim(),gender,address:fd.get('address')?.trim()};
+      const joinDateVal=fd.get('joinDate');
+      const data={name:fd.get('name')?.trim(),phone:fd.get('phone')?.trim(),gender,address:fd.get('address')?.trim(),employmentType:empType};
       if(!data.name||!data.phone||!gender){showToast('Fill required fields','error');return;}
+      if(!joinDateVal){showToast('Join Date is required','error');return;}
+      data.joinDate=new Date(joinDateVal).getTime();
       if(newSalary!==undefined){
+        if(!newSalary||newSalary<=0){showToast('Enter a valid salary','error');return;}
         data.salary=newSalary;
         if(existing&&existing.salary!==newSalary){
           const hist=[...(existing.salaryHistory||[])];
@@ -2735,16 +2908,17 @@ function attachListeners() {
           data.salaryHistory=hist;
         }
       }
-      const joinDateVal=fd.get('joinDate');
-      if(joinDateVal) data.joinDate=new Date(joinDateVal).getTime();
       DB.updateEmployee(state.editingId,data);showToast('Employee updated','success');
     }else{
       if(DB.getEmployees().find(e=>e.username===fd.get('username'))){showToast('Username taken','error');return;}
-      const joinDate=fd.get('joinDate')?new Date(fd.get('joinDate')).getTime():Date.now();
+      const joinDateVal=fd.get('joinDate');
+      if(!joinDateVal){showToast('Join Date is required','error');return;}
       const salary=fd.get('salary')?+fd.get('salary'):0;
-      const salaryHistory=salary?[{date:joinDate,amount:salary,note:'Starting salary'}]:[];
+      if(!salary||salary<=0){showToast('Monthly Salary is required','error');return;}
+      const joinDate=new Date(joinDateVal).getTime();
+      const salaryHistory=[{date:joinDate,amount:salary,note:'Starting salary'}];
       const emp={id:uid(),name:fd.get('name')?.trim(),phone:fd.get('phone')?.trim(),gender,address:fd.get('address')?.trim(),
-        username:fd.get('username')?.trim(),password:fd.get('password'),
+        employmentType:empType,username:fd.get('username')?.trim(),password:fd.get('password'),
         salary,joinDate,salaryHistory,addedDate:Date.now()};
       if(!emp.name||!emp.phone||!emp.gender||!emp.username||!emp.password){showToast('Fill required fields','error');return;}
       DB.addEmployee(emp);showToast(`Employee ${emp.name} added. Username: ${emp.username}`,'success');
@@ -2754,10 +2928,27 @@ function attachListeners() {
 
   /* Product detail */
   onAll('[data-product-detail]','click', e=>{
-    if(e.target.closest('[data-add-cart]')) return;
-    state.viewingProductId=e.currentTarget.dataset.productDetail;state.modalOpen='product-detail';render();
+    state.viewingProductId=e.currentTarget.dataset.productDetail;state.modalOpen='product-detail';render();postRender();
   });
   on('#product-detail-overlay','click', e=>{if(e.target.id==='product-detail-overlay'){state.modalOpen=null;render();}});
+
+  /* Detail modal — size btn selection + price update */
+  onAll('.detail-size-btn','click', e=>{
+    document.querySelectorAll('.detail-size-btn').forEach(b=>b.classList.remove('active'));
+    e.currentTarget.classList.add('active');
+    const sz=e.currentTarget.dataset.sz, pr=+e.currentTarget.dataset.price;
+    const priceEl=document.getElementById('detail-price-display');
+    if(priceEl) priceEl.textContent='₹'+pr.toLocaleString('en-IN');
+    const addBtn=document.getElementById('detail-add-cart-btn');
+    if(addBtn){addBtn.dataset.sz=sz;addBtn.dataset.price=pr;}
+  });
+
+  /* Detail modal — add to cart */
+  on('#detail-add-cart-btn','click', e=>{
+    const pid=e.currentTarget.dataset.pid, sz=e.currentTarget.dataset.sz, pr=+e.currentTarget.dataset.price;
+    if(!sz){showToast('Please select a size','error');return;}
+    addToCart(pid,sz,pr);
+  });
 
   /* Cart */
   onAll('[data-add-cart]','click', e=>{e.stopPropagation();addToCart(e.currentTarget.dataset.addCart);});

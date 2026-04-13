@@ -1779,3 +1779,88 @@ tbody tr:hover td { background: var(--cream); }
   text-align: center;
   padding: 60px 20px;
 }
+
+/* ── Size + Price Table (Product Form) ───────────── */
+.size-price-wrap {
+  background: var(--cream-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+.size-price-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+.size-price-table thead th {
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-light);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 8px 8px 4px;
+  border-bottom: 1px solid var(--border-light);
+}
+.size-price-table tbody td {
+  padding: 6px 4px;
+}
+.size-price-table .form-control-sm {
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  height: 34px;
+}
+.size-tag-sm {
+  font-size: 0.72rem !important;
+  padding: 2px 7px !important;
+  border-radius: 8px !important;
+}
+
+/* ── Detail Modal Size Buttons ───────────────────── */
+.detail-size-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 14px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--cream-2);
+  color: var(--text-dark);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s;
+  min-width: 60px;
+}
+.detail-size-btn:hover:not(:disabled) {
+  border-color: var(--gold);
+  background: var(--gold-lighter);
+}
+.detail-size-btn.active {
+  border-color: var(--gold-dark);
+  background: var(--gold);
+  color: #fff;
+}
+.detail-size-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.size-price-tag {
+  font-size: 0.68rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+.detail-size-btn.active .size-price-tag { color: rgba(255,255,255,0.9); }
+
+/* ── Employment Type badge in employee table ─────── */
+.emp-type-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--gold-lighter);
+  color: var(--gold-dark);
+  border: 1px solid var(--gold-light);
+}

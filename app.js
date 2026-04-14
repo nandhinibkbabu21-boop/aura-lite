@@ -152,7 +152,7 @@ let state = {
   modalOpen: null, editingId: null, loginRole: null,
   viewingProductId: null, viewingOrderId: null, stockProductId: null,
   analyticsPeriod: 'monthly', salaryEmpId: null,
-  selectedColorIdx: 0, selectedSizeIdx: 0, activeSubFilter: 'all', productCategoryTab: 'all',
+  selectedColorIdx: 0, selectedSizeIdx: 0, activeSubFilter: 'all', productCategoryTab: 'all', openCategoryAccordion: null,
   fpStep: 1, fpVerifiedUser: null, fpOtp: null, fpOtpExpiry: null, fpFoundUser: null,
 };
 
@@ -1183,18 +1183,64 @@ function renderStockModal(pid) {
 }
 
 function renderAdminCategories() {
-  const cats=DB.getCategories(), prods=DB.getProducts();
+  const prods = DB.getProducts();
+  const catIcons = { 'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼' };
+  const openCat = state.openCategoryAccordion || null;
+
+  const sections = PRODUCT_CATEGORIES.map(cat => {
+    const catProds = prods.filter(p => p.category === cat);
+    const subCatList = SUBCATEGORIES[cat] || [];
+    const isOpen = openCat === cat;
+    const totalCount = catProds.length;
+
+    // Build subcategory rows with counts
+    const subRows = subCatList.map(sub => {
+      const subProds = catProds.filter(p => p.subcategory === sub);
+      const cnt = subProds.length;
+      return `<div class="cat-sub-row">
+        <span class="cat-sub-name">${esc(sub)}</span>
+        <span class="cat-sub-count ${cnt===0?'empty':''}">${cnt} product${cnt!==1?'s':''}</span>
+      </div>`;
+    }).join('');
+
+    // Products not assigned to any known subcategory
+    const knownSubs = new Set(subCatList);
+    const otherProds = catProds.filter(p => !knownSubs.has(p.subcategory));
+    const otherRow = otherProds.length ? `<div class="cat-sub-row">
+      <span class="cat-sub-name" style="color:var(--text-light);font-style:italic;">Other / Unassigned</span>
+      <span class="cat-sub-count">${otherProds.length} product${otherProds.length!==1?'s':''}</span>
+    </div>` : '';
+
+    return `<div class="cat-accordion ${isOpen?'open':''}" data-cat-accordion="${esc(cat)}">
+      <div class="cat-accordion-header" data-toggle-cat="${esc(cat)}">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <span style="font-size:2rem;">${catIcons[cat]||'👕'}</span>
+          <div>
+            <div class="cat-accordion-title">${esc(cat)}</div>
+            <div class="cat-accordion-meta">${subCatList.length} subcategories · ${totalCount} product${totalCount!==1?'s':''}</div>
+          </div>
+        </div>
+        <span class="cat-accordion-arrow">${isOpen?'▲':'▼'}</span>
+      </div>
+      ${isOpen ? `<div class="cat-accordion-body">
+        ${subRows}
+        ${otherRow}
+        ${totalCount===0 ? `<div style="padding:16px;text-align:center;color:var(--text-light);font-size:0.84rem;">No products added under ${cat} yet.</div>` : ''}
+      </div>` : ''}
+    </div>`;
+  }).join('');
+
   return `<div class="animate-fadeIn">
-    <div class="dash-page-title">Categories</div><div class="dash-page-subtitle">Organise your product catalogue</div>
-    <div class="dash-toolbar"><form id="add-category-form" style="display:flex;gap:12px;flex:1;">
-      <input type="text" class="form-control" name="catName" placeholder="New category name…" style="flex:1;" required/>
-      <button type="submit" class="btn btn-gold">+ Add</button></form></div>
-    ${cats.length===0?`<div class="empty-state"><div class="empty-state-icon">◻</div><div class="empty-state-title">No categories yet</div></div>`:
-    `<div class="grid-3">${cats.map(cat=>{const cnt=prods.filter(p=>p.category===cat).length;
-      return `<div class="card card-gold" style="display:flex;align-items:center;justify-content:space-between;">
-        <div><div style="font-family:var(--font-serif);font-size:1.1rem;font-weight:600;">${esc(cat)}</div>
-          <div style="font-size:0.75rem;color:var(--text-light);margin-top:3px;">${cnt} product${cnt!==1?'s':''}</div></div>
-        <button class="btn-icon" data-delete-cat="${esc(cat)}">✕</button></div>`;}).join('')}</div>`}
+    <div class="dash-page-title">Categories</div>
+    <div class="dash-page-subtitle">Product catalogue organised by gender & type</div>
+
+    <div class="alert-banner" style="background:var(--gold-lighter);border-color:var(--gold-light);color:var(--text-medium);margin-bottom:24px;">
+      📌 Categories are fixed (Men / Women / Kids / Newborn). Subcategories are set automatically when adding products.
+    </div>
+
+    <div class="cat-accordion-wrap">
+      ${sections}
+    </div>
   </div>`;
 }
 
@@ -3313,6 +3359,12 @@ function attachListeners() {
   onAll('[data-delete-cat]','click', e=>{
     const cat=e.currentTarget.dataset.deleteCat;
     if(confirm(`Delete category "${cat}"?`)){DB.deleteCategory(cat);showToast('Category deleted','info');render();}
+  });
+  /* Category accordion toggle */
+  onAll('[data-toggle-cat]','click', e=>{
+    const cat=e.currentTarget.dataset.toggleCat;
+    state.openCategoryAccordion=(state.openCategoryAccordion===cat?null:cat);
+    render();
   });
 
   /* Employees */

@@ -2220,3 +2220,90 @@ tbody tr:hover td { background: var(--cream); }
   color: var(--text-xlight);
   background: var(--cream-3);
 }
+
+/* ── Main Category Tiles (Customer All View) ─────── */
+.main-cat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  padding: 8px 0 24px;
+}
+@media (max-width: 700px) {
+  .main-cat-grid { grid-template-columns: repeat(2, 1fr); }
+}
+.main-cat-tile {
+  background: var(--cream-2);
+  border: 2px solid var(--border-light);
+  border-radius: 18px;
+  padding: 28px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.22s;
+  position: relative;
+  overflow: hidden;
+}
+.main-cat-tile:hover {
+  border-color: var(--gold);
+  background: var(--gold-lighter);
+  transform: translateY(-4px);
+  box-shadow: 0 10px 30px var(--shadow-gold);
+}
+.main-cat-tile-icon { font-size: 3rem; margin-bottom: 10px; }
+.main-cat-tile-name {
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 6px;
+}
+.main-cat-tile-sub {
+  font-size: 0.72rem;
+  color: var(--text-light);
+  margin-bottom: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.main-cat-tile-count {
+  display: inline-block;
+  background: var(--gold);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
+/* ── Subcategory Tiles (Category View) ───────────── */
+.subcat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  padding: 8px 0 24px;
+}
+.subcat-tile {
+  background: var(--white);
+  border: 1.5px solid var(--border-light);
+  border-radius: 14px;
+  padding: 20px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.subcat-tile:hover {
+  border-color: var(--gold-light);
+  background: var(--gold-lighter);
+  transform: translateY(-3px);
+  box-shadow: 0 6px 18px var(--shadow-gold);
+}
+.subcat-tile-icon { font-size: 2rem; margin-bottom: 8px; }
+.subcat-tile-name {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 4px;
+}
+.subcat-tile-count {
+  font-size: 0.7rem;
+  color: var(--text-light);
+}

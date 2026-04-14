@@ -1737,61 +1737,98 @@ function renderCustomerShop() {
           ${c.id!=='all'?`<span class="cat-nav-count">${prods.filter(p=>p.category===c.id).length}</span>`:''}
         </button>`).join('')}
     </div>
-    ${af!=='all'?(()=>{
-      const subCats=[...new Set(prods.filter(p=>p.category===af&&p.subcategory).map(p=>p.subcategory))];
-      return subCats.length?`<div class="subcategory-filter-bar">
-        <button class="subcat-btn${asf==='all'?' active':''}" data-subfilter="all">All ${af}</button>
-        ${subCats.map(sc=>`<button class="subcat-btn${asf===sc?' active':''}" data-subfilter="${esc(sc)}">${esc(sc)}</button>`).join('')}
-      </div>`:'';
-    })():''}
-    ${af==='all'
-      ? `${recs.length?`<div class="shop-section" style="background:var(--cream);border-bottom:1px solid var(--border-light);">
+    ${(()=>{
+      const catIcons={'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼'};
+
+      /* ── ALL view: show 4 big category tiles ── */
+      if(af==='all') {
+        const recSection=recs.length?`<div class="shop-section" style="background:var(--cream);border-bottom:1px solid var(--border-light);">
           <div class="shop-section-header"><div>
             <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:4px;">✨ Curated For You</div>
-            <div class="shop-section-title">Recommended</div>
-          </div><div class="shop-section-line"></div></div>
-          <div class="shop-grid">${recs.map(renderShopCard).join('')}</div>
-        </div>`:''}
-        ${PRODUCT_CATEGORIES.map(cat=>{
-          const catProds=prods.filter(p=>p.category===cat);
-          if(!catProds.length) return '';
-          const icons={'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼'};
-          return `<div class="shop-section">
-            <div class="shop-section-header">
-              <div style="display:flex;align-items:center;gap:10px;">
-                <span style="font-size:1.6rem;">${icons[cat]||'👕'}</span>
-                <div>
-                  <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-light);font-weight:600;margin-bottom:2px;">Collection</div>
-                  <div class="shop-section-title">${cat}</div>
-                </div>
-              </div>
-              <div class="shop-section-line"></div>
-              <button class="btn btn-ghost btn-sm" data-filter="${cat}" style="white-space:nowrap;">View All ${catProds.length} →</button>
-            </div>
-            <div class="shop-grid">${catProds.slice(0,6).map(renderShopCard).join('')}</div>
-          </div>`;
-        }).join('')}`
-      : `${recs.length?`<div class="shop-section" style="background:var(--cream);border-bottom:1px solid var(--border-light);">
+            <div class="shop-section-title">Recommended</div></div><div class="shop-section-line"></div></div>
+          <div class="shop-grid">${recs.map(renderShopCard).join('')}</div></div>`:'';
+
+        const catGrid=`<div class="shop-section">
           <div class="shop-section-header"><div>
-            <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:4px;">✨ Recommended for You</div>
-            <div class="shop-section-title">${asf!=='all'?asf:af} — Best Picks</div>
-          </div><div class="shop-section-line"></div></div>
+            <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-light);font-weight:600;margin-bottom:4px;">Browse by Category</div>
+            <div class="shop-section-title">Shop Collections</div></div><div class="shop-section-line"></div></div>
+          <div class="main-cat-grid">
+            ${PRODUCT_CATEGORIES.map(cat=>{
+              const cnt=prods.filter(p=>p.category===cat).length;
+              const subcats=[...new Set(prods.filter(p=>p.category===cat&&p.subcategory).map(p=>p.subcategory))].slice(0,3);
+              return `<div class="main-cat-tile" data-filter="${cat}">
+                <div class="main-cat-tile-icon">${catIcons[cat]||'👕'}</div>
+                <div class="main-cat-tile-name">${cat}</div>
+                <div class="main-cat-tile-sub">${subcats.length?subcats.join(' · '):'Fashion Collection'}</div>
+                <div class="main-cat-tile-count">${cnt} item${cnt!==1?'s':''}</div>
+              </div>`;
+            }).join('')}
+          </div></div>`;
+        return recSection+catGrid;
+      }
+
+      /* ── CATEGORY selected, NO subcategory: show subcategory grid ── */
+      if(af!=='all' && asf==='all') {
+        // Get subcategories from SUBCATEGORIES constant + any custom ones from products
+        const predefinedSubs = SUBCATEGORIES[af]||[];
+        const productSubs    = [...new Set(prods.filter(p=>p.category===af&&p.subcategory).map(p=>p.subcategory))];
+        const allSubs        = [...new Set([...predefinedSubs,...productSubs])];
+        const allCatProds    = prods.filter(p=>p.category===af);
+
+        return `<div class="shop-section">
+          <div class="shop-section-header">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <button class="btn btn-ghost btn-sm" data-filter="all" style="margin-right:4px;">← Back</button>
+              <span style="font-size:1.4rem;">${catIcons[af]||'👕'}</span>
+              <div>
+                <div style="font-size:0.7rem;text-transform:uppercase;color:var(--text-light);font-weight:600;">Choose Category</div>
+                <div class="shop-section-title">${af} — ${allCatProds.length} item${allCatProds.length!==1?'s':''}</div>
+              </div>
+            </div><div class="shop-section-line"></div>
+            <button class="btn btn-outline btn-sm" data-subfilter="all" data-show-all="${af}" style="white-space:nowrap;">View All →</button>
+          </div>
+          <div class="subcat-grid">
+            ${allSubs.map(sub=>{
+              const cnt=allCatProds.filter(p=>p.subcategory===sub).length;
+              return `<div class="subcat-tile" data-subfilter="${esc(sub)}">
+                <div class="subcat-tile-icon">👕</div>
+                <div class="subcat-tile-name">${esc(sub)}</div>
+                <div class="subcat-tile-count">${cnt} item${cnt!==1?'s':''}</div>
+              </div>`;
+            }).join('')}
+            ${allSubs.length===0?`<div style="grid-column:1/-1;padding:32px;text-align:center;color:var(--text-light);">No subcategories yet — products will appear here as they are added.</div>`:''}
+          </div>
+        </div>
+        ${recs.length?`<div class="shop-section" style="background:var(--cream);">
+          <div class="shop-section-header"><div>
+            <div style="font-size:0.7rem;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:4px;">✨ Recommended for You</div>
+            <div class="shop-section-title">${af} — Best Picks</div></div><div class="shop-section-line"></div></div>
+          <div class="shop-grid">${recs.map(renderShopCard).join('')}</div></div>`:''}`;
+      }
+
+      /* ── SUBCATEGORY selected: show products ── */
+      return `<div class="shop-section">
+        <div class="shop-section-header">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button class="btn btn-ghost btn-sm" data-subfilter="all" style="white-space:nowrap;">← ${af}</button>
+            <div>
+              <div style="font-size:0.7rem;text-transform:uppercase;color:var(--text-light);font-weight:600;">${af}</div>
+              <div class="shop-section-title">${asf}</div>
+            </div>
+          </div><div class="shop-section-line"></div>
+          <span style="font-size:0.82rem;color:var(--text-light);">${available.length+recs.length} item${available.length+recs.length!==1?'s':''}</span>
+        </div>
+        ${recs.length?`<div style="margin-bottom:8px;">
+          <div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;padding:0 4px 10px;">✨ Recommended for You</div>
           <div class="shop-grid">${recs.map(renderShopCard).join('')}</div>
         </div>`:''}
-        <div class="shop-section">
-          <div class="shop-section-header"><div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:1.4rem;">${{'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼'}[af]||'👕'}</span>
-            <div>
-              <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-light);font-weight:600;margin-bottom:2px;">${asf!=='all'?asf:af}</div>
-              <div class="shop-section-title">${available.length} Available</div>
-            </div>
-          </div><div class="shop-section-line"></div></div>
-          ${available.length===0&&recs.length===0
-            ?`<div class="empty-state"><div class="empty-state-icon">✦</div><div class="empty-state-title">No products found</div></div>`
-            :available.length===0?`<p class="text-muted" style="padding:24px;text-align:center;">All products in this section are in your Recommended list above! ✨</p>`
-            :`<div class="shop-grid">${available.map(renderShopCard).join('')}</div>`}
-        </div>`
-    }
+        ${available.length>0?`<div>
+          ${recs.length?`<div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-light);font-weight:600;padding:0 4px 10px;">All Products</div>`:''}
+          <div class="shop-grid">${available.map(renderShopCard).join('')}</div>
+        </div>`:''}
+        ${available.length===0&&recs.length===0?`<div class="empty-state"><div class="empty-state-icon">✦</div><div class="empty-state-title">No products in ${asf} yet</div></div>`:''}
+      </div>`;
+    })()}
     ${state.modalOpen==='product-detail'?renderProductDetailModal(state.viewingProductId):''}
     <!-- Floating Feedback Button -->
     <div class="feedback-float-btn" id="float-feedback-btn" title="Share your experience">
@@ -2920,20 +2957,20 @@ function attachListeners() {
     const list=document.getElementById('sms-customer-list');
     if(list) list.style.display=e.target.value==='specific'?'block':'none';
   });
-  on('#wa-offer-send-btn','click', ()=>{
-    const msg=(document.getElementById('wa-offer-msg')?.value||'').trim();
+  /* Send Offers via WhatsApp — matches renderAdminSms() IDs */
+  on('#sms-offer-btn','click', ()=>{
+    const msg=(document.getElementById('sms-offer-msg')?.value||'').trim();
     if(!msg){showToast('Please enter a message','error');return;}
-    const targetAll=document.querySelector('input[name="wa-target"]:checked')?.value==='all';
+    const targetAll=document.querySelector('input[name="sms-target"]:checked')?.value==='all';
     let customers=[];
     if(targetAll){
       customers=DB.getCustomers().filter(c=>c.whatsapp);
     } else {
-      const checked=[...document.querySelectorAll('.wa-cust-check:checked')].map(cb=>cb.value);
+      const checked=[...document.querySelectorAll('.sms-cust-check:checked')].map(cb=>cb.value);
       customers=DB.getCustomers().filter(c=>c.whatsapp&&checked.includes(c.whatsapp));
     }
     if(!customers.length){showToast('No customers with WhatsApp numbers found','error');return;}
 
-    // Build send queue — one WhatsApp link per customer
     const queueWrap=document.getElementById('wa-send-queue');
     if(queueWrap){
       queueWrap.style.display='block';
@@ -2942,32 +2979,35 @@ function attachListeners() {
       const summary=document.getElementById('wa-queue-summary');
       let sentCount=0;
       if(queueEl) queueEl.innerHTML=customers.map((c,i)=>{
-        const waUrl=`https://wa.me/91${c.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`;
-        return `<div class="wa-queue-row" id="wa-row-${i}" style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-light);">
-          <div style="flex:1;">
-            <div style="font-weight:600;font-size:0.88rem;">${esc(c.name)}</div>
-            <div style="font-size:0.76rem;color:var(--text-light);">📱 ${esc(c.whatsapp)}</div>
+        const phone=c.whatsapp.replace(/\D/g,'');
+        const waUrl=`https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
+        return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border-light);">
+          <div style="width:38px;height:38px;border-radius:50%;background:var(--gold-lighter);display:flex;align-items:center;justify-content:center;font-size:1.1rem;">
+            ${c.gender==='Female'?'👩':'👨'}
           </div>
-          <a href="${waUrl}" target="_blank" class="btn btn-gold btn-sm wa-send-link" data-idx="${i}" style="text-decoration:none;white-space:nowrap;">
-            💬 Open WhatsApp
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:0.9rem;">${esc(c.name)}</div>
+            <div style="font-size:0.76rem;color:var(--text-light);">📱 +91 ${esc(c.whatsapp)}</div>
+          </div>
+          <a href="${waUrl}" target="_blank" class="btn btn-gold btn-sm wa-send-link" data-idx="${i}" style="text-decoration:none;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;">
+            <span>💬</span> Send
           </a>
-          <span id="wa-sent-${i}" style="display:none;font-size:0.76rem;font-weight:700;color:#2E7D32;">✅ Sent</span>
+          <span id="wa-sent-${i}" style="display:none;font-size:0.8rem;font-weight:700;color:#2E7D32;">✅ Sent</span>
         </div>`;
       }).join('');
-      if(summary) summary.innerHTML=`<strong>${customers.length}</strong> customer${customers.length!==1?'s':''} — Click each button to open WhatsApp. Message is pre-filled.`;
-      // Mark sent when link clicked
+      if(summary) summary.innerHTML=`<strong>${customers.length}</strong> customer${customers.length!==1?'s':''} — Click 💬 Send for each to open WhatsApp with message pre-filled.`;
       document.querySelectorAll('.wa-send-link').forEach(link=>{
         link.addEventListener('click', ()=>{
           const idx=link.dataset.idx;
-          const badge=document.getElementById(`wa-sent-${idx}`);
-          if(badge) badge.style.display='inline';
-          link.textContent='✓ Opened'; link.style.opacity='0.6';
+          document.getElementById(`wa-sent-${idx}`)?.style.setProperty('display','inline');
+          link.innerHTML='✓ Done'; link.style.opacity='0.5'; link.style.pointerEvents='none';
           sentCount++;
-          if(summary) summary.innerHTML=`✅ <strong>${sentCount}</strong> of <strong>${customers.length}</strong> opened via WhatsApp.`;
+          if(summary) summary.innerHTML=`✅ <strong>${sentCount}</strong> of <strong>${customers.length}</strong> sent via WhatsApp.`;
+          if(sentCount===customers.length) showToast('All messages sent! ✅','success');
         });
       });
     }
-    showToast(`WhatsApp ready for ${customers.length} customer${customers.length!==1?'s':''}!`,'success');
+    showToast(`WhatsApp opened for ${customers.length} customer${customers.length!==1?'s':''}!`,'success');
   });
 
   /* ── Image Lightbox ── */
@@ -3189,6 +3229,16 @@ function attachListeners() {
   /* Category filter */
   onAll('.filter-chip','click', e=>{state.activeFilter=e.currentTarget.dataset.filter;state.activeSubFilter='all';render();});
   onAll('.cat-nav-btn','click', e=>{state.activeFilter=e.currentTarget.dataset.filter;state.activeSubFilter='all';render();postRender();});
+  /* Main category tile click (All view → category) */
+  onAll('.main-cat-tile','click', e=>{
+    const cat=e.currentTarget.dataset.filter;
+    state.activeFilter=cat; state.activeSubFilter='all'; render(); postRender();
+    document.querySelector('.category-nav-bar')?.scrollIntoView({behavior:'smooth',block:'nearest'});
+  });
+  /* Subcategory tile click */
+  onAll('.subcat-tile','click', e=>{
+    state.activeSubFilter=e.currentTarget.dataset.subfilter; render(); postRender();
+  });
   onAll('[data-subfilter]','click', e=>{state.activeSubFilter=e.currentTarget.dataset.subfilter;render();postRender();});
 
   /* Product category tabs (Admin & Employee) */

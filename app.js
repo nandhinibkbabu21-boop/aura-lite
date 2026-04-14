@@ -2055,10 +2055,6 @@ function renderAdminSms() {
     <p class="text-muted" style="margin-top:4px;">Send promotional SMS directly to your customers via Twilio</p>
   </div>
 
-  ${!hasBackend?`<div class="alert-banner alert-warning" style="margin-bottom:20px;">
-    ⚠️ Backend not configured — SMS sending is disabled. Set up your backend server and add <code>backendConfig</code> to enable real SMS.
-  </div>`:''}
-
   <div class="grid-3" style="margin-bottom:24px;max-width:640px;">
     <div class="stat-card">
       <div class="stat-value">${customers.length}</div>
@@ -2069,13 +2065,17 @@ function renderAdminSms() {
       <div class="stat-label">With Phone</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value" style="color:${hasBackend?'#2E7D32':'#C62828'}">${hasBackend?'Active':'Inactive'}</div>
-      <div class="stat-label">SMS Service</div>
+      <div class="stat-value" style="color:${hasBackend?'#2E7D32':'#f59e0b'}">${hasBackend?'Twilio SMS':'WhatsApp'}</div>
+      <div class="stat-label">Send Method</div>
     </div>
   </div>
 
+  ${!hasBackend?`<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:var(--radius-md);padding:12px 16px;margin-bottom:20px;font-size:0.84rem;color:#7B6200;">
+    💬 Sending via <strong>WhatsApp</strong> — messages will open pre-filled for each customer. To switch to auto SMS, configure your Twilio backend.
+  </div>`:''}
+
   <div class="card" style="padding:28px;max-width:680px;">
-    <h3 style="font-family:var(--font-serif);margin-bottom:20px;">Compose &amp; Send SMS</h3>
+    <h3 style="font-family:var(--font-serif);margin-bottom:20px;">Compose &amp; Send ${hasBackend?'SMS':'WhatsApp Message'}</h3>
 
     <div class="form-group" style="margin-bottom:18px;">
       <label class="form-label">Send To <span class="required">*</span></label>
@@ -2103,32 +2103,40 @@ function renderAdminSms() {
         placeholder="e.g. 🎉 Big Sale at ${esc(shop?.name||'our store')}! Up to 50% off. Visit us today!"
         rows="4" maxlength="320" style="resize:vertical;"></textarea>
       <div style="display:flex;justify-content:space-between;margin-top:6px;">
-        <small class="form-hint">Max 320 characters per SMS</small>
+        <small class="form-hint">Max 320 characters</small>
         <small class="form-hint" id="sms-char-count">0 / 320</small>
       </div>
     </div>
 
     <div style="background:var(--cream-2);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:18px;">
-      <div style="font-size:0.76rem;color:var(--text-medium);font-weight:700;margin-bottom:6px;">📱 SMS Preview</div>
+      <div style="font-size:0.76rem;color:var(--text-medium);font-weight:700;margin-bottom:6px;">📱 Preview</div>
       <div id="sms-preview" style="font-size:0.88rem;color:var(--text-light);white-space:pre-wrap;min-height:36px;line-height:1.6;">Your message will appear here…</div>
     </div>
 
-    <button class="btn btn-gold btn-lg" id="sms-offer-btn" ${!hasBackend||customers.length===0?'disabled':''}>
-      📤 &nbsp; Send SMS to Customers
+    <button class="btn btn-gold btn-lg" id="sms-offer-btn" ${customers.length===0?'disabled':''}>
+      ${hasBackend?'📤':'💬'} &nbsp; ${hasBackend?'Send SMS to Customers':'Send via WhatsApp'}
     </button>
-    ${!hasBackend?`<p class="form-hint" style="margin-top:8px;">Configure backend URL to enable sending.</p>`:
-      customers.length===0?`<p class="form-hint" style="margin-top:8px;">No customers registered yet.</p>`:''}
+    ${customers.length===0?`<p class="form-hint" style="margin-top:8px;">No customers registered yet.</p>`:''}
 
     <div id="sms-result" style="margin-top:16px;display:none;"></div>
   </div>
 
-  <!-- SMS Delivery Logs -->
-  <div style="margin-top:32px;max-width:680px;">
-    <h3 style="font-family:var(--font-serif);margin-bottom:14px;">📋 SMS Delivery Logs</h3>
-    <div id="sms-logs-list">
-      <div class="text-muted" style="padding:20px 0;text-align:center;font-size:0.85rem;">Loading logs…</div>
+  <!-- WhatsApp Send Queue (shown when backend not configured) -->
+  <div id="wa-send-queue" style="display:none;margin-top:24px;max-width:680px;">
+    <div class="card" style="padding:24px;">
+      <h4 style="font-family:var(--font-serif);margin-bottom:6px;">💬 WhatsApp Send Queue</h4>
+      <p class="text-muted" style="margin-bottom:16px;font-size:0.84rem;">Click each button to open WhatsApp with your message pre-filled, then press Send inside WhatsApp.</p>
+      <div id="wa-queue-list"></div>
+      <div id="wa-queue-summary" style="margin-top:14px;font-size:0.84rem;font-weight:600;color:var(--text-medium);"></div>
     </div>
-  </div>`;
+  </div>
+
+  <!-- SMS Delivery Logs (shown when backend configured) -->
+  ${hasBackend?`<div style="margin-top:32px;max-width:680px;">
+    <h3 style="font-family:var(--font-serif);margin-bottom:14px;">📋 SMS Delivery Logs</h3>
+    <div id="sms-logs-list"><div class="text-muted" style="padding:20px 0;text-align:center;font-size:0.85rem;">Loading logs…</div></div>
+  </div>`:''}
+`;
 }
 
 /* ═══════════════════════════════════════════════════
@@ -2656,39 +2664,80 @@ function attachListeners() {
     const list=document.getElementById('sms-customer-list');
     if(list) list.style.display=e.target.value==='specific'?'block':'none';
   });
-  // Send SMS via backend
+  // Send offers — via Twilio SMS (backend) or WhatsApp fallback
   on('#sms-offer-btn','click', async ()=>{
     const msg=(document.getElementById('sms-offer-msg')?.value||'').trim();
     if(!msg){showToast('Please enter a message','error');return;}
-    const btn=document.getElementById('sms-offer-btn');
-    const resultEl=document.getElementById('sms-result');
     const targetAll=document.querySelector('input[name="sms-target"]:checked')?.value==='all';
-    let phones=[];
-    if(!targetAll){
-      document.querySelectorAll('.sms-cust-check:checked').forEach(cb=>{if(cb.value) phones.push(cb.value);});
-      if(!phones.length){showToast('Select at least one customer','error');return;}
+    let recipients=[];
+    if(targetAll){
+      recipients=DB.getCustomers().filter(c=>c.whatsapp).map(c=>({name:c.name,phone:c.whatsapp}));
+    } else {
+      document.querySelectorAll('.sms-cust-check:checked').forEach(cb=>{
+        if(cb.value) recipients.push({name:cb.dataset.name||'Customer',phone:cb.value});
+      });
+      if(!recipients.length){showToast('Select at least one customer','error');return;}
     }
-    if(btn){btn.disabled=true;btn.textContent='Sending…';}
-    const shopId=DB.getShopId();
-    try {
-      const payload={shopId,message:msg};
-      if(!targetAll&&phones.length) payload.phones=phones;
-      const r=await apiPost('/api/sms/send-offer',payload,true);
-      if(btn){btn.disabled=false;btn.textContent='📤  Send SMS to Customers';}
-      if(resultEl){
-        resultEl.style.display='block';
-        if(r.success){
-          resultEl.innerHTML=`<div class="alert-banner alert-success">✅ Sent <strong>${r.sent}</strong> SMS${r.sent!==1?'s':''}. ${r.failed?`Failed: ${r.failed}.`:''}</div>`;
-          showToast(`SMS sent to ${r.sent} customers!`,'success');
-          loadSmsLogs();
-        } else {
-          resultEl.innerHTML=`<div class="alert-banner alert-error">❌ ${r.error||'Failed to send.'}</div>`;
-          showToast(r.error||'SMS sending failed.','error');
+    if(!recipients.length){showToast('No customers with phone numbers found','error');return;}
+
+    if(BACKEND_URL){
+      /* ── Twilio SMS via backend ── */
+      const btn=document.getElementById('sms-offer-btn');
+      const resultEl=document.getElementById('sms-result');
+      if(btn){btn.disabled=true;btn.textContent='Sending…';}
+      const shopId=DB.getShopId();
+      try{
+        const payload={shopId,message:msg};
+        if(!targetAll) payload.phones=recipients.map(r=>r.phone);
+        const r=await apiPost('/api/sms/send-offer',payload,true);
+        if(btn){btn.disabled=false;btn.textContent='📤  Send SMS to Customers';}
+        if(resultEl){
+          resultEl.style.display='block';
+          if(r.success){
+            resultEl.innerHTML=`<div class="alert-banner alert-success">✅ Sent <strong>${r.sent}</strong> SMS${r.sent!==1?'s':''}. ${r.failed?`Failed: ${r.failed}.`:''}</div>`;
+            showToast(`SMS sent to ${r.sent} customers!`,'success');
+            loadSmsLogs();
+          } else {
+            resultEl.innerHTML=`<div class="alert-banner alert-error">❌ ${r.error||'Failed to send.'}</div>`;
+          }
         }
+      }catch(err){
+        if(btn){btn.disabled=false;btn.textContent='📤  Send SMS to Customers';}
+        showToast('Network error. Check backend connection.','error');
       }
-    } catch(err){
-      if(btn){btn.disabled=false;btn.textContent='📤  Send SMS to Customers';}
-      showToast('Network error. Check backend connection.','error');
+    } else {
+      /* ── WhatsApp fallback (no backend configured) ── */
+      const queueWrap=document.getElementById('wa-send-queue');
+      const queueEl=document.getElementById('wa-queue-list');
+      const summary=document.getElementById('wa-queue-summary');
+      if(!queueEl||!queueWrap) return;
+      queueWrap.style.display='block';
+      queueWrap.scrollIntoView({behavior:'smooth',block:'nearest'});
+      let sentCount=0;
+      queueEl.innerHTML=recipients.map((r,i)=>{
+        const waUrl=`https://wa.me/91${r.phone}?text=${encodeURIComponent(msg)}`;
+        return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-light);">
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:0.88rem;">${esc(r.name)}</div>
+            <div style="font-size:0.76rem;color:var(--text-light);">📱 +91 ${esc(r.phone)}</div>
+          </div>
+          <a href="${waUrl}" target="_blank" class="btn btn-gold btn-sm wa-send-link" data-idx="${i}" style="text-decoration:none;white-space:nowrap;">
+            💬 Send
+          </a>
+          <span id="wa-badge-${i}" style="display:none;font-size:0.76rem;font-weight:700;color:#2E7D32;white-space:nowrap;">✅ Sent</span>
+        </div>`;
+      }).join('');
+      if(summary) summary.textContent=`${recipients.length} customer${recipients.length!==1?'s':''} — click each Send button to open WhatsApp.`;
+      document.querySelectorAll('.wa-send-link').forEach(link=>{
+        link.addEventListener('click',()=>{
+          const idx=link.dataset.idx;
+          const badge=document.getElementById(`wa-badge-${idx}`);
+          if(badge) badge.style.display='inline';
+          link.textContent='✓ Opened'; link.classList.replace('btn-gold','btn-ghost');
+          sentCount++;
+          if(summary) summary.textContent=`${sentCount} of ${recipients.length} sent via WhatsApp.`;
+        });
+      });
     }
   });
 

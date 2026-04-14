@@ -144,7 +144,7 @@ let state = {
   modalOpen: null, editingId: null, loginRole: null,
   viewingProductId: null, viewingOrderId: null, stockProductId: null,
   analyticsPeriod: 'monthly', salaryEmpId: null,
-  selectedColorIdx: 0, selectedSizeIdx: 0, activeSubFilter: 'all',
+  selectedColorIdx: 0, selectedSizeIdx: 0, activeSubFilter: 'all', productCategoryTab: 'all',
   fpStep: 1, fpVerifiedUser: null, fpOtp: null, fpOtpExpiry: null, fpFoundUser: null,
 };
 
@@ -955,7 +955,14 @@ function statCard(icon,label,value,sub){
 
 function renderAdminProducts() {
   const q=state.searchQuery.toLowerCase();
-  const prods=DB.getProducts().filter(p=>!q||p.name.toLowerCase().includes(q)||p.category.toLowerCase().includes(q)||p.color.toLowerCase().includes(q));
+  const allProds=DB.getProducts();
+  const activeCat=state.productCategoryTab||'all';
+  const prods=allProds.filter(p=>{
+    const matchQ=!q||p.name.toLowerCase().includes(q)||p.category.toLowerCase().includes(q)||(p.color||'').toLowerCase().includes(q);
+    const matchCat=activeCat==='all'||p.category===activeCat;
+    return matchQ&&matchCat;
+  });
+  const catIcons={'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼'};
   return `<div class="animate-fadeIn">
     <div class="dash-page-title">Product Catalogue</div><div class="dash-page-subtitle">Manage your clothing inventory</div>
     <div class="dash-toolbar">
@@ -963,8 +970,21 @@ function renderAdminProducts() {
         <input type="text" placeholder="Search products…" id="product-search" value="${esc(state.searchQuery)}"/></div>
       <button class="btn btn-gold" id="add-product-btn">+ Add Product</button>
     </div>
-    ${prods.length===0?`<div class="empty-state"><div class="empty-state-icon">👗</div><div class="empty-state-title">No products found</div></div>`:
-      `<div class="grid-3">${prods.map(renderProductCard).join('')}</div>`}
+    <!-- Category Tabs -->
+    <div class="prod-cat-tabs">
+      <button class="prod-cat-tab${activeCat==='all'?' active':''}" data-prod-cat="all">
+        ✦ All <span class="prod-cat-count">${allProds.length}</span>
+      </button>
+      ${PRODUCT_CATEGORIES.map(c=>`<button class="prod-cat-tab${activeCat===c?' active':''}" data-prod-cat="${c}">
+        ${catIcons[c]||'👕'} ${c} <span class="prod-cat-count">${allProds.filter(p=>p.category===c).length}</span>
+      </button>`).join('')}
+    </div>
+    ${prods.length===0
+      ?`<div class="empty-state"><div class="empty-state-icon">${catIcons[activeCat]||'👗'}</div>
+          <div class="empty-state-title">No ${activeCat==='all'?'products':activeCat+' products'} found</div>
+          <button class="btn btn-gold" id="add-product-btn" style="margin-top:16px;">+ Add Product</button>
+        </div>`
+      :`<div class="grid-3">${prods.map(renderProductCard).join('')}</div>`}
     ${state.modalOpen==='product'?renderProductModal():''}
     ${state.modalOpen==='stock'?renderStockModal(state.stockProductId):''}
   </div>`;
@@ -1505,7 +1525,14 @@ function renderEmployeeDash() {
 }
 function renderEmpProducts() {
   const q=state.searchQuery.toLowerCase();
-  const prods=DB.getProducts().filter(p=>!q||p.name.toLowerCase().includes(q)||p.category.toLowerCase().includes(q));
+  const allProds=DB.getProducts();
+  const activeCat=state.productCategoryTab||'all';
+  const prods=allProds.filter(p=>{
+    const matchQ=!q||p.name.toLowerCase().includes(q)||p.category.toLowerCase().includes(q);
+    const matchCat=activeCat==='all'||p.category===activeCat;
+    return matchQ&&matchCat;
+  });
+  const catIcons={'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼'};
   return `<div class="animate-fadeIn">
     <div class="dash-page-title">Product Catalogue</div><div class="dash-page-subtitle">Manage clothing stock</div>
     <div class="dash-toolbar">
@@ -1513,8 +1540,21 @@ function renderEmpProducts() {
         <input type="text" placeholder="Search products…" id="product-search" value="${esc(state.searchQuery)}"/></div>
       <button class="btn btn-gold" id="add-product-btn">+ Add Product</button>
     </div>
-    ${prods.length===0?`<div class="empty-state"><div class="empty-state-icon">👗</div><div class="empty-state-title">No products found</div></div>`:
-      `<div class="grid-3">${prods.map(renderProductCard).join('')}</div>`}
+    <!-- Category Tabs -->
+    <div class="prod-cat-tabs">
+      <button class="prod-cat-tab${activeCat==='all'?' active':''}" data-prod-cat="all">
+        ✦ All <span class="prod-cat-count">${allProds.length}</span>
+      </button>
+      ${PRODUCT_CATEGORIES.map(c=>`<button class="prod-cat-tab${activeCat===c?' active':''}" data-prod-cat="${c}">
+        ${catIcons[c]||'👕'} ${c} <span class="prod-cat-count">${allProds.filter(p=>p.category===c).length}</span>
+      </button>`).join('')}
+    </div>
+    ${prods.length===0
+      ?`<div class="empty-state"><div class="empty-state-icon">${catIcons[activeCat]||'👗'}</div>
+          <div class="empty-state-title">No ${activeCat==='all'?'products':activeCat+' products'} found</div>
+          <button class="btn btn-gold" id="add-product-btn" style="margin-top:16px;">+ Add Product</button>
+        </div>`
+      :`<div class="grid-3">${prods.map(renderProductCard).join('')}</div>`}
     ${state.modalOpen==='product'?renderProductModal():''}
     ${state.modalOpen==='stock'?renderStockModal(state.stockProductId):''}
   </div>`;
@@ -1713,9 +1753,10 @@ function renderShopCard(p) {
       ${p.image?`<img src="${p.image}" alt="${esc(p.name)}" loading="lazy"/>`:
         `<div class="no-img" style="font-size:2.5rem;">👗</div>`}
       <span class="shop-card-badge">${esc(p.category)}</span>
+      ${p._recReason?`<span class="rec-reason-badge">✨ ${esc(p._recReason)}</span>`:''}
     </div>
     <div class="shop-card-body">
-      <div class="shop-card-category">${esc(p.category)}${p.material?` · ${esc(p.material)}`:''}</div>
+      <div class="shop-card-category">${esc(p.category)}${p.subcategory?` · ${esc(p.subcategory)}`:''}${p.material?` · ${esc(p.material)}`:''}</div>
       <div class="shop-card-name">${esc(p.name)}</div>
       <div class="shop-card-tags" style="flex-wrap:wrap;gap:4px;">
         ${sizes.slice(0,5).map(s=>`<span class="product-tag size-tag-sm">${esc(s.size)}</span>`).join('')}
@@ -2043,29 +2084,27 @@ function getRecommendations(products, cust, filterSubcat) {
   if (!cust) return [];
   const skinToneColors = cust.skinTone ? (SKIN_TONE_COLORS[cust.skinTone] || []) : [];
   const prefColor = (cust.preferredColor||'').toLowerCase();
-  const score = p => {
-    let s = 0;
-    // Color match — check all color variants
+  const scoreAndReason = p => {
+    let s = 0; const reasons = [];
     const allColors = (p.colors||[{name:p.color||''}]).map(c=>(c.name||'').toLowerCase());
-    if (prefColor && allColors.some(c=>c.includes(prefColor))) s += 4;
-    // Skin tone color family match
+    if (prefColor && allColors.some(c=>c.includes(prefColor))) { s+=4; reasons.push(`Matches your preferred color (${cust.preferredColor})`); }
     if (skinToneColors.length) {
-      const matched = allColors.some(c => skinToneColors.some(sk=>c.includes(sk)||sk.includes(c)));
-      if (matched) s += 3;
+      const matchedColor = allColors.find(c=>skinToneColors.some(sk=>c.includes(sk)||sk.includes(c)));
+      if (matchedColor) { s+=3; reasons.push(`Suits your ${cust.skinTone} skin tone`); }
     }
-    // Size match
-    const allSizes = (p.sizes||[]).map(s=>s.size);
-    if (cust.size && allSizes.includes(cust.size)) s += 2;
-    // Gender category match
-    if (cust.gender==='Female' && p.category==='Women') s += 2;
-    if (cust.gender==='Male' && p.category==='Men') s += 2;
-    // Subcategory context filter boost
-    if (filterSubcat && p.subcategory===filterSubcat) s += 2;
-    // Occasion
-    if (cust.occasion && (p.description||'').toLowerCase().includes(cust.occasion.toLowerCase())) s += 1;
-    return s;
+    const allSizes=(p.sizes||[]).map(sz=>sz.size);
+    if (cust.size && allSizes.includes(cust.size)) { s+=2; reasons.push(`Available in your size (${cust.size})`); }
+    if (cust.gender==='Female'&&p.category==='Women') { s+=2; }
+    if (cust.gender==='Male'&&p.category==='Men') { s+=2; }
+    if (filterSubcat&&p.subcategory===filterSubcat) s+=2;
+    if (cust.occasion&&(p.description||'').toLowerCase().includes(cust.occasion.toLowerCase())) { s+=1; reasons.push(`Good for ${cust.occasion}`); }
+    return { score:s, reason: reasons[0]||'Recommended for you' };
   };
-  return products.filter(p=>score(p)>0).sort((a,b)=>score(b)-score(a));
+  return products
+    .map(p=>({ p, ...scoreAndReason(p) }))
+    .filter(x=>x.score>0)
+    .sort((a,b)=>b.score-a.score)
+    .map(x=>({ ...x.p, _recReason: x.reason }));
 }
 
 /* ═══════════════════════════════════════════════════
@@ -3148,6 +3187,12 @@ function attachListeners() {
   onAll('.filter-chip','click', e=>{state.activeFilter=e.currentTarget.dataset.filter;state.activeSubFilter='all';render();});
   onAll('.cat-nav-btn','click', e=>{state.activeFilter=e.currentTarget.dataset.filter;state.activeSubFilter='all';render();postRender();});
   onAll('[data-subfilter]','click', e=>{state.activeSubFilter=e.currentTarget.dataset.subfilter;render();postRender();});
+
+  /* Product category tabs (Admin & Employee) */
+  onAll('[data-prod-cat]','click', e=>{
+    state.productCategoryTab=e.currentTarget.dataset.prodCat;
+    state.searchQuery=''; render();
+  });
 
   /* Products */
   on('#add-product-btn','click', ()=>{state.modalOpen='product';state.editingId=null;render();});

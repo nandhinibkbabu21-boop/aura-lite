@@ -75,7 +75,7 @@ const CATEGORY_SIZES = {
   'Kids':    ['0-1Y','1-2Y','2-3Y','3-4Y','4-5Y','5-6Y','6-7Y','7-8Y','8-9Y','9-10Y','10-11Y','11-12Y'],
   'Newborn': ['0-3M','3-6M','6-9M','9-12M'],
 };
-function getSizesForCategory(cat) { return CATEGORY_SIZES[cat] || CATEGORY_SIZES['Men']; }
+function getSizesForCategory(cat) { return [...(CATEGORY_SIZES[cat] || CATEGORY_SIZES['Men']), 'Free Size']; }
 function getProductSizes(p) {
   if (p.sizes && p.sizes.length) return p.sizes;
   if (p.size) return [{ size: p.size, price: +(p.price||0) }];
@@ -108,6 +108,7 @@ let state = {
   modalOpen: null, editingId: null, loginRole: null,
   viewingProductId: null, viewingOrderId: null, stockProductId: null,
   analyticsPeriod: 'monthly', salaryEmpId: null,
+  selectedColorIdx: 0, selectedSizeIdx: 0, activeSubFilter: 'all',
   fpStep: 1, fpVerifiedUser: null, fpOtp: null, fpOtpExpiry: null, fpFoundUser: null,
 };
 
@@ -945,8 +946,7 @@ function renderProductCard(p) {
       <div class="product-card-meta">
         <span class="product-tag gold">${esc(p.category)}</span>
         ${p.material?`<span class="product-tag">${esc(p.material)}</span>`:''}
-        <span class="product-tag" style="display:flex;align-items:center;gap:4px;">
-          <span class="color-dot" style="background:${esc((p.color||'#ccc').toLowerCase())};"></span>${esc(p.color||'')}</span>
+        ${(p.colors&&p.colors.length?p.colors:[{name:p.color||''}]).slice(0,4).map(c=>`<span class="product-tag" style="display:inline-flex;align-items:center;gap:4px;"><span class="color-dot" style="background:${esc((c.name||'#ccc').toLowerCase())};"></span>${esc(c.name||'')}</span>`).join('')}${(p.colors&&p.colors.length>4)?`<span class="product-tag" style="color:var(--text-light);">+${p.colors.length-4}</span>`:''}
       </div>
       ${sizeTagsHtml?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;">${sizeTagsHtml}</div>`:''}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
@@ -959,76 +959,134 @@ function renderProductCard(p) {
     </div>
   </div>`;
 }
+function renderColorVariantBlock(cv, idx, availSizes) {
+  const sizeRows = (cv.sizes && cv.sizes.length ? cv.sizes : []).map(s=>`<tr class="size-row">
+    <td><select class="form-control form-control-sm size-size-sel">
+      ${availSizes.map(sz=>`<option value="${sz}"${sz===s.size?' selected':''}>${sz}</option>`).join('')}
+    </select></td>
+    <td><input type="number" class="form-control form-control-sm size-price-inp" min="0" value="${s.price||0}" placeholder="0"/></td>
+    <td><button type="button" class="btn-icon remove-size-row" style="width:28px;height:28px;font-size:0.8rem;">✕</button></td>
+  </tr>`).join('') || `<tr class="size-row">
+    <td><select class="form-control form-control-sm size-size-sel">
+      ${availSizes.map(sz=>`<option value="${sz}">${sz}</option>`).join('')}
+    </select></td>
+    <td><input type="number" class="form-control form-control-sm size-price-inp" min="0" placeholder="0"/></td>
+    <td><button type="button" class="btn-icon remove-size-row" style="width:28px;height:28px;font-size:0.8rem;">✕</button></td>
+  </tr>`;
+  return `<div class="color-variant-block" data-vid="${esc(cv.id||String(idx))}">
+    <div class="color-variant-header">
+      <span class="color-variant-title">🎨 Color Variant ${idx+1}</span>
+      <button type="button" class="btn-icon remove-color-variant" style="width:28px;height:28px;font-size:0.8rem;" title="Delete this color">✕</button>
+    </div>
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:12px;">
+        <div class="form-group">
+          <label class="form-label">Color Name <span class="required">*</span></label>
+          <input type="text" class="form-control color-name-input" placeholder="e.g. Red, Royal Blue, Black" value="${esc(cv.name||'')}"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Sizes &amp; Prices <span class="required">*</span></label>
+          <div class="size-price-wrap">
+            <table class="size-price-table">
+              <thead><tr><th>Size</th><th>Price (₹)</th><th></th></tr></thead>
+              <tbody class="sizes-tbody">${sizeRows}</tbody>
+            </table>
+            <button type="button" class="btn btn-outline btn-sm add-size-row-btn" style="margin-top:8px;">+ Add Size</button>
+          </div>
+        </div>
+      </div>
+      <div style="width:150px;flex-shrink:0;">
+        <label class="form-label">Color Image</label>
+        <div class="img-upload-area color-img-upload" style="min-height:140px;cursor:pointer;position:relative;">
+          <input type="file" class="color-img-file" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;z-index:2;"/>
+          ${cv.image
+            ?`<img src="${cv.image}" class="img-preview color-img-preview" style="width:100%;height:130px;object-fit:cover;border-radius:var(--radius-md);"/>
+               <p class="img-upload-text" style="margin-top:4px;font-size:0.7rem;">Click to change</p>`
+            :`<div class="img-upload-icon">📷</div><p class="img-upload-text">Upload image</p>`}
+        </div>
+        <input type="hidden" class="color-img-data" value="${esc(cv.image||'')}"/>
+      </div>
+    </div>
+  </div>`;
+}
+
 function renderProductModal() {
-  const editing=state.editingId?DB.getProducts().find(p=>p.id===state.editingId):null, v=editing||{};
+  const editing = state.editingId ? DB.getProducts().find(p=>p.id===state.editingId) : null;
+  const v = editing || {};
   const curCat = v.category || 'Men';
   const availSizes = getSizesForCategory(curCat);
-  const existingSizes = getProductSizes(v);
 
-  const sizeRows = existingSizes.length
-    ? existingSizes.map(s=>`<tr class="size-row">
-        <td><select class="form-control form-control-sm size-size-sel">
-          ${availSizes.map(sz=>`<option value="${sz}"${sz===s.size?' selected':''}>${sz}</option>`).join('')}
-        </select></td>
-        <td><input type="number" class="form-control form-control-sm size-price-inp" min="0" value="${s.price}" placeholder="0"/></td>
-        <td><button type="button" class="btn-icon remove-size-row" style="width:28px;height:28px;font-size:0.8rem;">✕</button></td>
-      </tr>`).join('')
-    : `<tr class="size-row">
-        <td><select class="form-control form-control-sm size-size-sel">
-          ${availSizes.map(sz=>`<option value="${sz}">${sz}</option>`).join('')}
-        </select></td>
-        <td><input type="number" class="form-control form-control-sm size-price-inp" min="0" placeholder="0"/></td>
-        <td><button type="button" class="btn-icon remove-size-row" style="width:28px;height:28px;font-size:0.8rem;">✕</button></td>
-      </tr>`;
+  // Build color variants — support new multi-color and legacy single-color
+  let colorVariants = [];
+  if (v.colors && v.colors.length) {
+    colorVariants = v.colors;
+  } else if (v.color || v.image || (v.sizes && v.sizes.length)) {
+    colorVariants = [{ id: uid(), name: v.color||'', image: v.image||'', sizes: getProductSizes(v) }];
+  } else {
+    colorVariants = [{ id: uid(), name: '', image: '', sizes: [] }];
+  }
 
   return `<div class="modal-overlay" id="product-modal-overlay">
-    <div class="modal modal-lg animate-slideUp">
-      <div class="modal-header"><div><div class="login-role-badge">✦ &nbsp; ${editing?'Edit Product':'Add Product'}</div>
-        <div class="modal-title">${editing?esc(editing.name):'New Product'}</div></div>
-        <button class="modal-close" data-close-modal="product">✕</button></div>
-      <div class="modal-body"><form id="product-form"><div style="display:flex;gap:22px;flex-wrap:wrap;">
-        <div style="flex:1;min-width:260px;display:flex;flex-direction:column;gap:14px;">
-          <div class="form-group"><label class="form-label">Product Name <span class="required">*</span></label>
-            <input type="text" class="form-control" name="name" id="prod-name" value="${esc(v.name||'')}" placeholder="e.g. Silk Anarkali Kurta" required/></div>
-          <div class="form-row">
-            <div class="form-group"><label class="form-label">Category <span class="required">*</span></label>
-              <select class="form-control" name="category" id="prod-category-sel" required>
-                <option value="">Select category</option>
-                ${PRODUCT_CATEGORIES.map(c=>`<option value="${c}"${c===curCat?' selected':''}>${c}</option>`).join('')}
-              </select></div>
-            <div class="form-group"><label class="form-label">Color <span class="required">*</span></label>
-              <input type="text" class="form-control" name="color" value="${esc(v.color||'')}" placeholder="e.g. Royal Blue" required/></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label class="form-label">Material / Type <span class="optional-tag">(Optional)</span></label>
-              <input type="text" class="form-control" name="material" value="${esc(v.material||'')}" placeholder="e.g. Cotton, Silk"/></div>
-            <div class="form-group"><label class="form-label">Available Quantity <span class="required">*</span></label>
-              <input type="number" class="form-control" name="quantity" value="${esc(v.quantity||'')}" min="0" required/></div>
-          </div>
-          <div class="form-group"><label class="form-label">Description <span class="optional-tag">(Optional)</span></label>
-            <textarea class="form-control" name="description" placeholder="Product description, features…" style="min-height:58px;">${esc(v.description||'')}</textarea></div>
-          <!-- Sizes & Prices -->
-          <div class="form-group">
-            <label class="form-label">Sizes &amp; Prices <span class="required">*</span></label>
-            <div class="size-price-wrap">
-              <table class="size-price-table">
-                <thead><tr><th>Size</th><th>Price (₹)</th><th></th></tr></thead>
-                <tbody id="sizes-tbody">${sizeRows}</tbody>
-              </table>
-              <button type="button" id="add-size-row-btn" class="btn btn-outline btn-sm" style="margin-top:8px;">+ Add Size</button>
+    <div class="modal modal-lg animate-slideUp" style="max-width:740px;">
+      <div class="modal-header">
+        <div><div class="login-role-badge">✦ &nbsp; ${editing?'Edit Product':'Add Product'}</div>
+          <div class="modal-title">${editing?esc(editing.name):'New Product'}</div></div>
+        <button class="modal-close" data-close-modal="product">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="product-form">
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <!-- Row 1: Name + Category -->
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Product Name <span class="required">*</span></label>
+                <input type="text" class="form-control" name="name" id="prod-name" value="${esc(v.name||'')}" placeholder="e.g. Silk Anarkali Kurta" required/>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Gender Category <span class="required">*</span></label>
+                <select class="form-control" name="category" id="prod-category-sel" required>
+                  <option value="">Select</option>
+                  ${PRODUCT_CATEGORIES.map(c=>`<option value="${c}"${c===curCat?' selected':''}>${c}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            <!-- Row 2: Subcategory + Material -->
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Sub-Category <span class="optional-tag">(e.g. Shirts, Frocks, Pants)</span></label>
+                <input type="text" class="form-control" name="subcategory" value="${esc(v.subcategory||'')}" placeholder="Type freely — e.g. Kurtas, Jeans, Sets…"/>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Material / Type <span class="optional-tag">(Optional)</span></label>
+                <input type="text" class="form-control" name="material" value="${esc(v.material||'')}" placeholder="e.g. Cotton, Silk"/>
+              </div>
+            </div>
+            <!-- Row 3: Quantity + Description -->
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Total Quantity <span class="required">*</span></label>
+                <input type="number" class="form-control" name="quantity" value="${esc(v.quantity||'')}" min="0" required/>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Description <span class="optional-tag">(Optional)</span></label>
+                <input type="text" class="form-control" name="description" value="${esc(v.description||'')}" placeholder="Brief description…"/>
+              </div>
+            </div>
+            <!-- Color Variants Section -->
+            <div>
+              <div style="font-size:0.78rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-medium);margin-bottom:12px;">
+                🎨 Color Variants
+              </div>
+              <div id="color-variants-wrap" style="display:flex;flex-direction:column;gap:16px;">
+                ${colorVariants.map((cv,i)=>renderColorVariantBlock(cv,i,availSizes)).join('')}
+              </div>
+              <button type="button" id="add-color-variant-btn" class="btn btn-outline btn-sm" style="margin-top:12px;">
+                + Add Another Color
+              </button>
             </div>
           </div>
-        </div>
-        <div style="width:190px;flex-shrink:0;">
-          <label class="form-label" style="display:block;margin-bottom:8px;">Image <span class="optional-tag">(Optional)</span></label>
-          <div class="img-upload-area" id="img-upload-area">
-            <input type="file" name="image" accept="image/*" id="img-file-input"/>
-            ${v.image?`<img src="${v.image}" class="img-preview" id="img-preview"/><p class="img-upload-text" style="margin-top:6px;">Click to change</p>`:
-              `<div class="img-upload-icon">📷</div><p class="img-upload-text">Click to upload</p>`}
-          </div>
-          <input type="hidden" name="imageData" id="image-data-input" value="${esc(v.image||'')}"/>
-        </div>
-      </div></form></div>
+        </form>
+      </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" data-close-modal="product">Cancel</button>
         <button class="btn btn-gold" id="save-product-btn">✦ &nbsp; ${editing?'Save Changes':'Add Product'}</button>
@@ -1509,7 +1567,8 @@ function renderCustomerShop() {
   const prods=DB.getProducts().filter(p=>+p.quantity>0);
   const cats=['all',...new Set(prods.map(p=>p.category))];
   const af=state.activeFilter||'all', q=(state.searchQuery||'').toLowerCase();
-  let filtered=af==='all'?prods:prods.filter(p=>p.category===af);
+  const asf = state.activeSubFilter || 'all';
+  let filtered=prods.filter(p=>(af==='all'||p.category===af)&&(asf==='all'||p.subcategory===asf));
   if(q) filtered=filtered.filter(p=>p.name.toLowerCase().includes(q)||p.category.toLowerCase().includes(q)||p.color.toLowerCase().includes(q));
   const recs=cust?getRecommendations(prods,cust).slice(0,4):[];
   const cartCount=state.cart.reduce((s,i)=>s+i.qty,0);
@@ -1539,6 +1598,13 @@ function renderCustomerShop() {
           ${c.id!=='all'?`<span class="cat-nav-count">${prods.filter(p=>p.category===c.id).length}</span>`:''}
         </button>`).join('')}
     </div>
+    ${af!=='all'?(()=>{
+      const subCats=[...new Set(prods.filter(p=>p.category===af&&p.subcategory).map(p=>p.subcategory))];
+      return subCats.length?`<div class="subcategory-filter-bar">
+        <button class="subcat-btn${asf==='all'?' active':''}" data-subfilter="all">All ${af}</button>
+        ${subCats.map(sc=>`<button class="subcat-btn${asf===sc?' active':''}" data-subfilter="${esc(sc)}">${esc(sc)}</button>`).join('')}
+      </div>`:'';
+    })():''}
     ${recs.length&&af==='all'?`<div class="shop-section" style="background:var(--cream);border-bottom:1px solid var(--border-light);">
       <div class="shop-section-header"><div>
         <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:4px;">✦ Curated For You</div>
@@ -1604,8 +1670,7 @@ function renderShopCard(p) {
       <div class="shop-card-tags" style="flex-wrap:wrap;gap:4px;">
         ${sizes.slice(0,5).map(s=>`<span class="product-tag size-tag-sm">${esc(s.size)}</span>`).join('')}
         ${sizes.length>5?`<span class="product-tag" style="color:var(--text-light);">+${sizes.length-5}</span>`:''}
-        <span class="product-tag" style="display:flex;align-items:center;gap:4px;">
-          <span class="color-dot" style="background:${esc((p.color||'#ccc').toLowerCase())};"></span>${esc(p.color||'')}</span>
+        ${(p.colors&&p.colors.length?p.colors:[{name:p.color||''}]).slice(0,4).map(c=>`<span class="product-tag" style="display:inline-flex;align-items:center;gap:4px;"><span class="color-dot" style="background:${esc((c.name||'#ccc').toLowerCase())};"></span>${esc(c.name||'')}</span>`).join('')}${p.colors&&p.colors.length>4?`<span class="product-tag" style="color:var(--text-light);">+${p.colors.length-4} colors</span>`:''}
       </div>
       <div class="shop-card-footer">
         <div class="shop-card-price">${priceStr}</div>
@@ -1617,59 +1682,85 @@ function renderShopCard(p) {
   </div>`;
 }
 function renderProductDetailModal(pid) {
-  const p=DB.getProducts().find(pr=>pr.id===pid); if(!p) return '';
-  const sizes=getProductSizes(p);
-  const firstSize=sizes[0]||null;
-  const outOfStock=+p.quantity===0;
+  const p = DB.getProducts().find(pr=>pr.id===pid); if(!p) return '';
+  const colors = (p.colors && p.colors.length) ? p.colors : [{ id:'c0', name:p.color||'', image:p.image||'', sizes:getProductSizes(p) }];
+  const cidx = Math.min(state.selectedColorIdx||0, colors.length-1);
+  const selColor = colors[cidx];
+  const sizes = selColor.sizes || [];
+  const sidx = Math.min(state.selectedSizeIdx||0, Math.max(0,sizes.length-1));
+  const selSize = sizes[sidx] || null;
+  const outOfStock = +p.quantity === 0;
+
   return `<div class="modal-overlay" id="product-detail-overlay">
     <div class="modal modal-lg animate-slideUp">
-      <div class="modal-header"><div class="modal-title">${esc(p.name)}</div>
-        <button class="modal-close" data-close-modal="product-detail">✕</button></div>
-      <div class="modal-body"><div style="display:flex;gap:24px;flex-wrap:wrap;">
-        <!-- Image -->
-        <div style="flex:0 0 220px;">
-          ${p.image
-            ?`<div style="position:relative;cursor:zoom-in;" class="zoomable-img-wrap" data-zoom-src="${esc(p.image)}" data-zoom-name="${esc(p.name)}">
-                <img src="${p.image}" style="width:100%;border-radius:var(--radius-lg);object-fit:cover;aspect-ratio:3/4;display:block;"/>
-                <div style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.5);color:#fff;border-radius:20px;padding:4px 10px;font-size:0.72rem;pointer-events:none;">🔍 Tap to zoom</div>
-              </div>`
-            :`<div style="width:100%;aspect-ratio:3/4;background:var(--cream-2);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;font-size:4rem;">👗</div>`}
-        </div>
-        <!-- Details -->
-        <div style="flex:1;min-width:200px;">
-          <div style="font-size:0.72rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:4px;">${esc(p.category)}${p.material?' · '+esc(p.material):''}</div>
-          <h2 style="font-family:var(--font-serif);margin-bottom:10px;">${esc(p.name)}</h2>
-          ${p.description?`<p style="font-size:0.85rem;color:var(--text-medium);margin-bottom:14px;line-height:1.6;">${esc(p.description)}</p>`:''}
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;font-size:0.85rem;">
-            <span style="color:var(--text-light);width:60px;">Color</span>
-            <span style="display:flex;align-items:center;gap:6px;"><span class="color-dot" style="background:${esc((p.color||'#ccc').toLowerCase())};width:14px;height:14px;"></span>${esc(p.color||'')}</span>
+      <div class="modal-header">
+        <div class="modal-title">${esc(p.name)}</div>
+        <button class="modal-close" data-close-modal="product-detail">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;gap:24px;flex-wrap:wrap;">
+          <!-- Image -->
+          <div style="flex:0 0 220px;">
+            ${selColor.image
+              ?`<div style="position:relative;cursor:zoom-in;" class="zoomable-img-wrap" data-zoom-src="${esc(selColor.image)}" data-zoom-name="${esc(p.name)}">
+                  <img src="${esc(selColor.image)}" style="width:100%;border-radius:var(--radius-lg);object-fit:cover;aspect-ratio:3/4;display:block;" id="detail-main-img"/>
+                  <div style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.5);color:#fff;border-radius:20px;padding:4px 10px;font-size:0.72rem;pointer-events:none;">🔍 Tap to zoom</div>
+                </div>`
+              :`<div style="width:100%;aspect-ratio:3/4;background:var(--cream-2);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;font-size:4rem;">👗</div>`}
           </div>
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;font-size:0.85rem;">
-            <span style="color:var(--text-light);width:60px;">Stock</span>
-            <span class="td-badge ${outOfStock?'badge-red':+p.quantity<=5?'badge-gold':'badge-green'}">${outOfStock?'Out of Stock':+p.quantity<=5?`Only ${p.quantity} left`:'In Stock'}</span>
-          </div>
-          ${sizes.length?`
-          <div style="margin-bottom:20px;">
-            <div style="font-size:0.78rem;font-weight:700;color:var(--text-medium);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:10px;">Select Size</div>
-            <div class="detail-size-btns" style="display:flex;flex-wrap:wrap;gap:8px;">
-              ${sizes.map((s,i)=>`<button type="button" class="detail-size-btn${i===0?' active':''}" data-sz="${esc(s.size)}" data-price="${s.price}" ${outOfStock?'disabled':''}>
-                ${esc(s.size)}<span class="size-price-tag">₹${(+s.price).toLocaleString('en-IN')}</span>
-              </button>`).join('')}
+          <!-- Details -->
+          <div style="flex:1;min-width:200px;">
+            <div style="font-size:0.72rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:4px;">
+              ${esc(p.category)}${p.subcategory?' · '+esc(p.subcategory):''}${p.material?' · '+esc(p.material):''}
             </div>
+            <h2 style="font-family:var(--font-serif);margin-bottom:10px;">${esc(p.name)}</h2>
+            ${p.description?`<p style="font-size:0.85rem;color:var(--text-medium);margin-bottom:14px;line-height:1.6;">${esc(p.description)}</p>`:''}
+
+            <!-- Color Selection -->
+            <div style="margin-bottom:16px;">
+              <div style="font-size:0.78rem;font-weight:700;color:var(--text-medium);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:8px;">
+                Color: <span style="font-weight:400;text-transform:none;">${esc(selColor.name)}</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                ${colors.map((c,i)=>`<button type="button" class="color-select-btn${i===cidx?' active':''}" data-color-idx="${i}" data-pid="${esc(pid)}" style="padding:6px 14px;border-radius:20px;border:2px solid ${i===cidx?'var(--gold-dark)':'var(--border-light)'};background:${i===cidx?'var(--gold-lighter)':'var(--cream-2)'};font-size:0.8rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
+                  <span style="width:12px;height:12px;border-radius:50%;background:${esc((c.name||'#ccc').toLowerCase())};display:inline-block;"></span>${esc(c.name)}
+                </button>`).join('')}
+              </div>
+            </div>
+
+            <!-- Stock -->
+            <div style="margin-bottom:14px;font-size:0.85rem;">
+              <span style="color:var(--text-light);margin-right:8px;">Stock</span>
+              <span class="td-badge ${outOfStock?'badge-red':+p.quantity<=5?'badge-gold':'badge-green'}">${outOfStock?'Out of Stock':+p.quantity<=5?`Only ${p.quantity} left`:'In Stock'}</span>
+            </div>
+
+            <!-- Size Selection -->
+            ${sizes.length?`
+            <div style="margin-bottom:20px;">
+              <div style="font-size:0.78rem;font-weight:700;color:var(--text-medium);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:8px;">Select Size</div>
+              <div class="detail-size-btns" style="display:flex;flex-wrap:wrap;gap:8px;">
+                ${sizes.map((s,i)=>`<button type="button" class="detail-size-btn${i===sidx?' active':''}" data-sz="${esc(s.size)}" data-price="${s.price}" data-size-idx="${i}" data-pid="${esc(pid)}" ${outOfStock?'disabled':''}>
+                  ${esc(s.size)}<span class="size-price-tag">₹${(+s.price).toLocaleString('en-IN')}</span>
+                </button>`).join('')}
+              </div>
+            </div>
+            <div id="detail-price-display" style="font-family:var(--font-serif);font-size:2rem;font-weight:700;color:var(--gold-dark);margin-bottom:20px;">
+              ${selSize?fmt(selSize.price):fmt(p.price||0)}
+            </div>`:`
+            <div id="detail-price-display" style="font-family:var(--font-serif);font-size:2rem;font-weight:700;color:var(--gold-dark);margin-bottom:20px;">${fmt(p.price||0)}</div>`}
+
+            <button class="btn ${outOfStock?'btn-ghost':'btn-gold'} btn-block btn-lg" id="detail-add-cart-btn"
+              data-pid="${esc(p.id)}"
+              data-sz="${esc(selSize?.size||p.size||'')}"
+              data-price="${selSize?.price||p.price||0}"
+              data-color="${esc(selColor.name)}"
+              data-img="${esc(selColor.image||p.image||'')}"
+              ${outOfStock?'disabled':''}>
+              ${outOfStock?'Out of Stock':'+ Add to Cart'}
+            </button>
           </div>
-          <div id="detail-price-display" style="font-family:var(--font-serif);font-size:2rem;font-weight:700;color:var(--gold-dark);margin-bottom:20px;">
-            ${firstSize?fmt(firstSize.price):fmt(p.price||0)}
-          </div>`:`
-          <div id="detail-price-display" style="font-family:var(--font-serif);font-size:2rem;font-weight:700;color:var(--gold-dark);margin-bottom:20px;">${fmt(p.price||0)}</div>`}
-          <button class="btn ${outOfStock?'btn-ghost':'btn-gold'} btn-block btn-lg" id="detail-add-cart-btn"
-            data-pid="${esc(p.id)}"
-            data-sz="${esc(firstSize?.size||p.size||'')}"
-            data-price="${firstSize?.price||p.price||0}"
-            ${outOfStock?'disabled':''}>
-            ${outOfStock?'Out of Stock':'+ Add to Cart'}
-          </button>
         </div>
-      </div></div>
+      </div>
     </div>
   </div>`;
 }
@@ -1965,7 +2056,9 @@ function addToCart(productId, selectedSize, selectedPrice) {
     if(existing.qty>=+p.quantity){showToast(`Only ${p.quantity} units available`,'error');return;}
     existing.qty++;
   } else {
-    state.cart.push({cartKey,id:p.id,name:p.name,size:sz,color:p.color,price:pr,image:p.image,qty:1});
+    const colorName = arguments[3] !== undefined ? arguments[3] : p.color;
+    const colorImg  = arguments[4] !== undefined ? arguments[4] : (p.image||'');
+    state.cart.push({cartKey,id:p.id,name:p.name,size:sz,color:colorName,price:pr,image:colorImg,qty:1});
   }
   showToast(`${p.name} (${sz}) added to cart`,'success'); render();
 }
@@ -2021,23 +2114,12 @@ function confirmOrder() {
   const cust=DB.getCustomers().find(c=>c.id===session?.id);
   const shop=DB.getShop();
   const shopId=DB.getShopId();
-  if(cust?.whatsapp && BACKEND_URL) {
-    const phone=cust.whatsapp.replace(/\D/g,'');
-    const feedbackUrl=`${window.location.origin}${window.location.pathname}#feedback?oid=${order.id}&sid=${shopId}`;
-    apiPost('/api/sms/send-bill-sms', {
-      phone,
-      customerName: cust.name,
-      shopName: shop?.name||'Zara Aura',
-      shopAddress: shop?.address||'',
-      shopId,
-      orderId: order.id,
-      total,
-      items: order.items.map(i=>({name:i.name,size:i.size,color:i.color,qty:i.qty,price:i.price})),
-      feedbackUrl,
-    }).then(r=>{
-      if(r.success) showToast('📲 Order confirmation SMS sent!','success');
-      else showToast('Order placed! SMS could not be sent.','info');
-    }).catch(()=>{ showToast('Order placed! SMS service unavailable.','info'); });
+  // Auto-send WhatsApp order confirmation
+  if (cust?.whatsapp) {
+    const waMsg = buildWhatsAppBill(order, shop, cust);
+    const waUrl = `https://wa.me/91${cust.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(waMsg)}`;
+    setTimeout(() => { window.open(waUrl, '_blank'); }, 600);
+    showToast('📲 Order confirmation sent to WhatsApp!', 'success');
   }
 }
 
@@ -2958,7 +3040,9 @@ function attachListeners() {
   on('#shop-search','input', e=>{state.searchQuery=e.target.value;render();});
 
   /* Category filter */
-  onAll('.filter-chip','click', e=>{state.activeFilter=e.currentTarget.dataset.filter;render();});
+  onAll('.filter-chip','click', e=>{state.activeFilter=e.currentTarget.dataset.filter;state.activeSubFilter='all';render();});
+  onAll('.cat-nav-btn','click', e=>{state.activeFilter=e.currentTarget.dataset.filter;state.activeSubFilter='all';render();postRender();});
+  onAll('[data-subfilter]','click', e=>{state.activeSubFilter=e.currentTarget.dataset.subfilter;render();postRender();});
 
   /* Products */
   on('#add-product-btn','click', ()=>{state.modalOpen='product';state.editingId=null;render();});
@@ -2973,75 +3057,129 @@ function attachListeners() {
     if(isNaN(qty)||qty<0){showToast('Invalid quantity','error');return;}
     DB.updateProduct(pid,{quantity:qty});showToast('Stock updated','success');state.modalOpen=null;render();
   });
-  /* Product form — category change updates size options */
+  /* Product form — category change (update all size selects in all variants) */
   on('#prod-category-sel','change', e=>{
     const cat=e.target.value;
     const sizes=getSizesForCategory(cat);
-    document.querySelectorAll('#sizes-tbody .size-size-sel').forEach(sel=>{
+    document.querySelectorAll('.sizes-tbody .size-size-sel').forEach(sel=>{
       const cur=sel.value;
       sel.innerHTML=sizes.map(s=>`<option value="${s}"${s===cur?' selected':''}>${s}</option>`).join('');
     });
   });
 
-  /* Product form — add size row */
-  on('#add-size-row-btn','click', ()=>{
+  /* Product form — Add Color Variant */
+  on('#add-color-variant-btn','click',()=>{
     const cat=document.getElementById('prod-category-sel')?.value||'Men';
     const sizes=getSizesForCategory(cat);
-    const tbody=document.getElementById('sizes-tbody'); if(!tbody) return;
-    const row=document.createElement('tr');row.className='size-row';
-    row.innerHTML=`<td><select class="form-control form-control-sm size-size-sel">
-      ${sizes.map(s=>`<option value="${s}">${s}</option>`).join('')}
-    </select></td>
-    <td><input type="number" class="form-control form-control-sm size-price-inp" min="0" placeholder="0"/></td>
-    <td><button type="button" class="btn-icon remove-size-row" style="width:28px;height:28px;font-size:0.8rem;">✕</button></td>`;
-    tbody.appendChild(row);
-    row.querySelector('.remove-size-row').addEventListener('click',()=>row.remove());
+    const idx=document.querySelectorAll('.color-variant-block').length;
+    const html=renderColorVariantBlock({id:uid(),name:'',image:'',sizes:[]},idx,sizes);
+    document.getElementById('color-variants-wrap')?.insertAdjacentHTML('beforeend',html);
   });
 
-  /* Product form — remove size row (delegated) */
+  /* Product form — Remove Color Variant (delegated) */
   document.addEventListener('click', e=>{
+    if(e.target.closest('.remove-color-variant')){
+      const block=e.target.closest('.color-variant-block');
+      if(document.querySelectorAll('.color-variant-block').length<=1){
+        showToast('At least one color variant is required','error');return;
+      }
+      block?.remove();
+      document.querySelectorAll('.color-variant-block .color-variant-title').forEach((el,i)=>{
+        el.textContent=`🎨 Color Variant ${i+1}`;
+      });
+    }
+    /* Add size row inside any variant */
+    if(e.target.closest('.add-size-row-btn')){
+      const btn=e.target.closest('.add-size-row-btn');
+      const tbody=btn.closest('.size-price-wrap')?.querySelector('.sizes-tbody');
+      const cat=document.getElementById('prod-category-sel')?.value||'Men';
+      const sizes=getSizesForCategory(cat);
+      if(tbody){
+        const row=document.createElement('tr');row.className='size-row';
+        row.innerHTML=`<td><select class="form-control form-control-sm size-size-sel">
+          ${sizes.map(s=>`<option value="${s}">${s}</option>`).join('')}
+        </select></td>
+        <td><input type="number" class="form-control form-control-sm size-price-inp" min="0" placeholder="0"/></td>
+        <td><button type="button" class="btn-icon remove-size-row" style="width:28px;height:28px;font-size:0.8rem;">✕</button></td>`;
+        tbody.appendChild(row);
+      }
+    }
+    /* Remove size row inside any variant */
     if(e.target.closest('.remove-size-row')){
       const row=e.target.closest('.size-row');
-      const tbody=document.getElementById('sizes-tbody');
+      const tbody=row?.closest('.sizes-tbody');
       if(tbody&&tbody.querySelectorAll('.size-row').length>1) row?.remove();
-      else showToast('At least one size is required','error');
+      else showToast('At least one size per color is required','error');
     }
-  },{capture:false});
-
-  on('#img-file-input','change', async e=>{
-    const file=e.target.files[0]; if(!file) return;
-    const compressed=await compressImage(file);
-    document.getElementById('image-data-input').value=compressed;
-    const area=document.getElementById('img-upload-area');
-    area.querySelector('.img-preview')?.remove();
-    const img=document.createElement('img');img.src=compressed;img.className='img-preview';area.appendChild(img);
   });
-  on('#save-product-btn','click', ()=>{
-    const form=document.getElementById('product-form');if(!form) return;
-    const fd=new FormData(form), imageData=document.getElementById('image-data-input')?.value||'';
-    // Collect sizes from table
-    const sizesData=[];
-    document.querySelectorAll('#sizes-tbody .size-row').forEach(row=>{
-      const sz=row.querySelector('.size-size-sel')?.value;
-      const pr=+row.querySelector('.size-price-inp')?.value;
-      if(sz && !isNaN(pr) && pr>=0) sizesData.push({size:sz,price:pr});
+
+  /* Color image upload (delegated via input change) */
+  document.addEventListener('change', e=>{
+    const fileInput=e.target.closest('.color-img-file');
+    if(!fileInput) return;
+    const file=fileInput.files[0]; if(!file) return;
+    const block=fileInput.closest('.color-variant-block');
+    compressImage(file).then(compressed=>{
+      if(block){
+        const dataInput=block.querySelector('.color-img-data');
+        const uploadArea=block.querySelector('.color-img-upload');
+        if(dataInput) dataInput.value=compressed;
+        if(uploadArea){
+          const existingImg=uploadArea.querySelector('.color-img-preview');
+          if(existingImg){ existingImg.src=compressed; }
+          else {
+            const img=document.createElement('img');
+            img.src=compressed;img.className='img-preview color-img-preview';
+            img.style.cssText='width:100%;height:130px;object-fit:cover;border-radius:var(--radius-md);';
+            uploadArea.querySelector('.img-upload-icon')?.remove();
+            uploadArea.querySelector('.img-upload-text')?.remove();
+            uploadArea.insertBefore(img, uploadArea.querySelector('input'));
+          }
+        }
+      }
     });
-    if(sizesData.length===0){showToast('Add at least one size with a price','error');return;}
+  });
+
+  /* Save Product — multi-color */
+  on('#save-product-btn','click',()=>{
+    const form=document.getElementById('product-form'); if(!form) return;
+    const fd=new FormData(form);
+    const name=fd.get('name')?.trim();
+    const category=fd.get('category')?.trim();
+    const subcategory=fd.get('subcategory')?.trim()||'';
+    const material=fd.get('material')?.trim()||'';
+    const description=fd.get('description')?.trim()||'';
+    const quantity=+fd.get('quantity')||0;
+    if(!name||!category){showToast('Name and Gender Category are required','error');return;}
+
+    // Read all color variants
+    const colorBlocks=document.querySelectorAll('.color-variant-block');
+    const colors=[];
+    colorBlocks.forEach(block=>{
+      const colorName=block.querySelector('.color-name-input')?.value.trim();
+      if(!colorName) return;
+      const imageData=block.querySelector('.color-img-data')?.value||'';
+      const sizeRows=block.querySelectorAll('.sizes-tbody .size-row');
+      const sizes=[];
+      sizeRows.forEach(row=>{
+        const sz=row.querySelector('.size-size-sel')?.value;
+        const pr=+row.querySelector('.size-price-inp')?.value;
+        if(sz) sizes.push({size:sz,price:isNaN(pr)?0:pr});
+      });
+      colors.push({id:uid(),name:colorName,image:imageData,sizes});
+    });
+    if(colors.length===0){showToast('Add at least one color variant with a name','error');return;}
+    const firstColor=colors[0];
+    const allSizes=firstColor.sizes;
     const prod={
-      name:fd.get('name')?.trim(),
-      category:fd.get('category')?.trim(),
-      material:fd.get('material')?.trim()||'',
-      description:fd.get('description')?.trim()||'',
-      color:fd.get('color')?.trim(),
-      quantity:+fd.get('quantity'),
-      sizes:sizesData,
-      // Keep legacy fields for backward compat
-      size:sizesData[0].size, price:sizesData[0].price,
-      image:imageData
+      name,category,subcategory,material,description,quantity,
+      colors,
+      // backward compat
+      color:firstColor.name, image:firstColor.image,
+      sizes:allSizes, size:allSizes[0]?.size||'', price:allSizes[0]?.price||0,
     };
-    if(!prod.name||!prod.category||!prod.color||isNaN(prod.quantity)){showToast('Fill all required fields','error');return;}
     if(state.editingId){DB.updateProduct(state.editingId,prod);showToast('Product updated','success');}
-    else{prod.id=uid();prod.addedDate=Date.now();DB.addProduct(prod);DB.addCategory(prod.category);showToast('Product added','success');}
+    else{prod.id=uid();prod.addedDate=Date.now();DB.addProduct(prod);if(subcategory)DB.addCategory(subcategory);showToast('Product added','success');}
     state.modalOpen=null;state.editingId=null;render();
   });
 
@@ -3158,22 +3296,30 @@ function attachListeners() {
   });
   on('#product-detail-overlay','click', e=>{if(e.target.id==='product-detail-overlay'){state.modalOpen=null;render();}});
 
-  /* Detail modal — size btn selection + price update */
-  onAll('.detail-size-btn','click', e=>{
-    document.querySelectorAll('.detail-size-btn').forEach(b=>b.classList.remove('active'));
-    e.currentTarget.classList.add('active');
-    const sz=e.currentTarget.dataset.sz, pr=+e.currentTarget.dataset.price;
+  /* Product Detail — color selection */
+  onAll('.color-select-btn','click', e=>{
+    state.selectedColorIdx=+e.currentTarget.dataset.colorIdx;
+    state.selectedSizeIdx=0;
+    render(); postRender();
+  });
+  /* Product Detail — size selection */
+  onAll('[data-size-idx]','click', e=>{
+    const btn=e.currentTarget;
+    state.selectedSizeIdx=+btn.dataset.sizeIdx;
+    const price=+btn.dataset.price;
+    const sz=btn.dataset.sz;
+    document.querySelectorAll('[data-size-idx]').forEach(b=>b.classList.toggle('active',b===btn));
     const priceEl=document.getElementById('detail-price-display');
-    if(priceEl) priceEl.textContent='₹'+pr.toLocaleString('en-IN');
+    if(priceEl) priceEl.textContent=fmt(price);
     const addBtn=document.getElementById('detail-add-cart-btn');
-    if(addBtn){addBtn.dataset.sz=sz;addBtn.dataset.price=pr;}
+    if(addBtn){addBtn.dataset.sz=sz;addBtn.dataset.price=price;}
   });
 
   /* Detail modal — add to cart */
   on('#detail-add-cart-btn','click', e=>{
-    const pid=e.currentTarget.dataset.pid, sz=e.currentTarget.dataset.sz, pr=+e.currentTarget.dataset.price;
-    if(!sz){showToast('Please select a size','error');return;}
-    addToCart(pid,sz,pr);
+    const btn=e.currentTarget||e.target;
+    if(!btn.dataset.sz){showToast('Please select a size','error');return;}
+    addToCart(btn.dataset.pid, btn.dataset.sz, +btn.dataset.price, btn.dataset.color, btn.dataset.img);
   });
 
   /* Cart */

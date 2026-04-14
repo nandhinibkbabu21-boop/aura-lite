@@ -2006,3 +2006,72 @@ tbody tr:hover td { background: var(--cream); }
   cursor: pointer;
 }
 .radio-item input[type="radio"] { accent-color: var(--gold); }
+
+/* ── Color Variant Block (Product Modal) ─────────── */
+.color-variant-block {
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  background: var(--cream-2);
+  position: relative;
+}
+.color-variant-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.color-variant-title {
+  font-weight: 700;
+  font-size: 0.84rem;
+  color: var(--text-medium);
+  letter-spacing: 0.04em;
+}
+
+/* ── Color Select Buttons (Product Detail) ───────── */
+.color-select-btn {
+  transition: all 0.18s;
+}
+.color-select-btn:hover {
+  border-color: var(--gold-light) !important;
+  background: var(--gold-lighter) !important;
+}
+.color-select-btn.active {
+  border-color: var(--gold-dark) !important;
+  background: var(--gold-lighter) !important;
+  box-shadow: 0 2px 8px var(--shadow-gold);
+}
+
+/* ── Subcategory Filter Bar ──────────────────────── */
+.subcategory-filter-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 24px;
+  background: var(--cream-2);
+  border-bottom: 1px solid var(--border-light);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.subcategory-filter-bar::-webkit-scrollbar { display: none; }
+.subcat-btn {
+  padding: 5px 16px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border-light);
+  background: var(--white);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-medium);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.subcat-btn:hover {
+  border-color: var(--gold-light);
+  background: var(--gold-lighter);
+}
+.subcat-btn.active {
+  background: var(--gold);
+  border-color: var(--gold-dark);
+  color: #fff;
+}

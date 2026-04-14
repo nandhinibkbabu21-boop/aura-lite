@@ -1113,8 +1113,15 @@ function renderProductModal() {
                 <input type="text" class="form-control" name="material" value="${esc(v.material||'')}" placeholder="e.g. Cotton, Silk"/>
               </div>
               <div class="form-group">
-                <label class="form-label">Sub-category <span class="optional-tag">(Auto-detected from name)</span></label>
-                <input type="text" class="form-control" id="subcategory-preview" value="${esc(v.subcategory||autoDetectSubcategory(v.name||''))}" readonly style="background:var(--cream-2);color:var(--text-medium);"/>
+                <label class="form-label">Sub-category <span class="required">*</span></label>
+                <input type="text" class="form-control" id="subcategory-input" name="subcategory"
+                  value="${esc(v.subcategory||autoDetectSubcategory(v.name||''))}"
+                  placeholder="e.g. Formal Shirts, Frocks, Jeans…" required
+                  list="subcat-suggestions"/>
+                <datalist id="subcat-suggestions">
+                  ${[...new Set(DB.getProducts().map(p=>p.subcategory).filter(Boolean))].map(s=>`<option value="${esc(s)}">`).join('')}
+                </datalist>
+                <small class="form-hint">Type freely — this becomes a filter category for customers</small>
               </div>
             </div>
             <!-- Row 3: Quantity + Description -->
@@ -2227,15 +2234,32 @@ function confirmOrder() {
   const cust=DB.getCustomers().find(c=>c.id===session?.id);
   const shop=DB.getShop();
   const shopId=DB.getShopId();
-  // Auto-send WhatsApp — direct anchor click, no popup blocker
+  // Auto-send WhatsApp via backend (silent, no app opening)
   if (cust?.whatsapp) {
-    const waMsg = buildWhatsAppBill(order, shop, cust);
-    const waUrl = `https://wa.me/91${cust.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(waMsg)}`;
-    const a = document.createElement('a');
-    a.href = waUrl; a.target = '_blank'; a.rel = 'noopener noreferrer';
-    document.body.appendChild(a); a.click();
-    setTimeout(() => a.remove(), 300);
-    showToast('📲 Order confirmation sent to WhatsApp!', 'success');
+    const items = order.items.map(i=>({ name:i.name, size:i.size||'', color:i.color||'', qty:i.qty, price:i.price }));
+    const feedbackUrl = `${window.location.origin}${window.location.pathname}#feedback?shop=${DB.getShopId()}&order=${order.id}`;
+    if (BACKEND_URL) {
+      apiPost('/api/whatsapp/send-bill', {
+        phone: cust.whatsapp.replace(/\D/g,''),
+        customerName: cust.name,
+        shopName: shop?.name,
+        shopAddress: shop?.address,
+        orderId: order.id,
+        total: order.total,
+        items,
+        feedbackUrl,
+        shopId: DB.getShopId()
+      }).then(r => {
+        if(r.success) showToast('✅ Order confirmation sent to WhatsApp!','success');
+        else showToast('Order saved. WhatsApp sending failed — check backend.','warning');
+      }).catch(()=>showToast('Order saved.','success'));
+    } else {
+      // Fallback: direct WhatsApp link (when backend not deployed)
+      const waMsg = buildWhatsAppBill(order, shop, cust);
+      const waUrl = `https://wa.me/91${cust.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(waMsg)}`;
+      const a=document.createElement('a'); a.href=waUrl; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); setTimeout(()=>a.remove(),300);
+      showToast('📲 Order confirmation sent to WhatsApp!','success');
+    }
   }
 }
 
@@ -2862,108 +2886,59 @@ function attachListeners() {
     const list=document.getElementById('sms-customer-list');
     if(list) list.style.display=e.target.value==='specific'?'block':'none';
   });
-  // Send offers — via Twilio SMS (backend) or WhatsApp fallback
-  on('#sms-offer-btn','click', async ()=>{
-    const msg=(document.getElementById('sms-offer-msg')?.value||'').trim();
+  on('#wa-offer-send-btn','click', async ()=>{
+    const msg=(document.getElementById('wa-offer-msg')?.value||'').trim();
     if(!msg){showToast('Please enter a message','error');return;}
-    const targetAll=document.querySelector('input[name="sms-target"]:checked')?.value==='all';
-    let recipients=[];
+    const targetAll=document.querySelector('input[name="wa-target"]:checked')?.value==='all';
+    let phones=[];
     if(targetAll){
-      recipients=DB.getCustomers().filter(c=>c.whatsapp).map(c=>({name:c.name,phone:c.whatsapp}));
+      phones=DB.getCustomers().filter(c=>c.whatsapp).map(c=>c.whatsapp.replace(/\D/g,''));
     } else {
-      document.querySelectorAll('.sms-cust-check:checked').forEach(cb=>{
-        if(cb.value) recipients.push({name:cb.dataset.name||'Customer',phone:cb.value});
-      });
-      if(!recipients.length){showToast('Select at least one customer','error');return;}
+      document.querySelectorAll('.wa-cust-check:checked').forEach(cb=>{ phones.push(cb.value.replace(/\D/g,'')); });
     }
-    if(!recipients.length){showToast('No customers with phone numbers found','error');return;}
+    if(!phones.length){showToast('No customers selected or no WhatsApp numbers available','error');return;}
+
+    const btn=document.getElementById('wa-offer-send-btn');
+    if(btn){btn.disabled=true;btn.innerHTML='<span style="opacity:.7">Sending…</span>';}
+
+    const shopId=DB.getShopId();
 
     if(BACKEND_URL){
-      /* ── Twilio SMS via backend ── */
-      const btn=document.getElementById('sms-offer-btn');
-      const resultEl=document.getElementById('sms-result');
-      if(btn){btn.disabled=true;btn.textContent='Sending…';}
-      const shopId=DB.getShopId();
+      // Silent backend send — no WhatsApp opening
       try{
-        const payload={shopId,message:msg};
-        if(!targetAll) payload.phones=recipients.map(r=>r.phone);
-        const r=await apiPost('/api/sms/send-offer',payload,true);
-        if(btn){btn.disabled=false;btn.textContent='📤  Send SMS to Customers';}
-        if(resultEl){
-          resultEl.style.display='block';
-          if(r.success){
-            resultEl.innerHTML=`<div class="alert-banner alert-success">✅ Sent <strong>${r.sent}</strong> SMS${r.sent!==1?'s':''}. ${r.failed?`Failed: ${r.failed}.`:''}</div>`;
-            showToast(`SMS sent to ${r.sent} customers!`,'success');
-            loadSmsLogs();
-          } else {
-            resultEl.innerHTML=`<div class="alert-banner alert-error">❌ ${r.error||'Failed to send.'}</div>`;
-          }
+        const r=await apiPost('/api/whatsapp/send-offer',{shopId,message:msg,phones},true);
+        if(btn){btn.disabled=false;btn.innerHTML='<span style="font-size:1.1rem;">💬</span> &nbsp; Send via WhatsApp';}
+        if(r.success){
+          showToast(`✅ WhatsApp sent to ${r.sent} customer${r.sent!==1?'s':''}!`,'success');
+          const queueWrap=document.getElementById('wa-send-queue');
+          if(queueWrap) queueWrap.innerHTML=`<div class="alert-banner alert-success" style="margin-top:16px;">✅ Messages sent to <strong>${r.sent}</strong> customer${r.sent!==1?'s':''}${r.failed?` (${r.failed} failed)`:''} via WhatsApp.</div>`;
+        } else {
+          showToast(r.error||'Sending failed','error');
         }
       }catch(err){
-        if(btn){btn.disabled=false;btn.textContent='📤  Send SMS to Customers';}
-        showToast('Network error. Check backend connection.','error');
+        if(btn){btn.disabled=false;btn.innerHTML='<span style="font-size:1.1rem;">💬</span> &nbsp; Send via WhatsApp';}
+        showToast('Backend error. Check your server connection.','error');
       }
     } else {
-      /* ── WhatsApp sequential send ── */
-      if(!recipients.length) return;
-      let currentIdx=0;
+      // Fallback: build queue with anchor links when no backend
+      if(btn){btn.disabled=false;btn.innerHTML='<span style="font-size:1.1rem;">💬</span> &nbsp; Send via WhatsApp';}
       const queueWrap=document.getElementById('wa-send-queue');
-      const queueEl=document.getElementById('wa-queue-list');
-      const summary=document.getElementById('wa-queue-summary');
-      if(!queueEl||!queueWrap) return;
+      if(!queueWrap) return;
       queueWrap.style.display='block';
       queueWrap.scrollIntoView({behavior:'smooth',block:'nearest'});
-
-      function openWaForIdx(idx) {
-        if(idx>=recipients.length) return;
-        const r=recipients[idx];
-        const waUrl=`https://wa.me/91${r.phone}?text=${encodeURIComponent(msg)}`;
-        // Direct anchor click — no popup blocker
-        const a=document.createElement('a');
-        a.href=waUrl; a.target='_blank'; a.rel='noopener noreferrer';
-        document.body.appendChild(a); a.click();
-        setTimeout(()=>a.remove(),300);
-        // Mark as sent in queue UI
-        const badge=document.getElementById(`wa-badge-${idx}`);
-        const btn=document.getElementById(`wa-btn-${idx}`);
-        if(badge) badge.style.display='inline';
-        if(btn){btn.textContent='✅ Sent';btn.disabled=true;btn.className='btn btn-ghost btn-sm';}
-        if(summary) summary.textContent=`✅ Sent ${idx+1} of ${recipients.length} via WhatsApp`;
-        currentIdx=idx+1;
-        // Show next button
-        const nextBtn=document.getElementById('wa-next-btn');
-        if(nextBtn){
-          if(currentIdx<recipients.length){
-            nextBtn.style.display='inline-flex';
-            nextBtn.textContent=`Next: ${esc(recipients[currentIdx].name)} →`;
-          } else {
-            nextBtn.textContent='✅ All Sent!';nextBtn.disabled=true;
-          }
-        }
-      }
-
-      queueEl.innerHTML=recipients.map((r,i)=>`
-        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-light);">
-          <div style="flex:1;">
-            <div style="font-weight:600;font-size:0.88rem;">${esc(r.name)}</div>
-            <div style="font-size:0.76rem;color:var(--text-light);">📱 +91 ${esc(r.phone)}</div>
-          </div>
-          <button class="btn btn-gold btn-sm" id="wa-btn-${i}" onclick="(function(){
-            const a=document.createElement('a');a.href='https://wa.me/91${r.phone}?text='+encodeURIComponent(${JSON.stringify(msg)});a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();setTimeout(()=>a.remove(),300);
-            document.getElementById('wa-btn-${i}').textContent='✅ Sent';document.getElementById('wa-btn-${i}').disabled=true;document.getElementById('wa-btn-${i}').className='btn btn-ghost btn-sm';
-            document.getElementById('wa-badge-${i}').style.display='inline';
-          })()">💬 Send</button>
-          <span id="wa-badge-${i}" style="display:none;font-size:0.76rem;font-weight:700;color:#2E7D32;">✅</span>
-        </div>`).join('');
-
-      // Summary + Next button
-      if(summary) summary.innerHTML=`<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px;">
-        <span style="font-size:0.84rem;color:var(--text-medium);">Sending to ${recipients.length} customer${recipients.length!==1?'s':''}</span>
-        <button class="btn btn-gold btn-sm" id="wa-next-btn" style="display:none;">Next →</button>
-      </div>`;
-      document.getElementById('wa-next-btn')?.addEventListener('click',()=>openWaForIdx(currentIdx));
-      // Auto-open first customer immediately
-      openWaForIdx(0);
+      let sentCount=0;
+      const customers=DB.getCustomers().filter(c=>phones.includes(c.whatsapp?.replace(/\D/g,'')));
+      const queueEl=document.getElementById('wa-queue-list');
+      if(queueEl) queueEl.innerHTML=customers.map((c,i)=>{
+        const waUrl=`https://wa.me/91${c.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`;
+        return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-light);">
+          <div style="flex:1;"><div style="font-weight:600;font-size:0.88rem;">${esc(c.name)}</div>
+          <div style="font-size:0.76rem;color:var(--text-light);">📱 ${esc(c.whatsapp)}</div></div>
+          <a href="${waUrl}" target="_blank" class="btn btn-gold btn-sm" style="text-decoration:none;" data-idx="${i}">💬 Open WhatsApp</a>
+        </div>`;
+      }).join('');
+      const summary=document.getElementById('wa-queue-summary');
+      if(summary) summary.textContent=`⚠️ Backend not configured — click each button to send manually. To enable auto-send, deploy the backend.`;
     }
   });
 
@@ -3207,10 +3182,13 @@ function attachListeners() {
     if(isNaN(qty)||qty<0){showToast('Invalid quantity','error');return;}
     DB.updateProduct(pid,{quantity:qty});showToast('Stock updated','success');state.modalOpen=null;render();
   });
-  /* Product name → live subcategory preview */
+  /* Product name → live subcategory suggestion */
   on('#prod-name','input', e=>{
-    const preview=document.getElementById('subcategory-preview');
-    if(preview) preview.value=autoDetectSubcategory(e.target.value);
+    const sub=document.getElementById('subcategory-input');
+    if(sub&&!sub.dataset.userEdited) sub.value=autoDetectSubcategory(e.target.value);
+  });
+  on('#subcategory-input','input', e=>{
+    e.target.dataset.userEdited='1';
   });
 
   /* Product form — category change (update all size selects in all variants) */
@@ -3302,7 +3280,7 @@ function attachListeners() {
     const fd=new FormData(form);
     const name=fd.get('name')?.trim();
     const category=fd.get('category')?.trim();
-    const subcategory=autoDetectSubcategory(name||'');
+    const subcategory=(fd.get('subcategory')||'').trim()||autoDetectSubcategory(name||'');
     const material=fd.get('material')?.trim()||'';
     const description=fd.get('description')?.trim()||'';
     const quantity=+fd.get('quantity')||0;

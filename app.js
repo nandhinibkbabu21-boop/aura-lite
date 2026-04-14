@@ -55,20 +55,22 @@ let firebaseReady = false;
 ═══════════════════════════════════════════════════ */
 const APP_KEY = 'aura_lite';
 const KEYS = {
-  shop:       `${APP_KEY}_shop`,
-  employees:  `${APP_KEY}_employees`,
-  customers:  `${APP_KEY}_customers`,
-  products:   `${APP_KEY}_products`,
-  categories: `${APP_KEY}_categories`,
-  orders:     `${APP_KEY}_orders`,
-  session:    `${APP_KEY}_session`,
-  shopId:     `${APP_KEY}_shopId`,
+  shop:           `${APP_KEY}_shop`,
+  employees:      `${APP_KEY}_employees`,
+  customers:      `${APP_KEY}_customers`,
+  products:       `${APP_KEY}_products`,
+  categories:     `${APP_KEY}_categories`,
+  orders:         `${APP_KEY}_orders`,
+  session:        `${APP_KEY}_session`,
+  shopId:         `${APP_KEY}_shopId`,
+  mainCategories: `${APP_KEY}_mainCategories`,
+  subCategories:  `${APP_KEY}_subCategories`,
 };
 
 const SUPER_ADMIN_CREDS = { username: 'superadmin', password: '1234567890@' };
 
 /* ── Product category & size system ─────────────── */
-const PRODUCT_CATEGORIES = ['Men','Women','Kids','Newborn'];
+const DEFAULT_CATEGORIES = ['Men','Women','Kids','Newborn'];
 const CATEGORY_SIZES = {
   'Men':     ['XXS','XS','S','M','L','XL','XXL','2XL','3XL'],
   'Women':   ['XXS','XS','S','M','L','XL','XXL','2XL','3XL'],
@@ -77,13 +79,24 @@ const CATEGORY_SIZES = {
 };
 function getSizesForCategory(cat) { return [...(CATEGORY_SIZES[cat] || CATEGORY_SIZES['Men']), 'Free Size']; }
 
-/* Fixed subcategories per main category */
-const SUBCATEGORIES = {
-  'Men':     ['T-Shirts','Shirts','Pants / Trousers','Jeans','Shorts','Innerwear'],
-  'Women':   ['Tops / Shirts','Kurtis','Dresses','Sarees','Pants / Leggings','Innerwear'],
-  'Kids':    ['Boys Clothing','Girls Clothing','Nightwear','School Wear'],
-  'Newborn': ['Rompers','Bodysuits','Sleepsuits','Mittens & Socks Sets','Swaddle Cloths'],
-};
+/* Dynamic category/subcategory helpers — reads from DB */
+function getMainCategories() {
+  const stored = _ls(KEYS.mainCategories);
+  return (stored && stored.length) ? stored : [...DEFAULT_CATEGORIES];
+}
+function getSubCategories(mainCat) {
+  const all = _ls(KEYS.subCategories) || {};
+  if (all[mainCat]) return all[mainCat];
+  const defaults = {
+    'Men':     ['T-Shirts','Shirts','Pants / Trousers','Jeans','Shorts','Innerwear'],
+    'Women':   ['Tops / Shirts','Kurtis','Dresses','Sarees','Pants / Leggings','Innerwear'],
+    'Kids':    ['Boys Clothing','Girls Clothing','Nightwear','School Wear'],
+    'Newborn': ['Rompers','Bodysuits','Sleepsuits','Mittens & Socks Sets','Swaddle Cloths'],
+  };
+  return defaults[mainCat] || [];
+}
+/* Keep SUBCATEGORIES alias for backward compat */
+const SUBCATEGORIES = new Proxy({}, { get: (_, cat) => getSubCategories(cat) });
 
 /* Auto-detect subcategory from product name */
 function autoDetectSubcategory(name) {
@@ -293,6 +306,43 @@ const DB = {
     _ls(KEYS.categories, list);
     const sid = DB.getShopId();
     if (firebaseReady && sid) db.collection('shops').doc(sid).set({ categories: list }, { merge: true }).catch(console.error);
+  },
+
+  /* ── Main categories (gender / top-level) ── */
+  getMainCategories() { return getMainCategories(); },
+  addMainCategory(name) {
+    const list = getMainCategories();
+    if (!list.includes(name)) {
+      list.push(name); _ls(KEYS.mainCategories, list);
+      const sid = DB.getShopId();
+      if (firebaseReady && sid) db.collection('shops').doc(sid).set({ mainCategories: list }, { merge: true }).catch(console.error);
+    }
+  },
+  deleteMainCategory(name) {
+    const list = getMainCategories().filter(c => c !== name);
+    _ls(KEYS.mainCategories, list);
+    const sid = DB.getShopId();
+    if (firebaseReady && sid) db.collection('shops').doc(sid).set({ mainCategories: list }, { merge: true }).catch(console.error);
+  },
+
+  /* ── Subcategories per main category ── */
+  getSubCategories(mainCat) { return getSubCategories(mainCat); },
+  addSubCategory(mainCat, subName) {
+    const all = _ls(KEYS.subCategories) || {};
+    if (!all[mainCat]) all[mainCat] = [...getSubCategories(mainCat)];
+    if (!all[mainCat].includes(subName)) {
+      all[mainCat].push(subName); _ls(KEYS.subCategories, all);
+      const sid = DB.getShopId();
+      if (firebaseReady && sid) db.collection('shops').doc(sid).set({ subCategories: all }, { merge: true }).catch(console.error);
+    }
+  },
+  deleteSubCategory(mainCat, subName) {
+    const all = _ls(KEYS.subCategories) || {};
+    if (!all[mainCat]) all[mainCat] = [...getSubCategories(mainCat)];
+    all[mainCat] = all[mainCat].filter(s => s !== subName);
+    _ls(KEYS.subCategories, all);
+    const sid = DB.getShopId();
+    if (firebaseReady && sid) db.collection('shops').doc(sid).set({ subCategories: all }, { merge: true }).catch(console.error);
   },
 };
 
@@ -983,7 +1033,7 @@ function renderAdminProducts() {
       <button class="prod-cat-tab${activeCat==='all'?' active':''}" data-prod-cat="all">
         ✦ All <span class="prod-cat-count">${allProds.length}</span>
       </button>
-      ${PRODUCT_CATEGORIES.map(c=>`<button class="prod-cat-tab${activeCat===c?' active':''}" data-prod-cat="${c}">
+      ${getMainCategories().map(c=>`<button class="prod-cat-tab${activeCat===c?' active':''}" data-prod-cat="${c}">
         ${catIcons[c]||'👕'} ${c} <span class="prod-cat-count">${allProds.filter(p=>p.category===c).length}</span>
       </button>`).join('')}
     </div>
@@ -1110,7 +1160,7 @@ function renderProductModal() {
                 <label class="form-label">Gender Category <span class="required">*</span></label>
                 <select class="form-control" name="category" id="prod-category-sel" required>
                   <option value="">Select</option>
-                  ${PRODUCT_CATEGORIES.map(c=>`<option value="${c}"${c===curCat?' selected':''}>${c}</option>`).join('')}
+                  ${getMainCategories().map(c=>`<option value="${c}"${c===curCat?' selected':''}>${c}</option>`).join('')}
                 </select>
               </div>
             </div>
@@ -1187,59 +1237,70 @@ function renderAdminCategories() {
   const catIcons = { 'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼' };
   const openCat = state.openCategoryAccordion || null;
 
-  const sections = PRODUCT_CATEGORIES.map(cat => {
-    const catProds = prods.filter(p => p.category === cat);
-    const subCatList = SUBCATEGORIES[cat] || [];
-    const isOpen = openCat === cat;
+  const sections = mainCats.map(cat => {
+    const catProds   = prods.filter(p => p.category === cat);
+    const subCatList = getSubCategories(cat);
+    const isOpen     = openCat === cat;
     const totalCount = catProds.length;
 
-    // Build subcategory rows with counts
     const subRows = subCatList.map(sub => {
-      const subProds = catProds.filter(p => p.subcategory === sub);
-      const cnt = subProds.length;
+      const cnt = catProds.filter(p => p.subcategory === sub).length;
       return `<div class="cat-sub-row">
         <span class="cat-sub-name">${esc(sub)}</span>
         <span class="cat-sub-count ${cnt===0?'empty':''}">${cnt} product${cnt!==1?'s':''}</span>
+        <button class="btn-icon btn-danger-icon" data-delete-subcat="${esc(sub)}" data-subcat-parent="${esc(cat)}" title="Delete subcategory">✕</button>
       </div>`;
     }).join('');
 
-    // Products not assigned to any known subcategory
-    const knownSubs = new Set(subCatList);
-    const otherProds = catProds.filter(p => !knownSubs.has(p.subcategory));
-    const otherRow = otherProds.length ? `<div class="cat-sub-row">
-      <span class="cat-sub-name" style="color:var(--text-light);font-style:italic;">Other / Unassigned</span>
+    const knownSubs  = new Set(subCatList);
+    const otherProds = catProds.filter(p => p.subcategory && !knownSubs.has(p.subcategory));
+    const otherRow   = otherProds.length ? `<div class="cat-sub-row">
+      <span class="cat-sub-name" style="font-style:italic;color:var(--text-light);">Other / Unassigned</span>
       <span class="cat-sub-count">${otherProds.length} product${otherProds.length!==1?'s':''}</span>
     </div>` : '';
 
     return `<div class="cat-accordion ${isOpen?'open':''}" data-cat-accordion="${esc(cat)}">
       <div class="cat-accordion-header" data-toggle-cat="${esc(cat)}">
         <div style="display:flex;align-items:center;gap:14px;">
-          <span style="font-size:2rem;">${catIcons[cat]||'👕'}</span>
+          <span style="font-size:2rem;">${catIcons[cat]||'🏷️'}</span>
           <div>
             <div class="cat-accordion-title">${esc(cat)}</div>
             <div class="cat-accordion-meta">${subCatList.length} subcategories · ${totalCount} product${totalCount!==1?'s':''}</div>
           </div>
         </div>
-        <span class="cat-accordion-arrow">${isOpen?'▲':'▼'}</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-accordion-arrow">${isOpen?'▲':'▼'}</span>
+          <button class="btn-icon btn-danger-icon" data-delete-maincat="${esc(cat)}" title="Delete category" style="font-size:0.78rem;">✕ Delete</button>
+        </div>
       </div>
       ${isOpen ? `<div class="cat-accordion-body">
         ${subRows}
         ${otherRow}
-        ${totalCount===0 ? `<div style="padding:16px;text-align:center;color:var(--text-light);font-size:0.84rem;">No products added under ${cat} yet.</div>` : ''}
+        ${!subCatList.length&&!otherProds.length ? `<div style="padding:12px 24px;color:var(--text-light);font-size:0.84rem;">No subcategories yet. Add one below.</div>` : ''}
+        <!-- Add subcategory inline form -->
+        <div class="cat-add-sub-row">
+          <input type="text" class="form-control cat-add-sub-input" data-parent-cat="${esc(cat)}" placeholder="Add subcategory (e.g. T-Shirts)" style="flex:1;padding:8px 12px;font-size:0.84rem;"/>
+          <button class="btn btn-gold btn-sm cat-add-sub-btn" data-parent-cat="${esc(cat)}">+ Add</button>
+        </div>
       </div>` : ''}
     </div>`;
   }).join('');
 
   return `<div class="animate-fadeIn">
     <div class="dash-page-title">Categories</div>
-    <div class="dash-page-subtitle">Product catalogue organised by gender & type</div>
+    <div class="dash-page-subtitle">Add, delete and manage product categories freely</div>
 
-    <div class="alert-banner" style="background:var(--gold-lighter);border-color:var(--gold-light);color:var(--text-medium);margin-bottom:24px;">
-      📌 Categories are fixed (Men / Women / Kids / Newborn). Subcategories are set automatically when adding products.
+    <!-- Add new main category -->
+    <div class="card" style="padding:20px 24px;max-width:500px;margin-bottom:24px;">
+      <div style="font-weight:700;font-size:0.9rem;margin-bottom:12px;">➕ Add New Category</div>
+      <form id="add-maincat-form" style="display:flex;gap:10px;">
+        <input type="text" class="form-control" name="mainCatName" placeholder="e.g. Accessories, Footwear, Sportswear…" required style="flex:1;"/>
+        <button type="submit" class="btn btn-gold">Add</button>
+      </form>
     </div>
 
     <div class="cat-accordion-wrap">
-      ${sections}
+      ${sections.length ? sections : `<div class="empty-state"><div class="empty-state-icon">◻</div><div class="empty-state-title">No categories yet</div><p class="text-muted">Add your first category above.</p></div>`}
     </div>
   </div>`;
 }
@@ -1603,7 +1664,7 @@ function renderEmpProducts() {
       <button class="prod-cat-tab${activeCat==='all'?' active':''}" data-prod-cat="all">
         ✦ All <span class="prod-cat-count">${allProds.length}</span>
       </button>
-      ${PRODUCT_CATEGORIES.map(c=>`<button class="prod-cat-tab${activeCat===c?' active':''}" data-prod-cat="${c}">
+      ${getMainCategories().map(c=>`<button class="prod-cat-tab${activeCat===c?' active':''}" data-prod-cat="${c}">
         ${catIcons[c]||'👕'} ${c} <span class="prod-cat-count">${allProds.filter(p=>p.category===c).length}</span>
       </button>`).join('')}
     </div>
@@ -1753,7 +1814,7 @@ function renderCustomerShop() {
             <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-light);font-weight:600;margin-bottom:4px;">Browse by Category</div>
             <div class="shop-section-title">Shop Collections</div></div><div class="shop-section-line"></div></div>
           <div class="main-cat-grid">
-            ${PRODUCT_CATEGORIES.map(cat=>{
+            ${getMainCategories().map(cat=>{
               const cnt=prods.filter(p=>p.category===cat).length;
               const subcats=[...new Set(prods.filter(p=>p.category===cat&&p.subcategory).map(p=>p.subcategory))].slice(0,3);
               return `<div class="main-cat-tile" data-filter="${cat}">
@@ -3410,6 +3471,42 @@ function attachListeners() {
     const cat=e.currentTarget.dataset.deleteCat;
     if(confirm(`Delete category "${cat}"?`)){DB.deleteCategory(cat);showToast('Category deleted','info');render();}
   });
+
+  /* ── Main category CRUD ── */
+  on('#add-maincat-form','submit', e=>{
+    e.preventDefault();
+    const name=new FormData(e.target).get('mainCatName')?.trim();
+    if(!name) return;
+    if(getMainCategories().includes(name)){showToast('Category already exists','error');return;}
+    DB.addMainCategory(name); showToast(`"${name}" added!`,'success'); e.target.reset(); render();
+  });
+  onAll('[data-delete-maincat]','click', e=>{
+    e.stopPropagation();
+    const cat=e.currentTarget.dataset.deleteMaincat;
+    const cnt=DB.getProducts().filter(p=>p.category===cat).length;
+    const msg=cnt>0?`Delete "${cat}" category? This will NOT delete the ${cnt} products in it, but they will have no category.`:`Delete "${cat}" category?`;
+    if(confirm(msg)){DB.deleteMainCategory(cat);showToast(`"${cat}" deleted`,'info');state.openCategoryAccordion=null;render();}
+  });
+
+  /* ── Subcategory CRUD ── */
+  onAll('.cat-add-sub-btn','click', e=>{
+    const parentCat=e.currentTarget.dataset.parentCat;
+    const input=document.querySelector(`.cat-add-sub-input[data-parent-cat="${parentCat}"]`);
+    const name=input?.value?.trim();
+    if(!name){showToast('Enter subcategory name','error');return;}
+    if(getSubCategories(parentCat).includes(name)){showToast('Subcategory already exists','error');return;}
+    DB.addSubCategory(parentCat,name); showToast(`"${name}" added to ${parentCat}`,'success');
+    if(input) input.value=''; render();
+  });
+  onAll('[data-delete-subcat]','click', e=>{
+    e.stopPropagation();
+    const sub=e.currentTarget.dataset.deleteSubcat;
+    const parent=e.currentTarget.dataset.subcatParent;
+    if(confirm(`Delete subcategory "${sub}" from ${parent}?`)){
+      DB.deleteSubCategory(parent,sub); showToast(`"${sub}" deleted`,'info'); render();
+    }
+  });
+
   /* Category accordion toggle */
   onAll('[data-toggle-cat]','click', e=>{
     const cat=e.currentTarget.dataset.toggleCat;

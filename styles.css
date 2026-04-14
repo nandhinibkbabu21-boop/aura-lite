@@ -2307,3 +2307,36 @@ tbody tr:hover td { background: var(--cream); }
   font-size: 0.7rem;
   color: var(--text-light);
 }
+
+/* ── Category Management Additions ───────────────── */
+.btn-danger-icon {
+  background: none;
+  border: 1px solid #ffcdd2;
+  color: #c62828;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.btn-danger-icon:hover {
+  background: #ffebee;
+  border-color: #c62828;
+}
+.cat-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+.cat-add-sub-row {
+  display: flex;
+  gap: 10px;
+  padding: 12px 24px;
+  background: var(--cream-2);
+  border-top: 1px solid var(--border-light);
+  align-items: center;
+}

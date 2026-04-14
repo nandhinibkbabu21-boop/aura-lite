@@ -1629,9 +1629,11 @@ function renderProductDetailModal(pid) {
         <!-- Image -->
         <div style="flex:0 0 220px;">
           ${p.image
-            ?`<img src="${p.image}" id="detail-zoom-img" style="width:100%;border-radius:var(--radius-lg);object-fit:cover;aspect-ratio:3/4;cursor:zoom-in;transition:transform 0.2s;" onclick="this.style.transform=this.style.transform?'':'scale(1.5)';"/>`
+            ?`<div style="position:relative;cursor:zoom-in;" class="zoomable-img-wrap" data-zoom-src="${esc(p.image)}" data-zoom-name="${esc(p.name)}">
+                <img src="${p.image}" style="width:100%;border-radius:var(--radius-lg);object-fit:cover;aspect-ratio:3/4;display:block;"/>
+                <div style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.5);color:#fff;border-radius:20px;padding:4px 10px;font-size:0.72rem;pointer-events:none;">🔍 Tap to zoom</div>
+              </div>`
             :`<div style="width:100%;aspect-ratio:3/4;background:var(--cream-2);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;font-size:4rem;">👗</div>`}
-          ${p.image?`<p style="font-size:0.72rem;color:var(--text-xlight);text-align:center;margin-top:6px;">Tap image to zoom</p>`:''}
         </div>
         <!-- Details -->
         <div style="flex:1;min-width:200px;">
@@ -1750,16 +1752,20 @@ function buildWhatsAppBill(order, shop, cust) {
 function renderOrderSuccess(orderId) {
   const order=DB.getOrders().find(o=>o.id===orderId), shop=DB.getShop(), session=DB.getSession();
   const cust=DB.getCustomers().find(c=>c.id===session?.id);
-  const waLink=`https://wa.me/91${cust?.whatsapp}?text=${encodeURIComponent(buildWhatsAppBill(order,shop,cust))}`;
+  const shopId=DB.getShopId();
+  const feedbackUrl=`${window.location.origin}${window.location.pathname}#feedback?oid=${orderId}&sid=${shopId}`;
   return `<div class="modal-overlay" id="success-overlay">
     <div class="modal animate-slideUp">
       <div class="modal-body" style="text-align:center;padding:36px 28px;">
         <div style="font-size:3rem;margin-bottom:14px;">✦</div>
         <h2 style="font-family:var(--font-serif);margin-bottom:8px;color:var(--gold-dark);">Order Confirmed!</h2>
-        <p class="text-muted" style="margin-bottom:24px;">Your purchase has been processed successfully.</p>
+        <p class="text-muted" style="margin-bottom:6px;">Your purchase has been processed successfully.</p>
+        <p style="font-size:0.82rem;color:var(--gold-dark);background:var(--gold-lighter);padding:10px 14px;border-radius:var(--radius-md);margin-bottom:20px;">
+          📲 Order confirmation SMS sent to ${esc(cust?.whatsapp||'your phone')}
+        </p>
         ${renderBillHTML(order,shop,cust)}
         <div style="margin-top:20px;display:flex;flex-direction:column;gap:10px;">
-          <a href="${waLink}" target="_blank" class="btn btn-gold btn-lg btn-block">📱 &nbsp; Send Bill to WhatsApp</a>
+          <button class="btn btn-gold btn-lg btn-block" id="go-feedback-btn" data-feedback-url="${esc(feedbackUrl)}">⭐ &nbsp; Share Your Feedback</button>
           <button class="btn btn-ghost btn-block" id="close-success-btn">Continue Shopping</button>
         </div>
       </div>
@@ -1898,6 +1904,53 @@ function getRecommendations(products, cust) {
 }
 
 /* ═══════════════════════════════════════════════════
+   20b. IMAGE LIGHTBOX
+═══════════════════════════════════════════════════ */
+function renderImageLightbox(src, name) {
+  return `<div class="img-lightbox-overlay" id="img-lightbox">
+    <div class="img-lightbox-toolbar">
+      <span style="color:#fff;font-weight:600;font-size:0.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="lb-btn" id="lb-zoom-in" title="Zoom In">＋</button>
+        <button class="lb-btn" id="lb-zoom-reset" title="Reset">⟳</button>
+        <button class="lb-btn" id="lb-zoom-out" title="Zoom Out">－</button>
+        <button class="lb-btn lb-close-btn" id="lb-close-btn" title="Close">✕</button>
+      </div>
+    </div>
+    <div class="img-lightbox-stage" id="lb-stage">
+      <img src="${esc(src)}" alt="${esc(name)}" id="lb-main-img" class="lb-img" draggable="false"/>
+    </div>
+    <div class="img-lightbox-hint">Scroll to zoom · Click outside image to close</div>
+  </div>`;
+}
+window._lbScale = 1;
+window.lbSetZoom = function(factor) {
+  const img = document.getElementById('lb-main-img');
+  if (!img) return;
+  if (factor === 0) { window._lbScale = 1; }
+  else { window._lbScale = Math.min(5, Math.max(0.5, window._lbScale * factor)); }
+  img.style.transform = `scale(${window._lbScale})`;
+};
+function openLightbox(src, name) {
+  document.getElementById('img-lightbox')?.remove();
+  window._lbScale = 1;
+  document.body.insertAdjacentHTML('beforeend', renderImageLightbox(src, name));
+  const overlay = document.getElementById('img-lightbox');
+  const stage   = document.getElementById('lb-stage');
+  document.getElementById('lb-close-btn')?.addEventListener('click', () => overlay.remove());
+  document.getElementById('lb-zoom-in')?.addEventListener('click', () => window.lbSetZoom(1.3));
+  document.getElementById('lb-zoom-out')?.addEventListener('click', () => window.lbSetZoom(0.77));
+  document.getElementById('lb-zoom-reset')?.addEventListener('click', () => window.lbSetZoom(0));
+  stage?.addEventListener('click', e => { if (e.target === stage) overlay.remove(); });
+  stage?.addEventListener('wheel', e => {
+    e.preventDefault();
+    window.lbSetZoom(e.deltaY < 0 ? 1.15 : 0.87);
+  }, { passive: false });
+  overlay.addEventListener('keydown', e => { if (e.key === 'Escape') overlay.remove(); });
+  overlay.setAttribute('tabindex','0'); overlay.focus();
+}
+
+/* ═══════════════════════════════════════════════════
    21. CART LOGIC
 ═══════════════════════════════════════════════════ */
 function addToCart(productId, selectedSize, selectedPrice) {
@@ -1943,7 +1996,7 @@ function renderCheckoutModal() {
             <span style="font-family:var(--font-serif);">Total</span><span style="font-family:var(--font-serif);">${fmt(total)}</span></div>
         </div>
         <div style="background:var(--gold-lighter);border:1px solid var(--gold-light);border-radius:var(--radius-md);padding:14px;font-size:0.82rem;color:var(--gold-dark);">
-          📱 &nbsp; Bill will be sent to <strong>${esc(cust?.whatsapp||'your WhatsApp')}</strong> after confirming.
+          📲 &nbsp; Order confirmation SMS will be sent to <strong>${esc(cust?.whatsapp||'your phone')}</strong> after confirming.
         </div>
       </div>
       <div class="modal-footer">
@@ -1964,111 +2017,116 @@ function confirmOrder() {
   document.body.insertAdjacentHTML('beforeend', renderOrderSuccess(order.id));
   document.getElementById('close-success-btn')?.addEventListener('click', ()=>{document.getElementById('success-overlay')?.remove();render();});
 
-  // Send thank-you SMS via backend (falls back to WhatsApp if backend not set up)
+  // Auto-send order confirmation SMS via backend
   const cust=DB.getCustomers().find(c=>c.id===session?.id);
   const shop=DB.getShop();
-  if(cust?.whatsapp) {
-    const phone = cust.whatsapp.replace(/\D/g,'');
-    if (BACKEND_URL) {
-      // Auto-send via backend Twilio SMS (silent, no popup)
-      apiPost('/api/sms/send-thankyou', {
-        phone,
-        customerName: cust.name,
-        shopName: shop?.name || 'Zara Aura',
-        orderId: order.id,
-        total,
-        items: order.items.map(i => ({ name: i.name, qty: i.qty }))
-      }).then(r => {
-        if (r.success) showToast('Thank you SMS sent to your phone!', 'success');
-      }).catch(() => {});
-    } else {
-      // Fallback: WhatsApp deep link
-      const itemLines = order.items.map(i=>`  • ${i.name} (${i.size}, ${i.color}) × ${i.qty} — ${fmt(i.qty*i.price)}`).join('\n');
-      const msg = `🛍️ *${shop?.name||'Zara Aura'} — Order Receipt*\nOrder ID: #${order.id.slice(-6).toUpperCase()}\nDate: ${fmtDate(order.date)}\n\n*Items:*\n${itemLines}\n\n*Total: ${fmt(total)}*\n\nThank you for shopping! 🙏`;
-      setTimeout(()=>{ window.open(`https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`,'_blank'); }, 800);
-      showToast('Bill sent via WhatsApp!','success');
-    }
+  const shopId=DB.getShopId();
+  if(cust?.whatsapp && BACKEND_URL) {
+    const phone=cust.whatsapp.replace(/\D/g,'');
+    const feedbackUrl=`${window.location.origin}${window.location.pathname}#feedback?oid=${order.id}&sid=${shopId}`;
+    apiPost('/api/sms/send-bill-sms', {
+      phone,
+      customerName: cust.name,
+      shopName: shop?.name||'Zara Aura',
+      shopAddress: shop?.address||'',
+      shopId,
+      orderId: order.id,
+      total,
+      items: order.items.map(i=>({name:i.name,size:i.size,color:i.color,qty:i.qty,price:i.price})),
+      feedbackUrl,
+    }).then(r=>{
+      if(r.success) showToast('📲 Order confirmation SMS sent!','success');
+      else showToast('Order placed! SMS could not be sent.','info');
+    }).catch(()=>{ showToast('Order placed! SMS service unavailable.','info'); });
   }
 }
 
 /* ═══════════════════════════════════════════════════
-   22a. ADMIN WHATSAPP OFFERS
+   22a. ADMIN SMS OFFERS
 ═══════════════════════════════════════════════════ */
 function renderAdminSms() {
   const customers = DB.getCustomers();
   const shop = DB.getShop();
+  const hasBackend = !!BACKEND_URL;
 
   return `
   <div class="section-header">
-    <h2 class="section-title">📣 Send Offers via WhatsApp</h2>
-    <p class="text-muted" style="margin-top:4px;">Send promotional messages directly to your customers on WhatsApp</p>
+    <h2 class="section-title">📣 Send Offers via SMS</h2>
+    <p class="text-muted" style="margin-top:4px;">Send promotional SMS directly to your customers via Twilio</p>
   </div>
 
-  <div class="grid-2" style="margin-bottom:24px;max-width:500px;">
+  ${!hasBackend?`<div class="alert-banner alert-warning" style="margin-bottom:20px;">
+    ⚠️ Backend not configured — SMS sending is disabled. Set up your backend server and add <code>backendConfig</code> to enable real SMS.
+  </div>`:''}
+
+  <div class="grid-3" style="margin-bottom:24px;max-width:640px;">
     <div class="stat-card">
       <div class="stat-value">${customers.length}</div>
       <div class="stat-label">Total Customers</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value" style="color:#25D366">${customers.filter(c=>c.whatsapp).length}</div>
-      <div class="stat-label">With WhatsApp</div>
+      <div class="stat-value" style="color:var(--gold)">${customers.filter(c=>c.whatsapp).length}</div>
+      <div class="stat-label">With Phone</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:${hasBackend?'#2E7D32':'#C62828'}">${hasBackend?'Active':'Inactive'}</div>
+      <div class="stat-label">SMS Service</div>
     </div>
   </div>
 
   <div class="card" style="padding:28px;max-width:680px;">
-    <h3 style="font-family:var(--font-serif);margin-bottom:20px;">Compose &amp; Send Offer</h3>
+    <h3 style="font-family:var(--font-serif);margin-bottom:20px;">Compose &amp; Send SMS</h3>
 
-    <!-- Step 1: Select recipients -->
     <div class="form-group" style="margin-bottom:18px;">
       <label class="form-label">Send To <span class="required">*</span></label>
       <div class="radio-group" style="margin-bottom:14px;">
-        <label class="radio-item"><input type="radio" name="wa-target" value="all" id="wa-target-all" checked/> All Customers (${customers.length})</label>
-        <label class="radio-item"><input type="radio" name="wa-target" value="specific" id="wa-target-specific"/> Specific Customers</label>
+        <label class="radio-item"><input type="radio" name="sms-target" value="all" id="sms-target-all" checked/> All Customers (${customers.length})</label>
+        <label class="radio-item"><input type="radio" name="sms-target" value="specific" id="sms-target-specific"/> Specific Customers</label>
       </div>
-      <!-- Specific customer checkboxes -->
-      <div id="wa-customer-list" style="display:none;max-height:220px;overflow-y:auto;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px;background:var(--cream-2);">
+      <div id="sms-customer-list" style="display:none;max-height:220px;overflow-y:auto;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px;background:var(--cream-2);">
         ${customers.length===0
-          ?`<p class="text-muted" style="text-align:center;padding:16px;">No customers registered yet.</p>`
+          ?`<p class="text-muted" style="text-align:center;padding:16px;">No customers yet.</p>`
           :customers.map(c=>`
           <label style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--border-light);cursor:pointer;">
-            <input type="checkbox" class="wa-cust-check" value="${esc(c.whatsapp)}" data-name="${esc(c.name)}" ${c.whatsapp?'':'disabled'}/>
+            <input type="checkbox" class="sms-cust-check" value="${esc(c.whatsapp||'')}" data-name="${esc(c.name)}" ${c.whatsapp?'':'disabled'}/>
             <div style="flex:1;">
               <div style="font-weight:600;font-size:0.88rem;">${esc(c.name)}</div>
-              <div style="font-size:0.76rem;color:var(--text-light);">${c.whatsapp?`📱 ${esc(c.whatsapp)}`:'No WhatsApp number'}</div>
+              <div style="font-size:0.76rem;color:var(--text-light);">${c.whatsapp?`📱 ${esc(c.whatsapp)}`:'No phone number'}</div>
             </div>
           </label>`).join('')}
       </div>
     </div>
 
-    <!-- Step 2: Compose message -->
     <div class="form-group" style="margin-bottom:16px;">
       <label class="form-label">Message <span class="required">*</span></label>
-      <textarea class="form-control" id="wa-offer-msg"
-        placeholder="e.g. 🎉 Big Sale at ${esc(shop?.name||'our store')}! Up to 50% off. Visit us today! 🛍️"
-        rows="4" style="resize:vertical;">${shop?`🎉 *${esc(shop.name)}* Special Offer!\n\n`:''}</textarea>
-      <small class="form-hint" id="wa-char-count">0 chars</small>
+      <textarea class="form-control" id="sms-offer-msg"
+        placeholder="e.g. 🎉 Big Sale at ${esc(shop?.name||'our store')}! Up to 50% off. Visit us today!"
+        rows="4" maxlength="320" style="resize:vertical;"></textarea>
+      <div style="display:flex;justify-content:space-between;margin-top:6px;">
+        <small class="form-hint">Max 320 characters per SMS</small>
+        <small class="form-hint" id="sms-char-count">0 / 320</small>
+      </div>
     </div>
 
-    <!-- Preview -->
     <div style="background:var(--cream-2);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px;margin-bottom:18px;">
-      <div style="font-size:0.76rem;color:var(--text-medium);font-weight:700;margin-bottom:6px;">📱 Message Preview</div>
-      <div id="wa-preview" style="font-size:0.88rem;color:var(--text-dark);white-space:pre-wrap;min-height:36px;line-height:1.6;"></div>
+      <div style="font-size:0.76rem;color:var(--text-medium);font-weight:700;margin-bottom:6px;">📱 SMS Preview</div>
+      <div id="sms-preview" style="font-size:0.88rem;color:var(--text-light);white-space:pre-wrap;min-height:36px;line-height:1.6;">Your message will appear here…</div>
     </div>
 
-    <!-- Send button -->
-    <button class="btn btn-gold btn-lg" id="wa-offer-send-btn" ${customers.length===0?'disabled':''}>
-      <span style="font-size:1.1rem;">💬</span> &nbsp; Prepare WhatsApp Messages
+    <button class="btn btn-gold btn-lg" id="sms-offer-btn" ${!hasBackend||customers.length===0?'disabled':''}>
+      📤 &nbsp; Send SMS to Customers
     </button>
-    ${customers.length===0?`<p class="form-hint" style="margin-top:8px;">No customers yet.</p>`:''}
+    ${!hasBackend?`<p class="form-hint" style="margin-top:8px;">Configure backend URL to enable sending.</p>`:
+      customers.length===0?`<p class="form-hint" style="margin-top:8px;">No customers registered yet.</p>`:''}
+
+    <div id="sms-result" style="margin-top:16px;display:none;"></div>
   </div>
 
-  <!-- Send Queue (appears after clicking Prepare) -->
-  <div id="wa-send-queue" style="display:none;margin-top:28px;max-width:680px;">
-    <div class="card" style="padding:24px;">
-      <h4 style="font-family:var(--font-serif);margin-bottom:6px;">Send Queue</h4>
-      <p class="text-muted" style="margin-bottom:18px;font-size:0.85rem;">Click each button to open WhatsApp with the message pre-filled. Mark as sent after sending.</p>
-      <div id="wa-queue-list"></div>
-      <div id="wa-queue-summary" style="margin-top:16px;font-size:0.85rem;color:var(--text-medium);"></div>
+  <!-- SMS Delivery Logs -->
+  <div style="margin-top:32px;max-width:680px;">
+    <h3 style="font-family:var(--font-serif);margin-bottom:14px;">📋 SMS Delivery Logs</h3>
+    <div id="sms-logs-list">
+      <div class="text-muted" style="padding:20px 0;text-align:center;font-size:0.85rem;">Loading logs…</div>
     </div>
   </div>`;
 }
@@ -2186,6 +2244,10 @@ function postRender() {
   // Auto-load admin feedback when on feedback tab
   if (state.route === 'admin' && state.subRoute === 'feedback') {
     setTimeout(() => loadAdminFeedback(), 100);
+  }
+  // Auto-load SMS logs when on sms tab
+  if (state.route === 'admin' && state.subRoute === 'sms') {
+    setTimeout(() => loadSmsLogs(), 200);
   }
 
   const chartDefaults = {
@@ -2580,72 +2642,72 @@ function attachListeners() {
     if(state.subRoute==='feedback' && state.route==='admin') loadAdminFeedback();
   });
 
-  /* ── WhatsApp Offer ── */
-  on('#wa-offer-msg','input', e=>{
+  /* ── SMS Offer ── */
+  on('#sms-offer-msg','input', e=>{
     const msg=e.target.value;
-    const preview=document.getElementById('wa-preview');
-    const counter=document.getElementById('wa-char-count');
+    const preview=document.getElementById('sms-preview');
+    const counter=document.getElementById('sms-char-count');
     if(preview) preview.textContent=msg||'Your message will appear here…';
-    if(counter) counter.textContent=`${msg.length} chars`;
+    if(preview) preview.style.color=msg?'var(--text-dark)':'var(--text-light)';
+    if(counter) counter.textContent=`${msg.length} / 320`;
   });
-  // Initialize preview on load
-  const waMsg=document.getElementById('wa-offer-msg');
-  if(waMsg&&waMsg.value){
-    const prev=document.getElementById('wa-preview');
-    if(prev) prev.textContent=waMsg.value;
-  }
   // Toggle specific customer list
-  onAll('input[name="wa-target"]','change', e=>{
-    const list=document.getElementById('wa-customer-list');
+  onAll('input[name="sms-target"]','change', e=>{
+    const list=document.getElementById('sms-customer-list');
     if(list) list.style.display=e.target.value==='specific'?'block':'none';
   });
-  // Prepare WhatsApp send queue
-  on('#wa-offer-send-btn','click', ()=>{
-    const msg=(document.getElementById('wa-offer-msg')?.value||'').trim();
+  // Send SMS via backend
+  on('#sms-offer-btn','click', async ()=>{
+    const msg=(document.getElementById('sms-offer-msg')?.value||'').trim();
     if(!msg){showToast('Please enter a message','error');return;}
-    const targetAll=document.querySelector('input[name="wa-target"]:checked')?.value==='all';
-    let recipients=[];
-    if(targetAll){
-      recipients=DB.getCustomers().filter(c=>c.whatsapp).map(c=>({name:c.name,phone:c.whatsapp}));
-    } else {
-      document.querySelectorAll('.wa-cust-check:checked').forEach(cb=>{
-        recipients.push({name:cb.dataset.name,phone:cb.value});
-      });
+    const btn=document.getElementById('sms-offer-btn');
+    const resultEl=document.getElementById('sms-result');
+    const targetAll=document.querySelector('input[name="sms-target"]:checked')?.value==='all';
+    let phones=[];
+    if(!targetAll){
+      document.querySelectorAll('.sms-cust-check:checked').forEach(cb=>{if(cb.value) phones.push(cb.value);});
+      if(!phones.length){showToast('Select at least one customer','error');return;}
     }
-    if(recipients.length===0){showToast('No customers selected or no WhatsApp numbers available','error');return;}
-    // Build queue
-    const queueEl=document.getElementById('wa-queue-list');
-    const queueWrap=document.getElementById('wa-send-queue');
-    const summary=document.getElementById('wa-queue-summary');
-    if(!queueEl||!queueWrap) return;
-    queueWrap.style.display='block';
-    queueWrap.scrollIntoView({behavior:'smooth',block:'nearest'});
-    let sentCount=0;
-    queueEl.innerHTML=recipients.map((r,i)=>{
-      const waUrl=`https://wa.me/91${r.phone}?text=${encodeURIComponent(msg)}`;
-      return `<div class="wa-queue-item" id="wa-qi-${i}" style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border-light);">
-        <div style="flex:1;">
-          <div style="font-weight:600;font-size:0.88rem;">${esc(r.name)}</div>
-          <div style="font-size:0.76rem;color:var(--text-light);">📱 ${esc(r.phone)}</div>
-        </div>
-        <a href="${waUrl}" target="_blank" class="btn btn-gold btn-sm wa-send-link" data-idx="${i}" style="text-decoration:none;white-space:nowrap;">
-          💬 Open WhatsApp
-        </a>
-        <span class="wa-sent-badge" id="wa-badge-${i}" style="display:none;font-size:0.76rem;font-weight:700;color:#2E7D32;white-space:nowrap;">✅ Sent</span>
-      </div>`;
-    }).join('');
-    if(summary) summary.textContent=`${recipients.length} message${recipients.length!==1?'s':''} queued. Click each button to open WhatsApp.`;
-    // Mark as sent when link clicked
-    document.querySelectorAll('.wa-send-link').forEach(link=>{
-      link.addEventListener('click', ()=>{
-        const idx=link.dataset.idx;
-        const badge=document.getElementById(`wa-badge-${idx}`);
-        if(badge){badge.style.display='inline';sentCount++;}
-        link.textContent='✓ Opened';
-        link.classList.replace('btn-gold','btn-ghost');
-        if(summary) summary.textContent=`${sentCount} of ${recipients.length} sent via WhatsApp.`;
-      });
-    });
+    if(btn){btn.disabled=true;btn.textContent='Sending…';}
+    const shopId=DB.getShopId();
+    try {
+      const payload={shopId,message:msg};
+      if(!targetAll&&phones.length) payload.phones=phones;
+      const r=await apiPost('/api/sms/send-offer',payload,true);
+      if(btn){btn.disabled=false;btn.textContent='📤  Send SMS to Customers';}
+      if(resultEl){
+        resultEl.style.display='block';
+        if(r.success){
+          resultEl.innerHTML=`<div class="alert-banner alert-success">✅ Sent <strong>${r.sent}</strong> SMS${r.sent!==1?'s':''}. ${r.failed?`Failed: ${r.failed}.`:''}</div>`;
+          showToast(`SMS sent to ${r.sent} customers!`,'success');
+          loadSmsLogs();
+        } else {
+          resultEl.innerHTML=`<div class="alert-banner alert-error">❌ ${r.error||'Failed to send.'}</div>`;
+          showToast(r.error||'SMS sending failed.','error');
+        }
+      }
+    } catch(err){
+      if(btn){btn.disabled=false;btn.textContent='📤  Send SMS to Customers';}
+      showToast('Network error. Check backend connection.','error');
+    }
+  });
+
+  /* ── Image Lightbox ── */
+  onAll('.zoomable-img-wrap','click', e=>{
+    const wrap=e.currentTarget;
+    openLightbox(wrap.dataset.zoomSrc, wrap.dataset.zoomName||'Product Image');
+  });
+  // Close lightbox on Escape key
+  document.addEventListener('keydown', e=>{
+    if(e.key==='Escape') document.getElementById('img-lightbox')?.remove();
+  });
+
+  /* ── Feedback button on order success ── */
+  on('#go-feedback-btn','click', e=>{
+    document.getElementById('success-overlay')?.remove();
+    const url=e.currentTarget.dataset.feedbackUrl||'';
+    // Navigate to customer feedback sub-route
+    state.subRoute='feedback'; render(); postRender();
   });
 
   /* ── Feedback: star rating widget ── */
@@ -2717,6 +2779,38 @@ function attachListeners() {
       showToast('Failed to submit feedback. Please try again.','error');
     }
   });
+
+  /* ── Admin SMS: load delivery logs ── */
+  async function loadSmsLogs() {
+    const el=document.getElementById('sms-logs-list');
+    if(!el) return;
+    const shopId=DB.getShopId();
+    if(!firebaseReady||!shopId){
+      el.innerHTML='<p class="text-muted" style="padding:12px 0;text-align:center;">Firebase not connected — no logs available.</p>';
+      return;
+    }
+    try {
+      const snap=await db.collection('shops').doc(shopId).collection('smsLogs').orderBy('timestamp','desc').limit(25).get();
+      if(snap.empty){el.innerHTML='<p class="text-muted" style="padding:20px 0;text-align:center;">No SMS logs yet. Send an offer to see logs here.</p>';return;}
+      el.innerHTML=`<div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Date</th><th>Type</th><th>Sent</th><th>Failed</th><th>Total</th><th>Message</th></tr></thead>
+        <tbody>${snap.docs.map(d=>{
+          const log=d.data();
+          const ts=log.timestamp?.toDate?log.timestamp.toDate().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+          return `<tr>
+            <td style="white-space:nowrap;font-size:0.8rem;">${ts}</td>
+            <td><span class="td-badge badge-gold">${esc(log.type||'offer')}</span></td>
+            <td><span class="td-badge badge-green">${log.sent||0} ✓</span></td>
+            <td>${(log.failed||0)>0?`<span class="td-badge badge-red">${log.failed} ✗</span>`:'<span style="color:var(--text-xlight);">—</span>'}</td>
+            <td style="font-size:0.82rem;">${log.total||0}</td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.82rem;">${esc(log.message||'')}</td>
+          </tr>`;
+        }).join('')}</tbody></table></div>`;
+    } catch(err){
+      console.error('SMS logs error:',err);
+      el.innerHTML='<p class="text-muted">Failed to load logs.</p>';
+    }
+  }
 
   /* ── Admin feedback: load reviews ── */
   async function loadAdminFeedback(filterRating='') {

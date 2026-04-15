@@ -1181,23 +1181,23 @@ function renderProductModal() {
               </div>
             </div>
 
-            <!-- Row 2: Category + Subcategory -->
+            <!-- Row 2: Category + Subcategory (free-type OR select from suggestions) -->
+            <datalist id="prod-cat-list">${mainCats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
+            <datalist id="prod-subcat-list">${subCats.map(s=>`<option value="${esc(s)}">`).join('')}</datalist>
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Category <span class="required">*</span></label>
-                <select class="form-control" name="category" id="prod-category-sel" required>
-                  <option value="">— Select Category —</option>
-                  ${mainCats.map(c=>`<option value="${c}"${c===curCat?' selected':''}>${c}</option>`).join('')}
-                </select>
+                <input type="text" class="form-control" name="category" id="prod-category-inp"
+                  list="prod-cat-list" autocomplete="off" required
+                  value="${esc(curCat)}" placeholder="Type or select (e.g. Women, Ethnic Wear…)"/>
+                <small class="form-hint">Type a new category or pick an existing one</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Subcategory <span class="required">*</span></label>
-                <select class="form-control" name="subcategory" id="subcategory-sel" required
-                  ${!curCat?'disabled':''}>
-                  <option value="">— Select Category first —</option>
-                  ${subCats.map(s=>`<option value="${esc(s)}"${s===(v.subcategory||'')?' selected':''}>${esc(s)}</option>`).join('')}
-                </select>
-                <small class="form-hint">Select category first to load subcategories</small>
+                <input type="text" class="form-control" name="subcategory" id="prod-subcat-inp"
+                  list="prod-subcat-list" autocomplete="off" required
+                  value="${esc(v.subcategory||'')}" placeholder="Type or select (e.g. Kurtis, T-Shirts…)"/>
+                <small class="form-hint">Type a new subcategory or pick an existing one</small>
               </div>
             </div>
 
@@ -1215,10 +1215,10 @@ function renderProductModal() {
               </div>
             </div>
 
-            <!-- Row 4: Description (Required) -->
+            <!-- Row 4: Description (Optional) -->
             <div class="form-group">
-              <label class="form-label">Description <span class="required">*</span></label>
-              <textarea class="form-control" name="description" rows="2" required
+              <label class="form-label">Description <span class="optional-tag">(Optional)</span></label>
+              <textarea class="form-control" name="description" rows="2"
                 placeholder="Describe the product — fabric, occasion, style, care instructions…"
                 style="resize:vertical;">${esc(v.description||'')}</textarea>
             </div>
@@ -3435,15 +3435,22 @@ function attachListeners() {
     if(isNaN(qty)||qty<0){showToast('Invalid quantity','error');return;}
     DB.updateProduct(pid,{quantity:qty});showToast('Stock updated','success');state.modalOpen=null;render();
   });
-  /* Category change → refresh subcategory dropdown */
-  on('#prod-category-sel','change', e=>{
-    const cat=e.target.value;
-    const sel=document.getElementById('subcategory-sel');
-    if(!sel) return;
-    sel.disabled=!cat;
-    sel.innerHTML=`<option value="">— Select Subcategory —</option>`+
-      getSubCategories(cat).map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
-  });
+  /* Category input → refresh subcategory datalist + size options */
+  function onCategoryChange(cat) {
+    // Refresh subcategory datalist
+    const dl=document.getElementById('prod-subcat-list');
+    if(dl) {
+      const subs=[...new Set([...getSubCategories(cat),...DB.getProducts().filter(p=>p.category===cat&&p.subcategory).map(p=>p.subcategory)])];
+      dl.innerHTML=subs.map(s=>`<option value="${esc(s)}">`).join('');
+    }
+    // Update size selects to match new category
+    const sizes=getSizesForCategory(cat);
+    document.querySelectorAll('.sizes-tbody .size-size-sel').forEach(sel=>{
+      const cur=sel.value;
+      sel.innerHTML=sizes.map(s=>`<option value="${s}"${s===cur?' selected':''}>${s}</option>`).join('');
+    });
+  }
+  on('#prod-category-inp','input', e=>onCategoryChange(e.target.value.trim()));
 
   /* Base price change → auto-fill all empty size price inputs */
   on('#prod-base-price','input', e=>{
@@ -3454,19 +3461,9 @@ function attachListeners() {
     });
   });
 
-  /* Product form — category change (update all size selects in all variants) */
-  on('#prod-category-sel','change', e=>{
-    const cat=e.target.value;
-    const sizes=getSizesForCategory(cat);
-    document.querySelectorAll('.sizes-tbody .size-size-sel').forEach(sel=>{
-      const cur=sel.value;
-      sel.innerHTML=sizes.map(s=>`<option value="${s}"${s===cur?' selected':''}>${s}</option>`).join('');
-    });
-  });
-
   /* Product form — Add Color Variant */
   on('#add-color-variant-btn','click',()=>{
-    const cat=document.getElementById('prod-category-sel')?.value||'Men';
+    const cat=document.getElementById('prod-category-inp')?.value||'Men';
     const sizes=getSizesForCategory(cat);
     const idx=document.querySelectorAll('.color-variant-block').length;
     const html=renderColorVariantBlock({id:uid(),name:'',image:'',sizes:[]},idx,sizes);
@@ -3489,7 +3486,7 @@ function attachListeners() {
     if(e.target.closest('.add-size-row-btn')){
       const btn=e.target.closest('.add-size-row-btn');
       const tbody=btn.closest('.size-price-wrap')?.querySelector('.sizes-tbody');
-      const cat=document.getElementById('prod-category-sel')?.value||'Men';
+      const cat=document.getElementById('prod-category-inp')?.value||'Men';
       const sizes=getSizesForCategory(cat);
       if(tbody){
         const row=document.createElement('tr');row.className='size-row';
@@ -3549,13 +3546,20 @@ function attachListeners() {
     const basePrice   = +fd.get('basePrice')||0;
     const quantity    = +fd.get('quantity')||0;
 
-    // Strict validation
+    // Validation
     if(!name)        { showToast('Product name is required','error'); return; }
-    if(!category)    { showToast('Please select a category','error'); return; }
-    if(!subcategory) { showToast('Please select a subcategory','error'); return; }
-    if(!description) { showToast('Description is required','error'); return; }
+    if(!category)    { showToast('Please enter or select a category','error'); return; }
+    if(!subcategory) { showToast('Please enter or select a subcategory','error'); return; }
     if(basePrice<=0) { showToast('Base price must be greater than 0','error'); return; }
     if(quantity<0)   { showToast('Stock quantity cannot be negative','error'); return; }
+
+    // Auto-save new category/subcategory into DB so they appear in future suggestions
+    if(!getMainCategories().includes(category)) {
+      DB.addMainCategory(category);
+    }
+    if(subcategory && !getSubCategories(category).includes(subcategory)) {
+      DB.addSubCategory(category, subcategory);
+    }
 
     // Read all color variants
     const colorBlocks = document.querySelectorAll('.color-variant-block');

@@ -1125,12 +1125,12 @@ function renderColorVariantBlock(cv, idx, availSizes) {
 }
 
 function renderProductModal() {
-  const editing = state.editingId ? DB.getProducts().find(p=>p.id===state.editingId) : null;
-  const v = editing || {};
-  const curCat = v.category || 'Men';
+  const editing   = state.editingId ? DB.getProducts().find(p=>p.id===state.editingId) : null;
+  const v         = editing || {};
+  const shop      = DB.getShop();
+  const curCat    = v.category || getMainCategories()[0] || '';
   const availSizes = getSizesForCategory(curCat);
 
-  // Build color variants — support new multi-color and legacy single-color
   let colorVariants = [];
   if (v.colors && v.colors.length) {
     colorVariants = v.colors;
@@ -1140,60 +1140,89 @@ function renderProductModal() {
     colorVariants = [{ id: uid(), name: '', image: '', sizes: [] }];
   }
 
+  const mainCats = getMainCategories();
+  const subCats  = getSubCategories(curCat);
+
   return `<div class="modal-overlay" id="product-modal-overlay">
-    <div class="modal modal-lg animate-slideUp" style="max-width:740px;">
+    <div class="modal modal-lg animate-slideUp" style="max-width:760px;">
       <div class="modal-header">
-        <div><div class="login-role-badge">✦ &nbsp; ${editing?'Edit Product':'Add Product'}</div>
-          <div class="modal-title">${editing?esc(editing.name):'New Product'}</div></div>
+        <div>
+          <div class="login-role-badge">✦ &nbsp; ${editing?'Edit Product':'Add Product'}</div>
+          <div class="modal-title">${editing?esc(editing.name):'New Product'}</div>
+        </div>
         <button class="modal-close" data-close-modal="product">✕</button>
       </div>
       <div class="modal-body">
+        <!-- Shop Info Banner -->
+        <div class="prod-shop-banner">
+          🏪 Adding to: <strong>${esc(shop?.name||'Your Shop')}</strong>
+          <span class="prod-shop-tag">All fields marked * are required</span>
+        </div>
         <form id="product-form">
-          <div style="display:flex;flex-direction:column;gap:16px;">
-            <!-- Row 1: Name + Category -->
+          <div style="display:flex;flex-direction:column;gap:18px;">
+
+            <!-- Row 1: Name + Base Price -->
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">Product Name <span class="required">*</span></label>
-                <input type="text" class="form-control" name="name" id="prod-name" value="${esc(v.name||'')}" placeholder="e.g. Silk Anarkali Kurta" required/>
+                <input type="text" class="form-control" name="name" id="prod-name"
+                  value="${esc(v.name||'')}" placeholder="e.g. Silk Anarkali Kurta" required/>
               </div>
               <div class="form-group">
-                <label class="form-label">Gender Category <span class="required">*</span></label>
-                <select class="form-control" name="category" id="prod-category-sel" required>
-                  <option value="">Select</option>
-                  ${getMainCategories().map(c=>`<option value="${c}"${c===curCat?' selected':''}>${c}</option>`).join('')}
-                </select>
+                <label class="form-label">Base Price (₹) <span class="required">*</span></label>
+                <input type="number" class="form-control" name="basePrice" id="prod-base-price"
+                  value="${esc(v.price||v.sizes?.[0]?.price||'')}" min="1" placeholder="e.g. 599" required/>
+                <small class="form-hint">Used as default price for each size</small>
               </div>
             </div>
-            <!-- Row 2: Material -->
+
+            <!-- Row 2: Category + Subcategory -->
             <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Category <span class="required">*</span></label>
+                <select class="form-control" name="category" id="prod-category-sel" required>
+                  <option value="">— Select Category —</option>
+                  ${mainCats.map(c=>`<option value="${c}"${c===curCat?' selected':''}>${c}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Subcategory <span class="required">*</span></label>
+                <select class="form-control" name="subcategory" id="subcategory-sel" required
+                  ${!curCat?'disabled':''}>
+                  <option value="">— Select Category first —</option>
+                  ${subCats.map(s=>`<option value="${esc(s)}"${s===(v.subcategory||'')?' selected':''}>${esc(s)}</option>`).join('')}
+                </select>
+                <small class="form-hint">Select category first to load subcategories</small>
+              </div>
+            </div>
+
+            <!-- Row 3: Quantity + Material -->
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Stock Quantity <span class="required">*</span></label>
+                <input type="number" class="form-control" name="quantity"
+                  value="${esc(v.quantity||'')}" min="0" placeholder="e.g. 50" required/>
+              </div>
               <div class="form-group">
                 <label class="form-label">Material / Type <span class="optional-tag">(Optional)</span></label>
-                <input type="text" class="form-control" name="material" value="${esc(v.material||'')}" placeholder="e.g. Cotton, Silk"/>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Sub-category <span class="required">*</span></label>
-                <select class="form-control" name="subcategory" id="subcategory-sel" required>
-                  <option value="">— Select Category first —</option>
-                  ${(SUBCATEGORIES[curCat]||[]).map(s=>`<option value="${esc(s)}"${s===(v.subcategory||'')?' selected':''}>${esc(s)}</option>`).join('')}
-                </select>
-                <small class="form-hint">Select gender category first to see subcategory options</small>
+                <input type="text" class="form-control" name="material"
+                  value="${esc(v.material||'')}" placeholder="e.g. Cotton, Silk, Polyester"/>
               </div>
             </div>
-            <!-- Row 3: Quantity + Description -->
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Total Quantity <span class="required">*</span></label>
-                <input type="number" class="form-control" name="quantity" value="${esc(v.quantity||'')}" min="0" required/>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Description <span class="optional-tag">(Optional)</span></label>
-                <input type="text" class="form-control" name="description" value="${esc(v.description||'')}" placeholder="Brief description…"/>
-              </div>
+
+            <!-- Row 4: Description (Required) -->
+            <div class="form-group">
+              <label class="form-label">Description <span class="required">*</span></label>
+              <textarea class="form-control" name="description" rows="2" required
+                placeholder="Describe the product — fabric, occasion, style, care instructions…"
+                style="resize:vertical;">${esc(v.description||'')}</textarea>
             </div>
-            <!-- Color Variants Section -->
+
+            <!-- Color Variants -->
             <div>
               <div style="font-size:0.78rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-medium);margin-bottom:12px;">
-                🎨 Color Variants
+                🎨 Color Variants &amp; Images <span class="required">*</span>
+                <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:0.74rem;color:var(--text-light);margin-left:8px;">(at least 1 color with 1 image required)</span>
               </div>
               <div id="color-variants-wrap" style="display:flex;flex-direction:column;gap:16px;">
                 ${colorVariants.map((cv,i)=>renderColorVariantBlock(cv,i,availSizes)).join('')}
@@ -1202,6 +1231,7 @@ function renderProductModal() {
                 + Add Another Color
               </button>
             </div>
+
           </div>
         </form>
       </div>
@@ -3326,8 +3356,18 @@ function attachListeners() {
     const cat=e.target.value;
     const sel=document.getElementById('subcategory-sel');
     if(!sel) return;
+    sel.disabled=!cat;
     sel.innerHTML=`<option value="">— Select Subcategory —</option>`+
-      (SUBCATEGORIES[cat]||[]).map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
+      getSubCategories(cat).map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  });
+
+  /* Base price change → auto-fill all empty size price inputs */
+  on('#prod-base-price','input', e=>{
+    const price=e.target.value;
+    if(!price) return;
+    document.querySelectorAll('.size-price-inp').forEach(inp=>{
+      if(!inp.value) inp.value=price;
+    });
   });
 
   /* Product form — category change (update all size selects in all variants) */
@@ -3417,43 +3457,62 @@ function attachListeners() {
   on('#save-product-btn','click',()=>{
     const form=document.getElementById('product-form'); if(!form) return;
     const fd=new FormData(form);
-    const name=fd.get('name')?.trim();
-    const category=fd.get('category')?.trim();
-    const subcategory=(fd.get('subcategory')||'').trim()||autoDetectSubcategory(name||'');
-    const material=fd.get('material')?.trim()||'';
-    const description=fd.get('description')?.trim()||'';
-    const quantity=+fd.get('quantity')||0;
-    if(!name||!category){showToast('Name and Gender Category are required','error');return;}
+    const name        = fd.get('name')?.trim();
+    const category    = fd.get('category')?.trim();
+    const subcategory = (fd.get('subcategory')||'').trim();
+    const material    = fd.get('material')?.trim()||'';
+    const description = fd.get('description')?.trim()||'';
+    const basePrice   = +fd.get('basePrice')||0;
+    const quantity    = +fd.get('quantity')||0;
+
+    // Strict validation
+    if(!name)        { showToast('Product name is required','error'); return; }
+    if(!category)    { showToast('Please select a category','error'); return; }
+    if(!subcategory) { showToast('Please select a subcategory','error'); return; }
+    if(!description) { showToast('Description is required','error'); return; }
+    if(basePrice<=0) { showToast('Base price must be greater than 0','error'); return; }
+    if(quantity<0)   { showToast('Stock quantity cannot be negative','error'); return; }
 
     // Read all color variants
-    const colorBlocks=document.querySelectorAll('.color-variant-block');
-    const colors=[];
-    colorBlocks.forEach(block=>{
-      const colorName=block.querySelector('.color-name-input')?.value.trim();
+    const colorBlocks = document.querySelectorAll('.color-variant-block');
+    const colors = [];
+    colorBlocks.forEach(block => {
+      const colorName  = block.querySelector('.color-name-input')?.value.trim();
       if(!colorName) return;
-      const imageData=block.querySelector('.color-img-data')?.value||'';
-      const sizeRows=block.querySelectorAll('.sizes-tbody .size-row');
-      const sizes=[];
-      sizeRows.forEach(row=>{
-        const sz=row.querySelector('.size-size-sel')?.value;
-        const pr=+row.querySelector('.size-price-inp')?.value;
-        if(sz) sizes.push({size:sz,price:isNaN(pr)?0:pr});
+      const imageData  = block.querySelector('.color-img-data')?.value||'';
+      const sizeRows   = block.querySelectorAll('.sizes-tbody .size-row');
+      const sizes = [];
+      sizeRows.forEach(row => {
+        const sz = row.querySelector('.size-size-sel')?.value;
+        const pr = +row.querySelector('.size-price-inp')?.value||basePrice;
+        if(sz) sizes.push({ size:sz, price:isNaN(pr)||pr<=0?basePrice:pr });
       });
-      colors.push({id:uid(),name:colorName,image:imageData,sizes});
+      colors.push({ id:uid(), name:colorName, image:imageData, sizes });
     });
-    if(colors.length===0){showToast('Add at least one color variant with a name','error');return;}
-    const firstColor=colors[0];
-    const allSizes=firstColor.sizes;
-    const prod={
-      name,category,subcategory,material,description,quantity,
-      colors,
-      // backward compat
-      color:firstColor.name, image:firstColor.image,
-      sizes:allSizes, size:allSizes[0]?.size||'', price:allSizes[0]?.price||0,
+
+    if(colors.length===0)        { showToast('Add at least one color variant','error'); return; }
+    if(!colors[0].image)         { showToast('Please upload an image for the first color variant','error'); return; }
+    if(colors[0].sizes.length===0){ showToast('Add at least one size for the first color','error'); return; }
+
+    const firstColor = colors[0];
+    const allSizes   = firstColor.sizes;
+    const prod = {
+      name, category, subcategory, material, description,
+      quantity, basePrice, colors,
+      color: firstColor.name, image: firstColor.image,
+      sizes: allSizes, size: allSizes[0]?.size||'',
+      price: allSizes[0]?.price||basePrice,
+      addedBy: DB.getSession()?.role||'admin',
     };
-    if(state.editingId){DB.updateProduct(state.editingId,prod);showToast('Product updated','success');}
-    else{prod.id=uid();prod.addedDate=Date.now();DB.addProduct(prod);if(subcategory)DB.addCategory(subcategory);showToast('Product added','success');}
-    state.modalOpen=null;state.editingId=null;render();
+    if(state.editingId) {
+      DB.updateProduct(state.editingId, prod);
+      showToast('Product updated successfully','success');
+    } else {
+      prod.id = uid(); prod.addedDate = Date.now();
+      DB.addProduct(prod);
+      showToast(`✅ "${name}" added to ${category} → ${subcategory}`,'success');
+    }
+    state.modalOpen=null; state.editingId=null; render();
   });
 
   /* Close modals */

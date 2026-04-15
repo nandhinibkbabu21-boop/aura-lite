@@ -2139,6 +2139,25 @@ tbody tr:hover td { background: var(--cream); }
   z-index: 2;
 }
 
+/* ── Color Swatch Chips (Customer Product Cards) ─── */
+.shop-card-colors {
+  margin-bottom: 6px;
+}
+.color-swatch-chip {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid rgba(0,0,0,0.15);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+}
+.color-swatch-chip:hover {
+  transform: scale(1.25);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+}
+
 /* ── Category Accordion (Admin) ──────────────────── */
 .cat-accordion-wrap {
   display: flex;

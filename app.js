@@ -905,7 +905,7 @@ function renderSidebar(role) {
        ['employees','◉','Employees'],['customers','◎','Customers'],['orders','◊','Orders'],
        ['analytics','📊','Analytics'],['sms','📣','Send Offers'],['feedback','⭐','Feedback']]
     : role === 'employee'
-    ? [['products','✦','Products'],['stock','◻','Stock'],['salary','💰','My Salary']]
+    ? [['products','✦','Products'],['categories','◻','Categories'],['stock','📦','Stock'],['salary','💰','My Salary']]
     : [['products','✦','Products'],['stock','◻','Stock'],['feedback','⭐','My Feedback']];
   const session = DB.getSession();
   return `
@@ -1021,6 +1021,9 @@ function renderAdminProducts() {
     return matchQ&&matchCat;
   });
   const catIcons={'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼'};
+  // Dynamic: combine configured categories + any found in product data
+  const allProdCats=[...new Set(allProds.map(p=>p.category).filter(Boolean))];
+  const adminCatList=[...new Set([...getMainCategories(),...allProdCats])];
   return `<div class="animate-fadeIn">
     <div class="dash-page-title">Product Catalogue</div><div class="dash-page-subtitle">Manage your clothing inventory</div>
     <div class="dash-toolbar">
@@ -1028,13 +1031,13 @@ function renderAdminProducts() {
         <input type="text" placeholder="Search products…" id="product-search" value="${esc(state.searchQuery)}"/></div>
       <button class="btn btn-gold" id="add-product-btn">+ Add Product</button>
     </div>
-    <!-- Category Tabs -->
+    <!-- Category Tabs — dynamic from product data + configured categories -->
     <div class="prod-cat-tabs">
       <button class="prod-cat-tab${activeCat==='all'?' active':''}" data-prod-cat="all">
         ✦ All <span class="prod-cat-count">${allProds.length}</span>
       </button>
-      ${getMainCategories().map(c=>`<button class="prod-cat-tab${activeCat===c?' active':''}" data-prod-cat="${c}">
-        ${catIcons[c]||'👕'} ${c} <span class="prod-cat-count">${allProds.filter(p=>p.category===c).length}</span>
+      ${adminCatList.map(c=>`<button class="prod-cat-tab${activeCat===c?' active':''}" data-prod-cat="${esc(c)}">
+        ${catIcons[c]||'👕'} ${esc(c)} <span class="prod-cat-count">${allProds.filter(p=>p.category===c).length}</span>
       </button>`).join('')}
     </div>
     ${prods.length===0
@@ -1140,8 +1143,10 @@ function renderProductModal() {
     colorVariants = [{ id: uid(), name: '', image: '', sizes: [] }];
   }
 
-  const mainCats = getMainCategories();
-  const subCats  = getSubCategories(curCat);
+  // Combine configured categories + any already used in products
+  const _existingProdCats=[...new Set(DB.getProducts().map(p=>p.category).filter(Boolean))];
+  const mainCats=[...new Set([...getMainCategories(),..._existingProdCats])];
+  const subCats  = curCat ? [...new Set([...getSubCategories(curCat),...DB.getProducts().filter(p=>p.category===curCat&&p.subcategory).map(p=>p.subcategory)])] : [];
 
   return `<div class="modal-overlay" id="product-modal-overlay">
     <div class="modal modal-lg animate-slideUp" style="max-width:760px;">
@@ -1264,74 +1269,45 @@ function renderStockModal(pid) {
 
 function renderAdminCategories() {
   const prods = DB.getProducts();
+  // Auto-detect categories from products only
+  const autoCats = [...new Set(prods.map(p=>p.category).filter(Boolean))].sort();
   const catIcons = { 'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼' };
-  const openCat = state.openCategoryAccordion || null;
+  function catIcon(c) { return catIcons[c] || '🏷️'; }
 
-  const sections = mainCats.map(cat => {
+  const sections = autoCats.map(cat => {
     const catProds   = prods.filter(p => p.category === cat);
-    const subCatList = getSubCategories(cat);
-    const isOpen     = openCat === cat;
+    const subCatList = [...new Set(catProds.map(p=>p.subcategory).filter(Boolean))];
     const totalCount = catProds.length;
-
     const subRows = subCatList.map(sub => {
       const cnt = catProds.filter(p => p.subcategory === sub).length;
       return `<div class="cat-sub-row">
         <span class="cat-sub-name">${esc(sub)}</span>
-        <span class="cat-sub-count ${cnt===0?'empty':''}">${cnt} product${cnt!==1?'s':''}</span>
-        <button class="btn-icon btn-danger-icon" data-delete-subcat="${esc(sub)}" data-subcat-parent="${esc(cat)}" title="Delete subcategory">✕</button>
+        <span class="cat-sub-count">${cnt} product${cnt!==1?'s':''}</span>
       </div>`;
     }).join('');
-
-    const knownSubs  = new Set(subCatList);
-    const otherProds = catProds.filter(p => p.subcategory && !knownSubs.has(p.subcategory));
-    const otherRow   = otherProds.length ? `<div class="cat-sub-row">
-      <span class="cat-sub-name" style="font-style:italic;color:var(--text-light);">Other / Unassigned</span>
-      <span class="cat-sub-count">${otherProds.length} product${otherProds.length!==1?'s':''}</span>
-    </div>` : '';
-
-    return `<div class="cat-accordion ${isOpen?'open':''}" data-cat-accordion="${esc(cat)}">
-      <div class="cat-accordion-header" data-toggle-cat="${esc(cat)}">
+    return `<div class="cat-accordion open">
+      <div class="cat-accordion-header" style="cursor:default;">
         <div style="display:flex;align-items:center;gap:14px;">
-          <span style="font-size:2rem;">${catIcons[cat]||'🏷️'}</span>
+          <span style="font-size:2rem;">${catIcon(cat)}</span>
           <div>
             <div class="cat-accordion-title">${esc(cat)}</div>
             <div class="cat-accordion-meta">${subCatList.length} subcategories · ${totalCount} product${totalCount!==1?'s':''}</div>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <span class="cat-accordion-arrow">${isOpen?'▲':'▼'}</span>
-          <button class="btn-icon btn-danger-icon" data-delete-maincat="${esc(cat)}" title="Delete category" style="font-size:0.78rem;">✕ Delete</button>
-        </div>
+        <span class="td-badge badge-green">Auto-detected</span>
       </div>
-      ${isOpen ? `<div class="cat-accordion-body">
-        ${subRows}
-        ${otherRow}
-        ${!subCatList.length&&!otherProds.length ? `<div style="padding:12px 24px;color:var(--text-light);font-size:0.84rem;">No subcategories yet. Add one below.</div>` : ''}
-        <!-- Add subcategory inline form -->
-        <div class="cat-add-sub-row">
-          <input type="text" class="form-control cat-add-sub-input" data-parent-cat="${esc(cat)}" placeholder="Add subcategory (e.g. T-Shirts)" style="flex:1;padding:8px 12px;font-size:0.84rem;"/>
-          <button class="btn btn-gold btn-sm cat-add-sub-btn" data-parent-cat="${esc(cat)}">+ Add</button>
-        </div>
-      </div>` : ''}
+      <div class="cat-accordion-body">
+        ${subRows||`<div style="padding:12px 24px;color:var(--text-light);font-size:0.84rem;">No subcategories yet.</div>`}
+      </div>
     </div>`;
   }).join('');
 
   return `<div class="animate-fadeIn">
     <div class="dash-page-title">Categories</div>
-    <div class="dash-page-subtitle">Add, delete and manage product categories freely</div>
-
-    <!-- Add new main category -->
-    <div class="card" style="padding:20px 24px;max-width:500px;margin-bottom:24px;">
-      <div style="font-weight:700;font-size:0.9rem;margin-bottom:12px;">➕ Add New Category</div>
-      <form id="add-maincat-form" style="display:flex;gap:10px;">
-        <input type="text" class="form-control" name="mainCatName" placeholder="e.g. Accessories, Footwear, Sportswear…" required style="flex:1;"/>
-        <button type="submit" class="btn btn-gold">Add</button>
-      </form>
-    </div>
-
-    <div class="cat-accordion-wrap">
-      ${sections.length ? sections : `<div class="empty-state"><div class="empty-state-icon">◻</div><div class="empty-state-title">No categories yet</div><p class="text-muted">Add your first category above.</p></div>`}
-    </div>
+    <div class="dash-page-subtitle">Categories are auto-detected from your product data. Manage products to change categories.</div>
+    ${autoCats.length===0
+      ? `<div class="empty-state"><div class="empty-state-icon">◻</div><div class="empty-state-title">No categories yet</div><p class="text-muted">Add products with categories — they will appear here automatically.</p></div>`
+      : `<div class="cat-accordion-wrap">${sections}</div>`}
   </div>`;
 }
 
@@ -1664,8 +1640,9 @@ function renderAdminAnalytics() {
 ═══════════════════════════════════════════════════ */
 function renderEmployeeDash() {
   const session=DB.getSession(), shop=DB.getShop();
-  const mainView = state.subRoute==='stock' ? renderEmpStock()
-                 : state.subRoute==='salary' ? renderEmpSalary()
+  const mainView = state.subRoute==='stock'      ? renderEmpStock()
+                 : state.subRoute==='salary'     ? renderEmpSalary()
+                 : state.subRoute==='categories' ? renderEmpCategories()
                  : renderEmpProducts();
   return `<div>${renderAppHeader({ shopName:shop?.name, userName:session?.name })}
     <div class="dash-layout">${renderSidebar('employee')}
@@ -1682,6 +1659,9 @@ function renderEmpProducts() {
     return matchQ&&matchCat;
   });
   const catIcons={'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼'};
+  // Dynamic categories: combine getMainCategories + any extra cats already in products
+  const allProdCats=[...new Set(allProds.map(p=>p.category).filter(Boolean))];
+  const empCatList=[...new Set([...getMainCategories(),...allProdCats])];
   return `<div class="animate-fadeIn">
     <div class="dash-page-title">Product Catalogue</div><div class="dash-page-subtitle">Manage clothing stock</div>
     <div class="dash-toolbar">
@@ -1689,13 +1669,13 @@ function renderEmpProducts() {
         <input type="text" placeholder="Search products…" id="product-search" value="${esc(state.searchQuery)}"/></div>
       <button class="btn btn-gold" id="add-product-btn">+ Add Product</button>
     </div>
-    <!-- Category Tabs -->
+    <!-- Category Tabs — dynamic from product data + configured categories -->
     <div class="prod-cat-tabs">
       <button class="prod-cat-tab${activeCat==='all'?' active':''}" data-prod-cat="all">
         ✦ All <span class="prod-cat-count">${allProds.length}</span>
       </button>
-      ${getMainCategories().map(c=>`<button class="prod-cat-tab${activeCat===c?' active':''}" data-prod-cat="${c}">
-        ${catIcons[c]||'👕'} ${c} <span class="prod-cat-count">${allProds.filter(p=>p.category===c).length}</span>
+      ${empCatList.map(c=>`<button class="prod-cat-tab${activeCat===c?' active':''}" data-prod-cat="${esc(c)}">
+        ${catIcons[c]||'👕'} ${esc(c)} <span class="prod-cat-count">${allProds.filter(p=>p.category===c).length}</span>
       </button>`).join('')}
     </div>
     ${prods.length===0
@@ -1706,6 +1686,76 @@ function renderEmpProducts() {
       :`<div class="grid-3">${prods.map(renderProductCard).join('')}</div>`}
     ${state.modalOpen==='product'?renderProductModal():''}
     ${state.modalOpen==='stock'?renderStockModal(state.stockProductId):''}
+  </div>`;
+}
+function renderEmpCategories() {
+  const prods = DB.getProducts();
+  const openCat = state.openCategoryAccordion || null;
+  const catIcons = {'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼'};
+  function catIcon(c) { return catIcons[c] || '🏷️'; }
+  const mainCats = getMainCategories();
+
+  const sections = mainCats.map(cat => {
+    const catProds   = prods.filter(p => p.category === cat);
+    const subCatList = getSubCategories(cat);
+    const isOpen     = openCat === cat;
+    const totalCount = catProds.length;
+
+    const subRows = subCatList.map(sub => {
+      const cnt = catProds.filter(p => p.subcategory === sub).length;
+      return `<div class="cat-sub-row">
+        <span class="cat-sub-name">${esc(sub)}</span>
+        <span class="cat-sub-count ${cnt===0?'empty':''}">${cnt} product${cnt!==1?'s':''}</span>
+        <button class="btn-icon btn-danger-icon" data-delete-subcat="${esc(sub)}" data-subcat-parent="${esc(cat)}" title="Delete subcategory">✕</button>
+      </div>`;
+    }).join('');
+
+    const knownSubs  = new Set(subCatList);
+    const otherProds = catProds.filter(p => p.subcategory && !knownSubs.has(p.subcategory));
+    const otherRow   = otherProds.length ? `<div class="cat-sub-row">
+      <span class="cat-sub-name" style="font-style:italic;color:var(--text-light);">Other / Unassigned</span>
+      <span class="cat-sub-count">${otherProds.length} product${otherProds.length!==1?'s':''}</span>
+    </div>` : '';
+
+    return `<div class="cat-accordion ${isOpen?'open':''}" data-cat-accordion="${esc(cat)}">
+      <div class="cat-accordion-header" data-toggle-cat="${esc(cat)}">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <span style="font-size:2rem;">${catIcon(cat)}</span>
+          <div>
+            <div class="cat-accordion-title">${esc(cat)}</div>
+            <div class="cat-accordion-meta">${subCatList.length} subcategories · ${totalCount} product${totalCount!==1?'s':''}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-accordion-arrow">${isOpen?'▲':'▼'}</span>
+          <button class="btn-icon btn-danger-icon" data-delete-maincat="${esc(cat)}" title="Delete category" style="font-size:0.78rem;">✕ Delete</button>
+        </div>
+      </div>
+      ${isOpen ? `<div class="cat-accordion-body">
+        ${subRows}
+        ${otherRow}
+        ${!subCatList.length&&!otherProds.length ? `<div style="padding:12px 24px;color:var(--text-light);font-size:0.84rem;">No subcategories yet. Add one below.</div>` : ''}
+        <div class="cat-add-sub-row">
+          <input type="text" class="form-control cat-add-sub-input" data-parent-cat="${esc(cat)}" placeholder="Add subcategory (e.g. T-Shirts)" style="flex:1;padding:8px 12px;font-size:0.84rem;"/>
+          <button class="btn btn-gold btn-sm cat-add-sub-btn" data-parent-cat="${esc(cat)}">+ Add</button>
+        </div>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+
+  return `<div class="animate-fadeIn">
+    <div class="dash-page-title">Categories</div>
+    <div class="dash-page-subtitle">Add, delete and manage product categories for this shop</div>
+    <div class="card" style="padding:20px 24px;max-width:500px;margin-bottom:24px;">
+      <div style="font-weight:700;font-size:0.9rem;margin-bottom:12px;">➕ Add New Category</div>
+      <form id="add-maincat-form" style="display:flex;gap:10px;">
+        <input type="text" class="form-control" name="mainCatName" placeholder="e.g. Accessories, Footwear, Sportswear…" required style="flex:1;"/>
+        <button type="submit" class="btn btn-gold">Add</button>
+      </form>
+    </div>
+    <div class="cat-accordion-wrap">
+      ${sections.length ? sections : `<div class="empty-state"><div class="empty-state-icon">◻</div><div class="empty-state-title">No categories yet</div><p class="text-muted">Add your first category above.</p></div>`}
+    </div>
   </div>`;
 }
 function renderEmpStock() {
@@ -1790,7 +1840,9 @@ function renderCustomerShop() {
   const shop=DB.getShop(), session=DB.getSession();
   const cust=DB.getCustomers().find(c=>c.id===session?.id);
   const prods=DB.getProducts().filter(p=>+p.quantity>0);
-  const cats=['all',...new Set(prods.map(p=>p.category))];
+  const cats=['all',...new Set(prods.map(p=>p.category).filter(Boolean))];
+  const _catIconMap={'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼','Accessories':'👜','Footwear':'👟','Sports':'⚽','Ethnic':'🥻','Western':'👔'};
+  function dynCatIcon(c){return _catIconMap[c]||'👕';}
   const af=state.activeFilter||'all', q=(state.searchQuery||'').toLowerCase();
   const asf = state.activeSubFilter || 'all';
   let filtered=prods.filter(p=>(af==='all'||p.category===af)&&(asf==='all'||p.subcategory===asf));
@@ -1819,19 +1871,23 @@ function renderCustomerShop() {
       <div class="shop-hero-name gold-text">${esc(shop?.name||'Zara Aura')}</div>
       <div class="shop-hero-sub">${esc(shop?.address||'Luxury Fashion Boutique')}</div>
     </div></div>
-    <!-- Category Sections -->
+    <!-- Category Sections — fully dynamic from products -->
     <div class="category-nav-bar">
-      ${[{id:'all',icon:'✦',label:'All'},{id:'Men',icon:'👔',label:'Men'},{id:'Women',icon:'👗',label:'Women'},{id:'Kids',icon:'🧒',label:'Kids'},{id:'Newborn',icon:'🍼',label:'Newborn'}]
-        .map(c=>`<button class="cat-nav-btn${af===c.id?' active':''}" data-filter="${c.id}">
-          <span class="cat-nav-icon">${c.icon}</span>
-          <span class="cat-nav-label">${c.label}</span>
-          ${c.id!=='all'?`<span class="cat-nav-count">${prods.filter(p=>p.category===c.id).length}</span>`:''}
-        </button>`).join('')}
+      <button class="cat-nav-btn${af==='all'?' active':''}" data-filter="all">
+        <span class="cat-nav-icon">✦</span>
+        <span class="cat-nav-label">All</span>
+        <span class="cat-nav-count">${prods.length}</span>
+      </button>
+      ${cats.filter(c=>c!=='all').map(c=>`<button class="cat-nav-btn${af===c?' active':''}" data-filter="${esc(c)}">
+        <span class="cat-nav-icon">${dynCatIcon(c)}</span>
+        <span class="cat-nav-label">${esc(c)}</span>
+        <span class="cat-nav-count">${prods.filter(p=>p.category===c).length}</span>
+      </button>`).join('')}
     </div>
     ${(()=>{
       const catIcons={'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼'};
 
-      /* ── ALL view: show 4 big category tiles ── */
+      /* ── ALL view: recommended + category tiles + ALL products ── */
       if(af==='all') {
         const recSection=recs.length?`<div class="shop-section" style="background:var(--cream);border-bottom:1px solid var(--border-light);">
           <div class="shop-section-header"><div>
@@ -1839,31 +1895,41 @@ function renderCustomerShop() {
             <div class="shop-section-title">Recommended</div></div><div class="shop-section-line"></div></div>
           <div class="shop-grid">${recs.map(renderShopCard).join('')}</div></div>`:'';
 
-        const catGrid=`<div class="shop-section">
+        // Dynamic category tiles from products
+        const dynCats=[...new Set(prods.map(p=>p.category).filter(Boolean))];
+        const catGrid=dynCats.length?`<div class="shop-section">
           <div class="shop-section-header"><div>
             <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-light);font-weight:600;margin-bottom:4px;">Browse by Category</div>
             <div class="shop-section-title">Shop Collections</div></div><div class="shop-section-line"></div></div>
           <div class="main-cat-grid">
-            ${getMainCategories().map(cat=>{
+            ${dynCats.map(cat=>{
               const cnt=prods.filter(p=>p.category===cat).length;
               const subcats=[...new Set(prods.filter(p=>p.category===cat&&p.subcategory).map(p=>p.subcategory))].slice(0,3);
-              return `<div class="main-cat-tile" data-filter="${cat}">
+              return `<div class="main-cat-tile" data-filter="${esc(cat)}">
                 <div class="main-cat-tile-icon">${catIcons[cat]||'👕'}</div>
-                <div class="main-cat-tile-name">${cat}</div>
-                <div class="main-cat-tile-sub">${subcats.length?subcats.join(' · '):'Fashion Collection'}</div>
+                <div class="main-cat-tile-name">${esc(cat)}</div>
+                <div class="main-cat-tile-sub">${subcats.length?subcats.map(esc).join(' · '):'Fashion Collection'}</div>
                 <div class="main-cat-tile-count">${cnt} item${cnt!==1?'s':''}</div>
               </div>`;
             }).join('')}
-          </div></div>`;
-        return recSection+catGrid;
+          </div></div>`:'';
+
+        // All products grid (below category tiles)
+        const recIdsAll = new Set(recs.map(p=>p.id));
+        const nonRecProds = prods.filter(p=>!recIdsAll.has(p.id));
+        const allProdsSection=prods.length?`<div class="shop-section">
+          <div class="shop-section-header"><div>
+            <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-light);font-weight:600;margin-bottom:4px;">All Products</div>
+            <div class="shop-section-title">${prods.length} item${prods.length!==1?'s':''} available</div></div><div class="shop-section-line"></div></div>
+          <div class="shop-grid">${nonRecProds.map(renderShopCard).join('')}</div></div>`:'';
+
+        return recSection+catGrid+allProdsSection;
       }
 
       /* ── CATEGORY selected, NO subcategory: show subcategory grid ── */
       if(af!=='all' && asf==='all') {
-        // Get subcategories from SUBCATEGORIES constant + any custom ones from products
-        const predefinedSubs = SUBCATEGORIES[af]||[];
-        const productSubs    = [...new Set(prods.filter(p=>p.category===af&&p.subcategory).map(p=>p.subcategory))];
-        const allSubs        = [...new Set([...predefinedSubs,...productSubs])];
+        // Subcategories derived entirely from product data (dynamic, no hardcoded list)
+        const allSubs = [...new Set(prods.filter(p=>p.category===af&&p.subcategory).map(p=>p.subcategory))];
         const allCatProds    = prods.filter(p=>p.category===af);
 
         return `<div class="shop-section">
@@ -1878,23 +1944,28 @@ function renderCustomerShop() {
             </div><div class="shop-section-line"></div>
             <button class="btn btn-outline btn-sm" data-subfilter="all" data-show-all="${af}" style="white-space:nowrap;">View All →</button>
           </div>
-          <div class="subcat-grid">
+          ${allSubs.length?`<div class="subcat-grid">
             ${allSubs.map(sub=>{
               const cnt=allCatProds.filter(p=>p.subcategory===sub).length;
               return `<div class="subcat-tile" data-subfilter="${esc(sub)}">
-                <div class="subcat-tile-icon">👕</div>
+                <div class="subcat-tile-icon">${catIcons[af]||'👕'}</div>
                 <div class="subcat-tile-name">${esc(sub)}</div>
                 <div class="subcat-tile-count">${cnt} item${cnt!==1?'s':''}</div>
               </div>`;
             }).join('')}
-            ${allSubs.length===0?`<div style="grid-column:1/-1;padding:32px;text-align:center;color:var(--text-light);">No subcategories yet — products will appear here as they are added.</div>`:''}
-          </div>
+          </div>`:''}
         </div>
         ${recs.length?`<div class="shop-section" style="background:var(--cream);">
           <div class="shop-section-header"><div>
             <div style="font-size:0.7rem;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:4px;">✨ Recommended for You</div>
-            <div class="shop-section-title">${af} — Best Picks</div></div><div class="shop-section-line"></div></div>
-          <div class="shop-grid">${recs.map(renderShopCard).join('')}</div></div>`:''}`;
+            <div class="shop-section-title">${esc(af)} — Best Picks</div></div><div class="shop-section-line"></div></div>
+          <div class="shop-grid">${recs.map(renderShopCard).join('')}</div></div>`:''}
+        <div class="shop-section">
+          <div class="shop-section-header"><div>
+            <div style="font-size:0.7rem;text-transform:uppercase;color:var(--text-light);font-weight:600;margin-bottom:4px;">All Products</div>
+            <div class="shop-section-title">${esc(af)} — ${allCatProds.length} item${allCatProds.length!==1?'s':''}</div></div><div class="shop-section-line"></div></div>
+          ${allCatProds.length?`<div class="shop-grid">${allCatProds.map(renderShopCard).join('')}</div>`:`<div style="padding:24px;text-align:center;color:var(--text-light);">No products yet in this category.</div>`}
+        </div>`;
       }
 
       /* ── SUBCATEGORY selected: show products ── */
@@ -1944,10 +2015,23 @@ function renderShopCard(p) {
     <div class="shop-card-body">
       <div class="shop-card-category">${esc(p.category)}${p.subcategory?` · ${esc(p.subcategory)}`:''}${p.material?` · ${esc(p.material)}`:''}</div>
       <div class="shop-card-name">${esc(p.name)}</div>
-      <div class="shop-card-tags" style="flex-wrap:wrap;gap:4px;">
-        ${sizes.slice(0,5).map(s=>`<span class="product-tag size-tag-sm">${esc(s.size)}</span>`).join('')}
-        ${sizes.length>5?`<span class="product-tag" style="color:var(--text-light);">+${sizes.length-5}</span>`:''}
-        ${(p.colors&&p.colors.length?p.colors:[{name:p.color||''}]).slice(0,4).map(c=>`<span class="product-tag" style="display:inline-flex;align-items:center;gap:4px;"><span class="color-dot" style="background:${esc((c.name||'#ccc').toLowerCase())};"></span>${esc(c.name||'')}</span>`).join('')}${p.colors&&p.colors.length>4?`<span class="product-tag" style="color:var(--text-light);">+${p.colors.length-4} colors</span>`:''}
+      <!-- Color swatches — prominent & visible -->
+      ${(()=>{
+        const colorList=p.colors&&p.colors.length?p.colors:[{name:p.color||'',image:p.image||''}];
+        const shown=colorList.filter(c=>c.name);
+        if(!shown.length) return '';
+        return `<div class="shop-card-colors">
+          <span style="font-size:0.7rem;color:var(--text-light);font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Color${shown.length>1?'s':''}:</span>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">
+            ${shown.slice(0,6).map(c=>`<span class="color-swatch-chip" title="${esc(c.name)}" style="background:${esc((c.name||'#ccc').toLowerCase())};" data-product-detail="${esc(p.id)}"></span>`).join('')}
+            ${shown.length>6?`<span style="font-size:0.72rem;color:var(--text-light);align-self:center;">+${shown.length-6}</span>`:''}
+            ${shown.length===1?`<span style="font-size:0.78rem;color:var(--text-medium);align-self:center;">${esc(shown[0].name)}</span>`:''}
+          </div>
+        </div>`;
+      })()}
+      <div class="shop-card-tags" style="flex-wrap:wrap;gap:4px;margin-top:6px;">
+        ${sizes.slice(0,4).map(s=>`<span class="product-tag size-tag-sm">${esc(s.size)}</span>`).join('')}
+        ${sizes.length>4?`<span class="product-tag" style="color:var(--text-light);">+${sizes.length-4} sizes</span>`:''}
       </div>
       <div class="shop-card-footer">
         <div class="shop-card-price">${priceStr}</div>

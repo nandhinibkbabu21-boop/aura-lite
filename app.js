@@ -295,6 +295,11 @@ const DB = {
     const list = DB.getOrders(); list.push(o); _ls(KEYS.orders, list);
     DB._col('orders')?.doc(o.id).set(o).catch(console.error);
   },
+  updateOrder(id, data) {
+    const list = DB.getOrders().map(o => o.id===id ? {...o,...data} : o);
+    _ls(KEYS.orders, list);
+    DB._col('orders')?.doc(id).update(data).catch(console.error);
+  },
 
   addCategory(cat) {
     const list = DB.getCategories();
@@ -938,7 +943,7 @@ function renderSidebar(role) {
   const links = role === 'admin'
     ? [['overview','◈','Overview'],['products','✦','Products'],['categories','◻','Categories'],
        ['employees','◉','Employees'],['customers','◎','Customers'],['orders','◊','Orders'],
-       ['billing','🧾','Billing'],['analytics','📊','Analytics'],['sms','📣','Send Offers'],['feedback','⭐','Feedback']]
+       ['analytics','📊','Analytics'],['sms','📣','Send Offers'],['feedback','⭐','Feedback']]
     : role === 'employee'
     ? [['products','✦','Products'],['categories','◻','Categories'],['stock','📦','Stock'],['salary','💰','My Salary']]
     : [['products','✦','Products'],['stock','◻','Stock'],['feedback','⭐','My Feedback']];
@@ -968,7 +973,6 @@ function renderAdminDash() {
   const subViews = { overview:renderAdminOverview, products:renderAdminProducts,
     categories:renderAdminCategories, employees:renderAdminEmployees,
     customers:renderAdminCustomers, orders:renderAdminOrders,
-    billing:renderAdminBilling,
     analytics:renderAdminAnalytics, sms:renderAdminSms, feedback:renderAdminFeedback };
   return `<div>${renderAppHeader({ shopName:shop?.name, userName:session?.name })}
     <div class="dash-layout">${renderSidebar('admin')}
@@ -1568,14 +1572,40 @@ function renderAdminOrders() {
 function renderOrderBillModal(orderId) {
   const order=DB.getOrders().find(o=>o.id===orderId); if(!order) return '';
   const shop=DB.getShop(), cust=DB.getCustomers().find(c=>c.id===order.customerId);
+  const payMode = order.paymentMode || '';
+  // Populate print area whenever modal opens
+  setTimeout(()=>{
+    const pa=document.getElementById('print-area');
+    if(pa) pa.innerHTML = buildPrintBillHTML(order,shop,cust,payMode||'Cash');
+  },30);
   return `<div class="modal-overlay" id="order-bill-overlay">
-    <div class="modal animate-slideUp">
-      <div class="modal-header"><div class="modal-title">Order Receipt</div>
-        <button class="modal-close" data-close-modal="order-bill">✕</button></div>
-      <div class="modal-body">${renderBillHTML(order,shop,cust)}</div>
+    <div class="modal animate-slideUp" style="max-width:560px;">
+      <div class="modal-header">
+        <div class="modal-title">🧾 Bill / Receipt</div>
+        <button class="modal-close" data-close-modal="order-bill">✕</button>
+      </div>
+      <div class="modal-body" style="padding:0;">
+
+        <!-- Payment Mode Selection -->
+        <div class="pay-mode-bar">
+          <span class="pay-mode-label">Payment Mode:</span>
+          <label class="pay-mode-opt${payMode==='Cash'?' selected':''}">
+            <input type="radio" name="pay-mode" value="Cash" ${payMode==='Cash'?'checked':payMode?'':'checked'}/> 💵 Cash
+          </label>
+          <label class="pay-mode-opt${payMode==='Online'?' selected':''}">
+            <input type="radio" name="pay-mode" value="Online" ${payMode==='Online'?'checked':''}/> 📱 Online
+          </label>
+        </div>
+
+        <!-- Bill Preview -->
+        <div class="bill-preview-wrap" id="bill-preview-inner">
+          ${renderBillHTML(order,shop,cust,payMode||'Cash')}
+        </div>
+
+      </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" data-close-modal="order-bill">Close</button>
-        <button class="btn btn-gold" onclick="window.print()">Print Bill</button>
+        <button class="btn btn-gold" id="print-bill-btn">🖨 Print Bill</button>
       </div>
     </div>
   </div>`;
@@ -2207,25 +2237,65 @@ function renderCartSidebar() {
 /* ═══════════════════════════════════════════════════
    18. BILL & WHATSAPP
 ═══════════════════════════════════════════════════ */
-function renderBillHTML(order, shop, cust) {
-  const items=order?.items||[], sub=items.reduce((s,i)=>s+i.qty*i.price,0);
+function renderBillHTML(order, shop, cust, payMode) {
+  const items=order?.items||[];
+  const sub=items.reduce((s,i)=>s+i.qty*i.price,0);
+  const gst=shop?.gst;
+  const tax=gst?+(sub*0.05).toFixed(2):0;
+  const total=sub+tax;
+  const pm=payMode||order?.paymentMode||'Cash';
   return `<div class="bill-receipt">
     <div class="bill-header">
-      <div class="bill-shop-name gold-text">${esc(shop?.name||'Zara Aura')}</div>
-      <div class="bill-shop-address">${esc(shop?.address||'')}</div>
-      ${shop?.gst?`<div style="font-size:0.72rem;color:var(--text-light);margin-top:4px;">GST: ${esc(shop.gst)}</div>`:''}
+      <div class="bill-shop-name">${esc(shop?.name||'Zara Aura')}</div>
+      ${shop?.address?`<div class="bill-shop-addr">${esc(shop.address)}</div>`:''}
+      ${shop?.phone?`<div class="bill-shop-meta">Ph: ${esc(shop.phone)}</div>`:''}
+      ${gst?`<div class="bill-shop-meta">GSTIN: ${esc(gst)}</div>`:''}
     </div>
-    <div class="bill-meta"><span>Bill No: #${order.id.slice(-8).toUpperCase()}</span><span>${fmtDate(order.date)}</span></div>
-    <div style="margin-bottom:14px;font-size:0.82rem;"><strong>Customer:</strong> ${esc(cust?.name||'Guest')}<br/>
-      <span style="color:var(--text-light);">WhatsApp: ${esc(cust?.whatsapp||'—')}</span></div>
+    <div class="bill-divider">— — — — — — — — — — — — —</div>
+    <div class="bill-meta-row">
+      <div><span class="bill-meta-label">Bill No:</span> <strong>#${order.id.slice(-8).toUpperCase()}</strong></div>
+      <div><span class="bill-meta-label">Date:</span> ${fmtDate(order.date)}</div>
+    </div>
+    <div class="bill-meta-row">
+      <div><span class="bill-meta-label">Customer:</span> ${esc(cust?.name||'Walk-in Customer')}</div>
+      <div><span class="bill-meta-label">Ph:</span> ${esc(cust?.whatsapp||'—')}</div>
+    </div>
+    <div class="bill-meta-row">
+      <div><span class="bill-meta-label">Payment:</span>
+        <span class="bill-pay-badge ${pm==='Online'?'online':'cash'}">${pm==='Online'?'📱 Online':'💵 Cash'}</span>
+      </div>
+    </div>
+    <div class="bill-divider">— — — — — — — — — — — — —</div>
     <table class="bill-table">
-      <thead><tr><th>Item</th><th>Size</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
+      <thead><tr><th>#</th><th>Item</th><th>Size</th><th>Qty</th><th>Rate</th><th>Amt</th></tr></thead>
       <tbody>
-        ${items.map(i=>`<tr><td>${esc(i.name)}</td><td>${esc(i.size||'')}</td><td>${i.qty}</td><td>${fmt(i.price)}</td><td>${fmt(i.qty*i.price)}</td></tr>`).join('')}
-        <tr class="bill-total-row"><td colspan="4">Total Amount</td><td>${fmt(sub)}</td></tr>
+        ${items.map((i,idx)=>`<tr>
+          <td>${idx+1}</td>
+          <td>${esc(i.name)}${i.color?`<br><span class="bill-item-sub">${esc(i.color)}</span>`:''}</td>
+          <td>${esc(i.size||'—')}</td>
+          <td>${i.qty}</td>
+          <td>${fmt(i.price)}</td>
+          <td>${fmt(i.qty*i.price)}</td>
+        </tr>`).join('')}
       </tbody>
     </table>
-    <div class="bill-footer-msg">Thank you for shopping with us! ✦</div>
+    <div class="bill-divider">— — — — — — — — — — — — —</div>
+    <div class="bill-totals-block">
+      <div class="bill-total-line"><span>Subtotal</span><span>${fmt(sub)}</span></div>
+      ${gst?`<div class="bill-total-line"><span>CGST 2.5%</span><span>${fmt(tax/2)}</span></div>
+      <div class="bill-total-line"><span>SGST 2.5%</span><span>${fmt(tax/2)}</span></div>`:''}
+      <div class="bill-total-line bill-grand"><span>TOTAL</span><span>${fmt(total)}</span></div>
+    </div>
+    <div class="bill-words">In Words: ${numToWords(total)}</div>
+    <div class="bill-divider">— — — — — — — — — — — — —</div>
+    <div class="bill-footer-msg">Thank you for shopping with us! ✦<br><span style="font-size:0.7rem;">Visit Again</span></div>
+  </div>`;
+}
+
+/* Print-ready full HTML (goes into #print-area) */
+function buildPrintBillHTML(order, shop, cust, payMode) {
+  return `<div style="font-family:'Times New Roman',serif;max-width:320px;margin:0 auto;padding:12px 8px;">
+    ${renderBillHTML(order,shop,cust,payMode)}
   </div>`;
 }
 function buildWhatsAppBill(order, shop, cust) {
@@ -2251,7 +2321,7 @@ function renderOrderSuccess(orderId) {
         <p style="font-size:0.82rem;color:var(--gold-dark);background:var(--gold-lighter);padding:10px 14px;border-radius:var(--radius-md);margin-bottom:20px;">
           📲 Order confirmation SMS sent to ${esc(cust?.whatsapp||'your phone')}
         </p>
-        ${renderBillHTML(order,shop,cust)}
+        ${renderBillHTML(order,shop,cust,'Cash')}
         <div style="margin-top:20px;display:flex;flex-direction:column;gap:10px;">
           <button class="btn btn-gold btn-lg btn-block" id="go-feedback-btn" data-feedback-url="${esc(feedbackUrl)}">⭐ &nbsp; Share Your Feedback</button>
           <button class="btn btn-ghost btn-block" id="close-success-btn">Continue Shopping</button>
@@ -4255,6 +4325,41 @@ function attachListeners() {
 
   /* Orders */
   onAll('[data-view-order]','click', e=>{state.viewingOrderId=e.currentTarget.dataset.viewOrder;state.modalOpen='order-bill';render();});
+
+  /* Payment mode toggle → live update bill preview + print area */
+  onAll('input[name="pay-mode"]','change', e=>{
+    const pm = e.target.value;
+    const ordId = state.viewingOrderId;
+    if (!ordId) return;
+    // Update payment mode in DB
+    DB.updateOrder(ordId, { paymentMode: pm });
+    // Update bill preview inside modal without full render
+    const order  = DB.getOrders().find(o=>o.id===ordId);
+    const shop   = DB.getShop();
+    const cust   = DB.getCustomers().find(c=>c.id===order?.customerId);
+    const preview = document.getElementById('bill-preview-inner');
+    if (preview) preview.innerHTML = renderBillHTML(order,shop,cust,pm);
+    // Update print area
+    const pa = document.getElementById('print-area');
+    if (pa) pa.innerHTML = buildPrintBillHTML(order,shop,cust,pm);
+    // Update selected styles on labels
+    document.querySelectorAll('.pay-mode-opt').forEach(lbl=>{
+      lbl.classList.toggle('selected', lbl.querySelector('input')?.value===pm);
+    });
+  });
+
+  /* Print Bill button in modal */
+  on('#print-bill-btn','click',()=>{
+    const ordId = state.viewingOrderId;
+    const pm = document.querySelector('input[name="pay-mode"]:checked')?.value || 'Cash';
+    if (ordId) DB.updateOrder(ordId, { paymentMode: pm });
+    const order = DB.getOrders().find(o=>o.id===ordId);
+    const shop  = DB.getShop();
+    const cust  = DB.getCustomers().find(c=>c.id===order?.customerId);
+    const pa = document.getElementById('print-area');
+    if (pa) pa.innerHTML = buildPrintBillHTML(order,shop,cust,pm);
+    setTimeout(()=>window.print(), 80);
+  });
 }
 
 /* ═══════════════════════════════════════════════════

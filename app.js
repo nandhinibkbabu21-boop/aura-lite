@@ -65,6 +65,7 @@ const KEYS = {
   shopId:         `${APP_KEY}_shopId`,
   mainCategories: `${APP_KEY}_mainCategories`,
   subCategories:  `${APP_KEY}_subCategories`,
+  invoices:       `${APP_KEY}_invoices`,
 };
 
 const SUPER_ADMIN_CREDS = { username: 'superadmin', password: '1234567890@' };
@@ -167,6 +168,8 @@ let state = {
   analyticsPeriod: 'monthly', salaryEmpId: null,
   selectedColorIdx: 0, selectedSizeIdx: 0, activeSubFilter: 'all', productCategoryTab: 'all', openCategoryAccordion: null,
   fpStep: 1, fpVerifiedUser: null, fpOtp: null, fpOtpExpiry: null, fpFoundUser: null,
+  // Billing
+  billItems: [], billSubView: 'new', viewingInvoiceId: null,
 };
 
 /* ═══════════════════════════════════════════════════
@@ -344,6 +347,18 @@ const DB = {
     const sid = DB.getShopId();
     if (firebaseReady && sid) db.collection('shops').doc(sid).set({ subCategories: all }, { merge: true }).catch(console.error);
   },
+
+  /* ── Invoices (Billing) ── */
+  getInvoices()    { return _ls(KEYS.invoices) || []; },
+  addInvoice(inv)  { const arr = DB.getInvoices(); arr.unshift(inv); _ls(KEYS.invoices, arr); },
+  getInvoice(id)   { return DB.getInvoices().find(i => i.id === id); },
+  getNextInvoiceNo() {
+    const list = DB.getInvoices();
+    if (!list.length) return 'INV-001';
+    const last = list[0].invoiceNo || 'INV-000';
+    const num  = parseInt(last.replace(/\D/g,'') || '0') + 1;
+    return 'INV-' + String(num).padStart(3,'0');
+  },
 };
 
 /* ═══════════════════════════════════════════════════
@@ -353,6 +368,26 @@ const uid     = () => `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
 const esc     = s  => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const fmt     = n  => `₹${Number(n||0).toLocaleString('en-IN')}`;
 const fmtDate = ts => new Date(ts).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+const fmtCur  = n  => '₹' + Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const todayISO = () => new Date().toISOString().split('T')[0];
+
+/* Number → Indian words (Rupees) */
+function numToWords(num) {
+  const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine',
+    'Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function conv(n) {
+    if (n===0) return '';
+    if (n<20)  return ones[n];
+    if (n<100) return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');
+    if (n<1000) return ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+conv(n%100):'');
+    if (n<100000) return conv(Math.floor(n/1000))+' Thousand'+(n%1000?' '+conv(n%1000):'');
+    if (n<10000000) return conv(Math.floor(n/100000))+' Lakh'+(n%100000?' '+conv(n%100000):'');
+    return conv(Math.floor(n/10000000))+' Crore'+(n%10000000?' '+conv(n%10000000):'');
+  }
+  const r = Math.floor(num), p = Math.round((num-r)*100);
+  return (conv(r)||'Zero')+' Rupees'+(p?' and '+conv(p)+' Paise':'')+' Only';
+}
 
 async function compressImage(file, maxPx = 360, quality = 0.72) {
   return new Promise(resolve => {
@@ -903,7 +938,7 @@ function renderSidebar(role) {
   const links = role === 'admin'
     ? [['overview','◈','Overview'],['products','✦','Products'],['categories','◻','Categories'],
        ['employees','◉','Employees'],['customers','◎','Customers'],['orders','◊','Orders'],
-       ['analytics','📊','Analytics'],['sms','📣','Send Offers'],['feedback','⭐','Feedback']]
+       ['billing','🧾','Billing'],['analytics','📊','Analytics'],['sms','📣','Send Offers'],['feedback','⭐','Feedback']]
     : role === 'employee'
     ? [['products','✦','Products'],['categories','◻','Categories'],['stock','📦','Stock'],['salary','💰','My Salary']]
     : [['products','✦','Products'],['stock','◻','Stock'],['feedback','⭐','My Feedback']];
@@ -933,6 +968,7 @@ function renderAdminDash() {
   const subViews = { overview:renderAdminOverview, products:renderAdminProducts,
     categories:renderAdminCategories, employees:renderAdminEmployees,
     customers:renderAdminCustomers, orders:renderAdminOrders,
+    billing:renderAdminBilling,
     analytics:renderAdminAnalytics, sms:renderAdminSms, feedback:renderAdminFeedback };
   return `<div>${renderAppHeader({ shopName:shop?.name, userName:session?.name })}
     <div class="dash-layout">${renderSidebar('admin')}
@@ -2510,6 +2546,285 @@ function confirmOrder() {
 }
 
 /* ═══════════════════════════════════════════════════
+   22b. BILLING (TAX INVOICE)
+═══════════════════════════════════════════════════ */
+function renderAdminBilling() {
+  const sub = state.billSubView || 'new';
+  return `
+  <div class="page-header">
+    <div>
+      <div class="page-title">🧾 Billing</div>
+      <div class="page-subtitle">Create invoices &amp; manage billing history</div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-sm${sub==='new'?' btn-gold':' btn-outline'}" id="bill-tab-new">+ New Bill</button>
+      <button class="btn btn-sm${sub==='history'?' btn-gold':' btn-outline'}" id="bill-tab-history">📋 History</button>
+    </div>
+  </div>
+  ${sub==='new'    ? renderBillingNew()     : ''}
+  ${sub==='history'? renderBillingHistory() : ''}
+  ${sub==='view'   ? renderBillingView(state.viewingInvoiceId) : ''}`;
+}
+
+function renderBillingNew() {
+  const products = DB.getProducts();
+  const customers = DB.getCustomers();
+  const items = state.billItems || [];
+  const subtotal = items.reduce((s,i) => s + i.amount, 0);
+  const tax = +(subtotal * 0.05).toFixed(2);
+  const total = +(subtotal + tax).toFixed(2);
+
+  return `
+  <div class="billing-layout">
+    <!-- LEFT: Customer & Invoice Info -->
+    <div class="billing-left card">
+      <div class="card-header">📝 Invoice Details</div>
+      <div class="card-body">
+        <div class="form-group">
+          <label class="form-label">Invoice No <span class="required">*</span></label>
+          <input class="form-control" id="bill-inv-no" value="${esc(DB.getNextInvoiceNo())}" placeholder="INV-001"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Date <span class="required">*</span></label>
+          <input type="date" class="form-control" id="bill-date" value="${todayISO()}"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Customer Name <span class="required">*</span></label>
+          <input class="form-control" id="bill-cust-name" list="bill-cust-list" placeholder="Type or select customer" autocomplete="off"/>
+          <datalist id="bill-cust-list">${customers.map(c=>`<option value="${esc(c.name)}">`).join('')}</datalist>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Customer Phone <span class="optional-tag">(Optional)</span></label>
+          <input class="form-control" id="bill-cust-phone" placeholder="e.g. 9876543210"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Customer Address <span class="optional-tag">(Optional)</span></label>
+          <textarea class="form-control" id="bill-cust-addr" rows="2" placeholder="Full address…"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Customer GSTIN <span class="optional-tag">(Optional)</span></label>
+          <input class="form-control" id="bill-cust-gstin" placeholder="e.g. 29ABCDE1234F1Z5"/>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Add Items -->
+    <div class="billing-right">
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">🛍️ Add Item</div>
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Product</label>
+              <select class="form-control" id="bill-prod-sel">
+                <option value="">— Select Product —</option>
+                ${products.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}${p.color?' ('+esc(p.color)+')':''}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Color Variant</label>
+              <select class="form-control" id="bill-color-sel" disabled>
+                <option value="">— Select Product first —</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Size</label>
+              <select class="form-control" id="bill-size-sel" disabled>
+                <option value="">— Select Color first —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Qty</label>
+              <input type="number" class="form-control" id="bill-qty" min="1" value="1" placeholder="Qty"/>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Rate (₹)</label>
+              <input type="number" class="form-control" id="bill-rate" min="0" placeholder="Auto-filled"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Amount (₹)</label>
+              <input type="number" class="form-control" id="bill-amount" readonly placeholder="Auto"/>
+            </div>
+          </div>
+          <button class="btn btn-gold" id="bill-add-item-btn" style="width:100%;">+ Add to Bill</button>
+        </div>
+      </div>
+
+      <!-- Bill Items Table -->
+      <div class="card">
+        <div class="card-header">🧾 Bill Items ${items.length?`<span class="badge badge-info">${items.length} item${items.length>1?'s':''}</span>`:''}</div>
+        <div class="card-body" style="padding:0;">
+          ${items.length===0 ? `<div style="padding:24px;text-align:center;color:var(--text-light);">No items added yet.</div>` : `
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>#</th><th>Product</th><th>Color</th><th>Size</th>
+                <th>Qty</th><th>Rate</th><th>Amount</th><th></th>
+              </tr></thead>
+              <tbody>
+                ${items.map((it,i)=>`<tr>
+                  <td>${i+1}</td>
+                  <td>${esc(it.productName)}</td>
+                  <td>${esc(it.color||'—')}</td>
+                  <td>${esc(it.size||'—')}</td>
+                  <td>${it.qty}</td>
+                  <td>${fmtCur(it.rate)}</td>
+                  <td>${fmtCur(it.amount)}</td>
+                  <td><button class="btn-icon bill-remove-item" data-idx="${i}" style="color:#c62828;">✕</button></td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div class="bill-totals">
+            <div class="bill-total-row"><span>Subtotal</span><span>${fmtCur(subtotal)}</span></div>
+            <div class="bill-total-row"><span>CGST (2.5%)</span><span>${fmtCur(tax/2)}</span></div>
+            <div class="bill-total-row"><span>SGST (2.5%)</span><span>${fmtCur(tax/2)}</span></div>
+            <div class="bill-total-row bill-grand-total"><span>Total</span><span>${fmtCur(total)}</span></div>
+          </div>`}
+        </div>
+        ${items.length>0?`
+        <div class="card-footer" style="padding:16px;">
+          <button class="btn btn-gold" id="bill-generate-btn" style="width:100%;font-size:1rem;padding:14px;">
+            🧾 Generate &amp; Print Invoice
+          </button>
+        </div>`:''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderBillingHistory() {
+  const invoices = DB.getInvoices();
+  return `
+  <div class="card">
+    <div class="card-header">📋 Invoice History <span class="badge badge-info">${invoices.length}</span></div>
+    <div class="card-body" style="padding:0;">
+      ${invoices.length===0 ? `<div style="padding:32px;text-align:center;color:var(--text-light);">No invoices yet. Create your first bill!</div>` : `
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>Invoice No</th><th>Date</th><th>Customer</th>
+          <th>Items</th><th>Total</th><th>Action</th>
+        </tr></thead>
+        <tbody>
+          ${invoices.map(inv=>`<tr>
+            <td><strong>${esc(inv.invoiceNo)}</strong></td>
+            <td>${inv.date||''}</td>
+            <td>${esc(inv.customer?.name||'—')}</td>
+            <td>${inv.items?.length||0} items</td>
+            <td><strong>${fmtCur(inv.total)}</strong></td>
+            <td><button class="btn btn-sm btn-outline bill-view-btn" data-inv-id="${esc(inv.id)}">👁 View</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`}
+    </div>
+  </div>`;
+}
+
+function renderBillingView(invId) {
+  const inv = DB.getInvoice(invId);
+  if (!inv) return `<div class="card"><div class="card-body">Invoice not found.</div></div>`;
+  const shop = DB.getShop();
+  const subtotal = inv.items.reduce((s,i)=>s+i.amount,0);
+  const tax = +(subtotal*0.05).toFixed(2);
+  const total = +(subtotal+tax).toFixed(2);
+  const printHTML = generateInvoicePrintHTML(inv, shop);
+  // Write to print-area
+  setTimeout(()=>{ const pa=document.getElementById('print-area'); if(pa) pa.innerHTML=printHTML; },50);
+  return `
+  <div style="display:flex;gap:10px;margin-bottom:16px;">
+    <button class="btn btn-outline btn-sm" id="bill-back-history">← Back to History</button>
+    <button class="btn btn-gold btn-sm" onclick="window.print()">🖨 Print Invoice</button>
+    <button class="btn btn-outline btn-sm" id="bill-new-from-view">+ New Bill</button>
+  </div>
+  <div class="invoice-preview card">
+    <div class="card-body">
+      ${printHTML}
+    </div>
+  </div>`;
+}
+
+function generateInvoicePrintHTML(inv, shop) {
+  const subtotal = inv.items.reduce((s,i)=>s+i.amount,0);
+  const tax = +(subtotal*0.05).toFixed(2);
+  const total = +(subtotal+tax).toFixed(2);
+  const emptyRows = Math.max(0, 7 - inv.items.length);
+  return `
+  <div class="inv-wrap">
+    <div class="inv-header">
+      <div class="inv-company-name">${esc(shop?.name||'Your Shop')}</div>
+      <div class="inv-company-sub">${esc(shop?.address||'')}${shop?.phone?' | Ph: '+esc(shop.phone):''}</div>
+      ${shop?.gstin?`<div class="inv-company-sub">GSTIN: ${esc(shop.gstin)}</div>`:''}
+    </div>
+    <div class="inv-title">TAX INVOICE</div>
+    <div class="inv-meta">
+      <div class="inv-meta-left">
+        <div class="inv-meta-label">Bill To:</div>
+        <div class="inv-meta-value"><strong>${esc(inv.customer?.name||'')}</strong></div>
+        ${inv.customer?.address?`<div class="inv-meta-value">${esc(inv.customer.address)}</div>`:''}
+        ${inv.customer?.phone?`<div class="inv-meta-value">Ph: ${esc(inv.customer.phone)}</div>`:''}
+        ${inv.customer?.gstin?`<div class="inv-meta-value">GSTIN: ${esc(inv.customer.gstin)}</div>`:''}
+      </div>
+      <div class="inv-meta-right">
+        <table class="inv-meta-table">
+          <tr><td>Invoice No</td><td><strong>${esc(inv.invoiceNo)}</strong></td></tr>
+          <tr><td>Date</td><td>${esc(inv.date||'')}</td></tr>
+          <tr><td>HSN Code</td><td>5208</td></tr>
+        </table>
+      </div>
+    </div>
+    <table class="inv-items-table">
+      <thead><tr>
+        <th style="width:40px;">#</th>
+        <th>Product Description</th>
+        <th>Color</th>
+        <th>Size</th>
+        <th>Qty</th>
+        <th>Rate (₹)</th>
+        <th>Amount (₹)</th>
+      </tr></thead>
+      <tbody>
+        ${inv.items.map((it,i)=>`<tr>
+          <td>${i+1}</td>
+          <td>${esc(it.productName)}${it.category?' – '+esc(it.category):''}</td>
+          <td>${esc(it.color||'—')}</td>
+          <td>${esc(it.size||'—')}</td>
+          <td>${it.qty}</td>
+          <td>${Number(it.rate).toFixed(2)}</td>
+          <td>${Number(it.amount).toFixed(2)}</td>
+        </tr>`).join('')}
+        ${Array(emptyRows).fill('<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join('')}
+      </tbody>
+    </table>
+    <div class="inv-summary-wrap">
+      <table class="inv-summary">
+        <tr><td>Subtotal</td><td>${fmtCur(subtotal)}</td></tr>
+        <tr><td>CGST @ 2.5%</td><td>${fmtCur(tax/2)}</td></tr>
+        <tr><td>SGST @ 2.5%</td><td>${fmtCur(tax/2)}</td></tr>
+        <tr class="inv-grand-total"><td><strong>Grand Total</strong></td><td><strong>${fmtCur(total)}</strong></td></tr>
+      </table>
+    </div>
+    <div class="inv-words">
+      <strong>Amount in Words:</strong> ${numToWords(total)}
+    </div>
+    <div class="inv-footer">
+      <div class="inv-terms">
+        <strong>Terms &amp; Conditions:</strong><br>
+        1. Goods once sold will not be taken back or exchanged.<br>
+        2. Subject to local jurisdiction only.
+      </div>
+      <div class="inv-sign">
+        <div class="inv-sign-line">For ${esc(shop?.name||'')}</div>
+        <div class="inv-sign-role">Authorized Signatory</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ═══════════════════════════════════════════════════
    22a. ADMIN SMS OFFERS
 ═══════════════════════════════════════════════════ */
 function renderAdminSms() {
@@ -3132,6 +3447,142 @@ function attachListeners() {
     const list=document.getElementById('sms-customer-list');
     if(list) list.style.display=e.target.value==='specific'?'block':'none';
   });
+  /* ── Billing Listeners ── */
+  on('#bill-tab-new','click',()=>{ state.billSubView='new'; render(); });
+  on('#bill-tab-history','click',()=>{ state.billSubView='history'; render(); });
+  on('#bill-back-history','click',()=>{ state.billSubView='history'; render(); });
+  on('#bill-new-from-view','click',()=>{ state.billSubView='new'; state.billItems=[]; render(); });
+
+  /* Product → Color */
+  on('#bill-prod-sel','change', e=>{
+    const pid = e.target.value;
+    const prod = DB.getProducts().find(p=>p.id===pid);
+    const colorSel = document.getElementById('bill-color-sel');
+    const sizeSel  = document.getElementById('bill-size-sel');
+    if (!colorSel || !sizeSel) return;
+    if (!prod) { colorSel.disabled=true; sizeSel.disabled=true; return; }
+    // Populate colors
+    const colors = prod.colors?.length ? prod.colors : [{id:'default', name: prod.color||'Default', image:'', sizes: prod.sizes||[]}];
+    colorSel.innerHTML = `<option value="">— Select Color —</option>` +
+      colors.map(c=>`<option value="${esc(c.id||c.name)}">${esc(c.name||'Default')}</option>`).join('');
+    colorSel.disabled = false;
+    sizeSel.innerHTML = `<option value="">— Select Color first —</option>`;
+    sizeSel.disabled = true;
+    document.getElementById('bill-rate').value = '';
+    document.getElementById('bill-amount').value = '';
+  });
+
+  /* Color → Sizes */
+  on('#bill-color-sel','change', e=>{
+    const pid = document.getElementById('bill-prod-sel')?.value;
+    const prod = DB.getProducts().find(p=>p.id===pid);
+    if (!prod) return;
+    const colorId = e.target.value;
+    const colors = prod.colors?.length ? prod.colors : [{id:'default', name: prod.color||'Default', image:'', sizes: prod.sizes||[]}];
+    const colorObj = colors.find(c=>(c.id||c.name)===colorId);
+    const sizeSel = document.getElementById('bill-size-sel');
+    if (!sizeSel) return;
+    const sizes = colorObj?.sizes||[];
+    sizeSel.innerHTML = `<option value="">— Select Size —</option>` +
+      sizes.map(s=>`<option value="${esc(s.size)}">${esc(s.size)} (Stock: ${s.price?fmtCur(s.price):''})</option>`).join('');
+    sizeSel.disabled = sizes.length===0;
+    document.getElementById('bill-rate').value = '';
+    document.getElementById('bill-amount').value = '';
+  });
+
+  /* Size → Rate */
+  on('#bill-size-sel','change', e=>{
+    const pid = document.getElementById('bill-prod-sel')?.value;
+    const prod = DB.getProducts().find(p=>p.id===pid);
+    if (!prod) return;
+    const colorId = document.getElementById('bill-color-sel')?.value;
+    const colors = prod.colors?.length ? prod.colors : [{id:'default', name: prod.color||'Default', image:'', sizes: prod.sizes||[]}];
+    const colorObj = colors.find(c=>(c.id||c.name)===colorId);
+    const sizeObj = (colorObj?.sizes||[]).find(s=>s.size===e.target.value);
+    const rate = sizeObj?.price || prod.basePrice || prod.price || 0;
+    document.getElementById('bill-rate').value = rate;
+    const qty = +document.getElementById('bill-qty')?.value || 1;
+    document.getElementById('bill-amount').value = (rate * qty).toFixed(2);
+  });
+
+  /* Qty / Rate → Amount live */
+  ['bill-qty','bill-rate'].forEach(id=>{
+    on('#'+id,'input',()=>{
+      const qty  = +document.getElementById('bill-qty')?.value  || 0;
+      const rate = +document.getElementById('bill-rate')?.value || 0;
+      const amtEl = document.getElementById('bill-amount');
+      if (amtEl) amtEl.value = (qty*rate).toFixed(2);
+    });
+  });
+
+  /* Add Item to bill */
+  on('#bill-add-item-btn','click',()=>{
+    const pid      = document.getElementById('bill-prod-sel')?.value;
+    const colorId  = document.getElementById('bill-color-sel')?.value;
+    const size     = document.getElementById('bill-size-sel')?.value;
+    const qty      = +document.getElementById('bill-qty')?.value || 0;
+    const rate     = +document.getElementById('bill-rate')?.value || 0;
+    if (!pid)    { showToast('Select a product','error'); return; }
+    if (!colorId){ showToast('Select a color variant','error'); return; }
+    if (!size)   { showToast('Select a size','error'); return; }
+    if (qty<=0)  { showToast('Enter a valid quantity','error'); return; }
+    if (rate<=0) { showToast('Enter a valid rate','error'); return; }
+    const prod   = DB.getProducts().find(p=>p.id===pid);
+    const colors = prod?.colors?.length ? prod.colors : [{id:'default', name: prod?.color||'Default', sizes: prod?.sizes||[]}];
+    const colorObj = colors.find(c=>(c.id||c.name)===colorId);
+    state.billItems = state.billItems || [];
+    state.billItems.push({
+      id: uid(), productId: pid,
+      productName: prod?.name||'', category: prod?.category||'',
+      color: colorObj?.name||colorId, size, qty, rate,
+      amount: +(qty*rate).toFixed(2),
+    });
+    render();
+  });
+
+  /* Remove item from bill */
+  onAll('.bill-remove-item','click', e=>{
+    const idx = +e.currentTarget.dataset.idx;
+    state.billItems.splice(idx,1);
+    render();
+  });
+
+  /* Generate Invoice */
+  on('#bill-generate-btn','click',()=>{
+    const invNo   = document.getElementById('bill-inv-no')?.value.trim();
+    const date    = document.getElementById('bill-date')?.value;
+    const cName   = document.getElementById('bill-cust-name')?.value.trim();
+    const cPhone  = document.getElementById('bill-cust-phone')?.value.trim();
+    const cAddr   = document.getElementById('bill-cust-addr')?.value.trim();
+    const cGstin  = document.getElementById('bill-cust-gstin')?.value.trim();
+    if (!invNo)  { showToast('Enter invoice number','error'); return; }
+    if (!date)   { showToast('Select a date','error'); return; }
+    if (!cName)  { showToast('Customer name is required','error'); return; }
+    if (!state.billItems?.length) { showToast('Add at least one item','error'); return; }
+    const subtotal = state.billItems.reduce((s,i)=>s+i.amount,0);
+    const tax = +(subtotal*0.05).toFixed(2);
+    const total = +(subtotal+tax).toFixed(2);
+    const inv = {
+      id: uid(), invoiceNo: invNo, date,
+      customer: { name:cName, phone:cPhone, address:cAddr, gstin:cGstin },
+      items: [...state.billItems],
+      subtotal, tax, total, createdAt: Date.now(),
+    };
+    DB.addInvoice(inv);
+    state.billItems = [];
+    state.viewingInvoiceId = inv.id;
+    state.billSubView = 'view';
+    showToast('✅ Invoice generated!','success');
+    render();
+  });
+
+  /* View invoice from history */
+  onAll('.bill-view-btn','click', e=>{
+    state.viewingInvoiceId = e.currentTarget.dataset.invId;
+    state.billSubView = 'view';
+    render();
+  });
+
   /* Send Offers via WhatsApp — matches renderAdminSms() IDs */
   on('#sms-offer-btn','click', ()=>{
     const msg=(document.getElementById('sms-offer-msg')?.value||'').trim();

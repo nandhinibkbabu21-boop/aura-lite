@@ -2379,3 +2379,62 @@ tbody tr:hover td { background: var(--cream); }
   color: var(--text-light);
   font-style: italic;
 }
+
+/* ── Size Toggle in Product Form ── */
+.size-toggle-row { display:flex; gap:12px; flex-wrap:wrap; }
+.size-toggle-opt { display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 16px;border:2px solid var(--border);border-radius:8px;font-size:0.85rem;transition:all 0.15s; }
+.size-toggle-opt input { accent-color:var(--gold-dark); }
+.size-toggle-opt.selected,.size-toggle-opt:has(input:checked) { border-color:var(--gold-dark);background:var(--gold-lighter);font-weight:700; }
+.size-stock-table { width:100%;border-collapse:collapse;font-size:0.83rem; }
+.size-stock-table th { background:#f5f5f5;padding:7px 10px;text-align:left;font-weight:600;font-size:0.75rem;border:1px solid var(--border); }
+.size-stock-table td { padding:6px 8px;border:1px solid var(--border); }
+.size-table-wrap { border:1px solid var(--border);border-radius:8px;overflow:hidden; }
+
+/* ── Payment Mode Selection ── */
+.payment-mode-section { margin:16px 0; }
+.payment-mode-title { font-weight:700;font-size:0.88rem;margin-bottom:10px;color:var(--text-medium); }
+.payment-mode-options { display:flex;gap:10px;flex-wrap:wrap; }
+.payment-mode-opt { display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 18px;border:2px solid var(--border);border-radius:10px;font-size:0.88rem;flex:1;min-width:90px;justify-content:center;transition:all 0.15s; }
+.payment-mode-opt input { display:none; }
+.payment-mode-opt.selected,.payment-mode-opt:has(input:checked) { border-color:var(--gold-dark);background:var(--gold-lighter);font-weight:700; }
+.pm-icon { font-size:1.2rem; }
+
+/* ── Size selector on product cards ── */
+.size-selector { display:flex;gap:6px;flex-wrap:wrap;margin:8px 0; }
+.size-btn { padding:4px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:0.75rem;cursor:pointer;background:#fff;transition:all 0.12s;font-weight:600; }
+.size-btn:hover { border-color:var(--gold-dark); }
+.size-btn.active { background:var(--gold-dark);color:#fff;border-color:var(--gold-dark); }
+.size-btn.oos { opacity:0.4;cursor:not-allowed;text-decoration:line-through; }
+
+/* ── Employee Orders Notification Panel ── */
+.emp-orders-panel { margin-bottom:20px; }
+.emp-orders-header { padding:12px 18px;font-weight:700;font-size:0.9rem;border-radius:8px 8px 0 0; }
+.new-orders-header { background:#fff3e0;color:#e65100;border:2px solid #ffb74d;animation:pulse-border 1.5s infinite; }
+.accepted-header { background:#e8f5e9;color:#2e7d32;border:2px solid #81c784;border-top:none; }
+@keyframes pulse-border { 0%,100%{border-color:#ffb74d;}50%{border-color:#ff6f00;} }
+.emp-orders-list { border:2px solid #ffb74d;border-top:none;border-radius:0 0 8px 8px;overflow:hidden; }
+.emp-order-card { padding:16px;background:#fff;border-bottom:1px solid var(--border); }
+.emp-order-card.pending { border-left:4px solid #ff9800; }
+.emp-order-card.accepted { border-left:4px solid #4caf50;background:#fafffe; }
+.emp-order-top { display:flex;justify-content:space-between;margin-bottom:10px; }
+.emp-order-id { font-size:0.75rem;color:var(--text-light);font-family:monospace; }
+.emp-order-customer { font-weight:700;font-size:0.95rem; }
+.emp-order-total { font-weight:700;font-size:1rem;color:var(--gold-dark); }
+.emp-order-payment { font-size:0.75rem;padding:2px 8px;border-radius:12px;margin-top:2px;display:inline-block; }
+.emp-order-payment.cash { background:#e8f5e9;color:#2e7d32; }
+.emp-order-payment.gpay { background:#e3f2fd;color:#1565c0; }
+.emp-order-payment.phonepe { background:#f3e5f5;color:#6a1b9a; }
+.emp-order-items { font-size:0.82rem;color:var(--text-medium);margin-bottom:12px;line-height:1.7; }
+.emp-order-actions { background:#fff8f0;border-radius:8px;padding:12px; }
+.pack-time-btns { display:flex;gap:8px;flex-wrap:wrap;margin-top:6px; }
+.pack-time-btn { padding:8px 16px;border:2px solid #ff9800;border-radius:8px;background:#fff;color:#e65100;font-weight:700;cursor:pointer;font-size:0.85rem;transition:all 0.15s; }
+.pack-time-btn:hover { background:#ff9800;color:#fff; }
+.emp-order-accepted { font-size:0.82rem;color:#2e7d32;background:#e8f5e9;padding:8px 12px;border-radius:6px;display:flex;align-items:center;flex-wrap:wrap;gap:8px; }
+
+/* ── Order Status Card (Customer) ── */
+.order-status-card { background:#fff;border-radius:16px;padding:24px;text-align:center;margin:16px 0; }
+.order-status-steps { display:flex;flex-direction:column;gap:10px;margin:16px 0;text-align:left; }
+.status-step { padding:10px 16px;border-radius:8px;font-size:0.88rem;font-weight:600; }
+.status-step.done { background:#e8f5e9;color:#2e7d32; }
+.status-step.waiting { background:#f5f5f5;color:#999; }
+.order-eta { background:var(--gold-lighter);color:var(--gold-dark);padding:10px 16px;border-radius:8px;font-weight:700;font-size:0.95rem;margin-top:8px; }

@@ -167,6 +167,7 @@ let state = {
   analyticsPeriod: 'monthly', salaryEmpId: null,
   selectedColorIdx: 0, selectedSizeIdx: 0, activeSubFilter: 'all', productCategoryTab: 'all', openCategoryAccordion: null,
   fpStep: 1, fpVerifiedUser: null, fpOtp: null, fpOtpExpiry: null, fpFoundUser: null,
+  selectedPaymentMode: 'Cash',
 };
 
 /* ═══════════════════════════════════════════════════
@@ -291,6 +292,11 @@ const DB = {
   addOrder(o) {
     const list = DB.getOrders(); list.push(o); _ls(KEYS.orders, list);
     DB._col('orders')?.doc(o.id).set(o).catch(console.error);
+  },
+  updateOrder(id, data) {
+    const list = DB.getOrders().map(o => o.id===id ? {...o,...data} : o);
+    _ls(KEYS.orders, list);
+    DB._col('orders')?.doc(id).update(data).catch(console.error);
   },
   addCategory(cat) {
     const list = DB.getCategories();
@@ -1002,6 +1008,23 @@ function renderAdminOverview() {
             </div>`;}).join('')}
       </div>
     </div>
+    <!-- QR Code Card -->
+    <div class="card" style="margin-top:24px;">
+      <div class="card-header" style="font-weight:700;">📱 Shop QR Code — Scan to Order</div>
+      <div class="card-body" style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(window.location.href)}&bgcolor=ffffff&color=1a237e&qzone=2"
+             alt="QR Code" style="border-radius:8px;border:3px solid #1a237e;"/>
+        <div>
+          <div style="font-weight:700;font-size:1rem;margin-bottom:6px;">Customer Ordering QR</div>
+          <div style="font-size:0.82rem;color:var(--text-medium);margin-bottom:12px;">
+            Customers scan this to browse &amp; order products from their phone during rush hours.
+          </div>
+          <div style="font-size:0.75rem;background:#f5f5f5;padding:8px 12px;border-radius:6px;word-break:break-all;">
+            ${window.location.href}
+          </div>
+        </div>
+      </div>
+    </div>
   </div>`;
 }
 function statCard(icon,label,value,sub){
@@ -1165,19 +1188,11 @@ function renderProductModal() {
         <form id="product-form">
           <div style="display:flex;flex-direction:column;gap:18px;">
 
-            <!-- Row 1: Name + Base Price -->
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Product Name <span class="required">*</span></label>
-                <input type="text" class="form-control" name="name" id="prod-name"
-                  value="${esc(v.name||'')}" placeholder="e.g. Silk Anarkali Kurta" required/>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Base Price (₹) <span class="required">*</span></label>
-                <input type="number" class="form-control" name="basePrice" id="prod-base-price"
-                  value="${esc(v.price||v.sizes?.[0]?.price||'')}" min="1" placeholder="e.g. 599" required/>
-                <small class="form-hint">Used as default price for each size</small>
-              </div>
+            <!-- Row 1: Product Name -->
+            <div class="form-group">
+              <label class="form-label">Product Name <span class="required">*</span></label>
+              <input type="text" class="form-control" name="name" id="prod-name"
+                value="${esc(v.name||'')}" placeholder="e.g. Silk Anarkali Kurta" required/>
             </div>
 
             <!-- Row 2: Category + Subcategory (free-type OR select from suggestions) -->
@@ -1200,18 +1215,70 @@ function renderProductModal() {
               </div>
             </div>
 
-            <!-- Row 3: Quantity + Material -->
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Stock Quantity <span class="required">*</span></label>
-                <input type="number" class="form-control" name="quantity"
-                  value="${esc(v.quantity||'')}" min="0" placeholder="e.g. 50" required/>
+            <!-- Size System Toggle -->
+            <div class="form-group">
+              <label class="form-label">Does this product have sizes?</label>
+              <div class="size-toggle-row">
+                <label class="size-toggle-opt${(v.hasSizes||colorVariants[0]?.sizes?.length>0)?'':' selected'}">
+                  <input type="radio" name="hasSizes" value="no" ${(v.hasSizes||colorVariants[0]?.sizes?.length>0)?'':'checked'}/> No — Single price &amp; stock
+                </label>
+                <label class="size-toggle-opt${(v.hasSizes||colorVariants[0]?.sizes?.length>0)?' selected':''}">
+                  <input type="radio" name="hasSizes" value="yes" ${(v.hasSizes||colorVariants[0]?.sizes?.length>0)?'checked':''}/> Yes — Size-wise price &amp; stock
+                </label>
               </div>
-              <div class="form-group">
-                <label class="form-label">Material / Type <span class="optional-tag">(Optional)</span></label>
-                <input type="text" class="form-control" name="material"
-                  value="${esc(v.material||'')}" placeholder="e.g. Cotton, Silk, Polyester"/>
+            </div>
+
+            <!-- NO SIZES: single price + stock -->
+            <div id="no-size-fields" style="${(v.hasSizes||colorVariants[0]?.sizes?.length>0)?'display:none':''}">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Price (₹) <span class="required">*</span></label>
+                  <input type="number" class="form-control" name="price" id="prod-price"
+                    value="${esc(v.price||v.basePrice||'')}" min="1" placeholder="e.g. 599"/>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Stock Quantity <span class="required">*</span></label>
+                  <input type="number" class="form-control" name="quantity" id="prod-qty"
+                    value="${esc(v.quantity||'')}" min="0" placeholder="e.g. 50"/>
+                </div>
               </div>
+            </div>
+
+            <!-- YES SIZES: per-size table -->
+            <div id="size-fields" style="${(v.hasSizes||colorVariants[0]?.sizes?.length>0)?'':'display:none'}">
+              <div style="font-size:0.78rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-medium);margin-bottom:10px;">
+                Size-wise Price &amp; Stock
+              </div>
+              <div class="size-table-wrap">
+                <table class="size-stock-table" id="size-stock-table">
+                  <thead><tr><th>Size</th><th>Price (₹)</th><th>Stock</th><th></th></tr></thead>
+                  <tbody id="size-stock-tbody">
+                    ${(v.sizePrices||[]).map((sp,i)=>`<tr class="size-stock-row">
+                      <td><input class="form-control form-control-sm" value="${esc(sp.size)}" placeholder="e.g. M" style="width:70px;"/></td>
+                      <td><input type="number" class="form-control form-control-sm" value="${esc(sp.price)}" placeholder="0" min="0"/></td>
+                      <td><input type="number" class="form-control form-control-sm" value="${esc(sp.stock)}" placeholder="0" min="0"/></td>
+                      <td><button type="button" class="btn-icon remove-size-stock-row" style="color:#c62828;width:26px;height:26px;font-size:0.75rem;">✕</button></td>
+                    </tr>`).join('')}
+                    ${!(v.sizePrices||[]).length?`<tr class="size-stock-row">
+                      <td><input class="form-control form-control-sm" placeholder="e.g. S" style="width:70px;"/></td>
+                      <td><input type="number" class="form-control form-control-sm" placeholder="499" min="0"/></td>
+                      <td><input type="number" class="form-control form-control-sm" placeholder="10" min="0"/></td>
+                      <td><button type="button" class="btn-icon remove-size-stock-row" style="color:#c62828;width:26px;height:26px;font-size:0.75rem;">✕</button></td>
+                    </tr>`:''}
+                  </tbody>
+                </table>
+                <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+                  <button type="button" id="add-size-stock-row" class="btn btn-outline btn-sm">+ Add Size</button>
+                  <button type="button" id="quick-fill-sizes" class="btn btn-ghost btn-sm">Quick Fill: XS S M L XL XXL</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Material (always optional) -->
+            <div class="form-group">
+              <label class="form-label">Material / Type <span class="optional-tag">(Optional)</span></label>
+              <input type="text" class="form-control" name="material"
+                value="${esc(v.material||'')}" placeholder="e.g. Cotton, Silk, Polyester"/>
             </div>
 
             <!-- Row 4: Description (Optional) -->
@@ -1637,6 +1704,68 @@ function renderAdminAnalytics() {
 /* ═══════════════════════════════════════════════════
    15. EMPLOYEE DASHBOARD
 ═══════════════════════════════════════════════════ */
+function renderEmpOrderCard(o) {
+  const custs = DB.getCustomers();
+  const cust = custs.find(c=>c.id===o.customerId);
+  const custName = cust?.name || o.customerName || 'Guest';
+  const total = o.total || o.items?.reduce((s,i)=>s+i.qty*i.price,0) || 0;
+  const session = DB.getSession();
+  const isPending = o.status==='pending';
+  return `
+  <div class="emp-order-card ${isPending?'pending':'accepted'}">
+    <div class="emp-order-top">
+      <div>
+        <div class="emp-order-id">#${o.id.slice(-6).toUpperCase()}</div>
+        <div class="emp-order-customer">👤 ${esc(custName)}</div>
+      </div>
+      <div style="text-align:right;">
+        <div class="emp-order-total">${fmt(total)}</div>
+        <div class="emp-order-payment ${(o.paymentMode||'cash').toLowerCase()}">
+          ${o.paymentMode==='GPay'?'📱 GPay':o.paymentMode==='PhonePe'?'💜 PhonePe':'💵 Cash'}
+        </div>
+      </div>
+    </div>
+    <div class="emp-order-items">
+      ${(o.items||[]).map(i=>`<div class="emp-order-item">• ${esc(i.name)}${i.size?' ('+esc(i.size)+')':''} × ${i.qty}</div>`).join('')}
+    </div>
+    ${isPending ? `
+    <div class="emp-order-actions">
+      <div style="font-size:0.8rem;color:var(--text-medium);margin-bottom:8px;">Set packing time:</div>
+      <div class="pack-time-btns">
+        <button class="pack-time-btn" data-order-id="${o.id}" data-time="10">10 min</button>
+        <button class="pack-time-btn" data-order-id="${o.id}" data-time="15">15 min</button>
+        <button class="pack-time-btn" data-order-id="${o.id}" data-time="20">20 min</button>
+        <button class="pack-time-btn" data-order-id="${o.id}" data-time="30">30 min</button>
+      </div>
+    </div>` : `
+    <div class="emp-order-accepted">
+      ✅ Packing time: ${o.estimatedTime} min · By: ${esc(o.employeeName||'—')}
+      <button class="btn btn-sm btn-gold" data-mark-ready="${o.id}" style="margin-left:8px;">Mark Ready</button>
+    </div>`}
+  </div>`;
+}
+
+function renderEmpOrdersNotification() {
+  const pendingOrders = DB.getOrders().filter(o => o.status === 'pending');
+  const acceptedOrders = DB.getOrders().filter(o => o.status === 'accepted');
+  if (!pendingOrders.length && !acceptedOrders.length) return '';
+  return `
+  <div class="emp-orders-panel">
+    ${pendingOrders.length ? `<div class="emp-orders-header new-orders-header">
+      🔔 ${pendingOrders.length} New Order${pendingOrders.length>1?'s':''} Waiting!
+    </div>
+    <div class="emp-orders-list">
+      ${pendingOrders.map(o => renderEmpOrderCard(o)).join('')}
+    </div>` : ''}
+    ${acceptedOrders.length ? `<div class="emp-orders-header accepted-header" style="${pendingOrders.length?'border-top:none;':''}">
+      ⏳ ${acceptedOrders.length} Order${acceptedOrders.length>1?'s':''} Being Packed
+    </div>
+    <div class="emp-orders-list" style="border-color:#81c784;">
+      ${acceptedOrders.map(o => renderEmpOrderCard(o)).join('')}
+    </div>` : ''}
+  </div>`;
+}
+
 function renderEmployeeDash() {
   const session=DB.getSession(), shop=DB.getShop();
   const mainView = state.subRoute==='stock'      ? renderEmpStock()
@@ -1645,7 +1774,10 @@ function renderEmployeeDash() {
                  : renderEmpProducts();
   return `<div>${renderAppHeader({ shopName:shop?.name, userName:session?.name })}
     <div class="dash-layout">${renderSidebar('employee')}
-      <main class="dash-main">${mainView}</main>
+      <main class="dash-main">
+        ${renderEmpOrdersNotification()}
+        ${mainView}
+      </main>
     </div></div>`;
 }
 function renderEmpProducts() {
@@ -2004,7 +2136,7 @@ function renderShopCard(p) {
   const maxPrice=sizes.length?Math.max(...sizes.map(s=>+s.price)):+(p.price||0);
   const priceStr=minPrice===maxPrice?`₹${minPrice.toLocaleString('en-IN')}`:`₹${minPrice.toLocaleString('en-IN')} – ₹${maxPrice.toLocaleString('en-IN')}`;
   const inCart=state.cart.some(i=>i.id===p.id);
-  return `<div class="shop-card" data-product-detail="${esc(p.id)}">
+  return `<div class="shop-card" data-product-detail="${esc(p.id)}" data-prod-card="${esc(p.id)}">
     <div class="shop-card-img">
       ${p.image?`<img src="${p.image}" alt="${esc(p.name)}" loading="lazy"/>`:
         `<div class="no-img" style="font-size:2.5rem;">👗</div>`}
@@ -2014,6 +2146,7 @@ function renderShopCard(p) {
     <div class="shop-card-body">
       <div class="shop-card-category">${esc(p.category)}${p.subcategory?` · ${esc(p.subcategory)}`:''}${p.material?` · ${esc(p.material)}`:''}</div>
       <div class="shop-card-name">${esc(p.name)}</div>
+      ${p.hasSizes && p.sizePrices?.length ? `<div class="size-selector" data-prod-id="${esc(p.id)}">${p.sizePrices.filter(sp=>sp.stock>0).map(sp=>`<button class="size-btn" data-prod="${esc(p.id)}" data-size="${esc(sp.size)}" data-price="${sp.price}" data-stock="${sp.stock}">${esc(sp.size)}</button>`).join('')}</div>` : ''}
       <!-- Color swatches — prominent & visible -->
       ${(()=>{
         const colorList=p.colors&&p.colors.length?p.colors:[{name:p.color||'',image:p.image||''}];
@@ -2172,6 +2305,8 @@ function renderCartSidebar() {
 ═══════════════════════════════════════════════════ */
 function renderBillHTML(order, shop, cust) {
   const items=order?.items||[], sub=items.reduce((s,i)=>s+i.qty*i.price,0);
+  const pm=order?.paymentMode||'Cash';
+  const pmIcon=pm==='GPay'?'📱 GPay':pm==='PhonePe'?'💜 PhonePe':'💵 Cash';
   return `<div class="bill-receipt">
     <div class="bill-header">
       <div class="bill-shop-name gold-text">${esc(shop?.name||'Zara Aura')}</div>
@@ -2179,12 +2314,16 @@ function renderBillHTML(order, shop, cust) {
       ${shop?.gst?`<div style="font-size:0.72rem;color:var(--text-light);margin-top:4px;">GST: ${esc(shop.gst)}</div>`:''}
     </div>
     <div class="bill-meta"><span>Bill No: #${order.id.slice(-8).toUpperCase()}</span><span>${fmtDate(order.date)}</span></div>
-    <div style="margin-bottom:14px;font-size:0.82rem;"><strong>Customer:</strong> ${esc(cust?.name||'Guest')}<br/>
-      <span style="color:var(--text-light);">WhatsApp: ${esc(cust?.whatsapp||'—')}</span></div>
+    <div style="margin-bottom:10px;font-size:0.82rem;">
+      <strong>Customer:</strong> ${esc(cust?.name||'Guest')}<br/>
+      <span style="color:var(--text-light);">Phone: ${esc(cust?.whatsapp||'—')}</span><br/>
+      <strong>Payment:</strong> ${pmIcon}
+      ${order.employeeName?`<br/><span style="color:var(--text-light);">Handled by: ${esc(order.employeeName)}</span>`:''}
+    </div>
     <table class="bill-table">
       <thead><tr><th>Item</th><th>Size</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
       <tbody>
-        ${items.map(i=>`<tr><td>${esc(i.name)}</td><td>${esc(i.size||'')}</td><td>${i.qty}</td><td>${fmt(i.price)}</td><td>${fmt(i.qty*i.price)}</td></tr>`).join('')}
+        ${items.map(i=>`<tr><td>${esc(i.name)}</td><td>${esc(i.size||'—')}</td><td>${i.qty}</td><td>${fmt(i.price)}</td><td>${fmt(i.qty*i.price)}</td></tr>`).join('')}
         <tr class="bill-total-row"><td colspan="4">Total Amount</td><td>${fmt(sub)}</td></tr>
       </tbody>
     </table>
@@ -2208,11 +2347,24 @@ function renderOrderSuccess(orderId) {
   return `<div class="modal-overlay" id="success-overlay">
     <div class="modal animate-slideUp">
       <div class="modal-body" style="text-align:center;padding:36px 28px;">
-        <div style="font-size:3rem;margin-bottom:14px;">✦</div>
-        <h2 style="font-family:var(--font-serif);margin-bottom:8px;color:var(--gold-dark);">Order Confirmed!</h2>
-        <p class="text-muted" style="margin-bottom:6px;">Your purchase has been processed successfully.</p>
+        <div class="order-status-card" id="order-status-card-${order.id}">
+          <div class="order-status-icon">✦</div>
+          <h2 style="font-family:var(--font-serif);margin-bottom:8px;color:var(--gold-dark);">Order Sent to Counter!</h2>
+          <p style="font-size:0.82rem;color:var(--text-medium);">Order #${order.id.slice(-6).toUpperCase()}</p>
+          <div class="order-status-steps">
+            <div class="status-step done">📤 Order Sent</div>
+            <div class="status-step ${order.status==='accepted'||order.status==='ready'?'done':'waiting'}">
+              ⏳ ${order.estimatedTime ? `Ready in ${order.estimatedTime} min` : 'Waiting for shopkeeper…'}
+            </div>
+            <div class="status-step ${order.status==='ready'?'done':'waiting'}">✅ Ready for pickup</div>
+          </div>
+          ${order.estimatedTime ? `<div class="order-eta">🕐 Estimated: ${order.estimatedTime} minutes</div>` : ''}
+          <div style="font-size:0.8rem;color:var(--gold-dark);margin-top:8px;">
+            Payment: ${order.paymentMode==='GPay'?'📱 GPay':order.paymentMode==='PhonePe'?'💜 PhonePe':'💵 Cash'}
+          </div>
+        </div>
         <p style="font-size:0.82rem;color:var(--gold-dark);background:var(--gold-lighter);padding:10px 14px;border-radius:var(--radius-md);margin-bottom:20px;">
-          📲 Order confirmation SMS sent to ${esc(cust?.whatsapp||'your phone')}
+          📲 Order confirmation sent to ${esc(cust?.whatsapp||'your phone')}
         </p>
         ${renderBillHTML(order,shop,cust)}
         <div style="margin-top:20px;display:flex;flex-direction:column;gap:10px;">
@@ -2473,6 +2625,24 @@ function renderCheckoutModal() {
         <div style="background:var(--gold-lighter);border:1px solid var(--gold-light);border-radius:var(--radius-md);padding:14px;font-size:0.82rem;color:var(--gold-dark);">
           📲 &nbsp; WhatsApp order confirmation will be sent automatically to <strong>${esc(cust?.whatsapp||'your WhatsApp')}</strong>.
         </div>
+        <!-- Payment Mode -->
+        <div class="payment-mode-section">
+          <div class="payment-mode-title">💳 Select Payment Method</div>
+          <div class="payment-mode-options">
+            <label class="payment-mode-opt${state.selectedPaymentMode==='Cash'?' selected':''}">
+              <input type="radio" name="payMode" value="Cash" ${state.selectedPaymentMode==='Cash'||!state.selectedPaymentMode?'checked':''}/>
+              <span class="pm-icon">💵</span><span>Cash</span>
+            </label>
+            <label class="payment-mode-opt${state.selectedPaymentMode==='GPay'?' selected':''}">
+              <input type="radio" name="payMode" value="GPay" ${state.selectedPaymentMode==='GPay'?'checked':''}/>
+              <span class="pm-icon">📱</span><span>GPay</span>
+            </label>
+            <label class="payment-mode-opt${state.selectedPaymentMode==='PhonePe'?' selected':''}">
+              <input type="radio" name="payMode" value="PhonePe" ${state.selectedPaymentMode==='PhonePe'?'checked':''}/>
+              <span class="pm-icon">💜</span><span>PhonePe</span>
+            </label>
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" data-close-modal="checkout">Back</button>
@@ -2485,8 +2655,18 @@ function confirmOrder() {
   const session=DB.getSession(), cart=state.cart;
   if(!cart.length){showToast('Cart is empty','error');return;}
   const total=cart.reduce((s,i)=>s+i.qty*i.price,0);
-  cart.forEach(item=>{const p=DB.getProducts().find(pr=>pr.id===item.id);if(p) DB.updateProduct(item.id,{quantity:Math.max(0,+p.quantity-item.qty)});});
-  const order={id:uid(),customerId:session?.id,items:cart.map(i=>({id:i.id,name:i.name,size:i.size,color:i.color,price:i.price,qty:i.qty})),total,date:Date.now()};
+  const paymentMode = document.querySelector('input[name="payMode"]:checked')?.value || state.selectedPaymentMode || 'Cash';
+  cart.forEach(item=>{
+    const p=DB.getProducts().find(pr=>pr.id===item.id);
+    if(!p) return;
+    if(p.hasSizes && item.size) {
+      const updatedSizePrices = (p.sizePrices||[]).map(sp => sp.size===item.size ? {...sp, stock: Math.max(0,sp.stock-item.qty)} : sp);
+      DB.updateProduct(item.id, {sizePrices: updatedSizePrices, quantity: updatedSizePrices.reduce((s,sp)=>s+sp.stock,0)});
+    } else {
+      DB.updateProduct(item.id,{quantity:Math.max(0,+p.quantity-item.qty)});
+    }
+  });
+  const order={id:uid(),customerId:session?.id,customerName:session?.name,items:cart.map(i=>({id:i.id,name:i.name,size:i.size,color:i.color,price:i.price,qty:i.qty})),total,date:Date.now(),paymentMode,status:'pending'};
   DB.addOrder(order); state.cart=[];
   document.getElementById('checkout-overlay')?.remove();
   document.body.insertAdjacentHTML('beforeend', renderOrderSuccess(order.id));
@@ -3542,15 +3722,34 @@ function attachListeners() {
     const subcategory = (fd.get('subcategory')||'').trim();
     const material    = fd.get('material')?.trim()||'';
     const description = fd.get('description')?.trim()||'';
-    const basePrice   = +fd.get('basePrice')||0;
-    const quantity    = +fd.get('quantity')||0;
+
+    // Read size mode
+    const hasSizes = document.querySelector('input[name="hasSizes"]:checked')?.value === 'yes';
+
+    let price = 0, quantity = 0, sizePrices = [];
+    if(hasSizes) {
+      // Read size rows
+      document.querySelectorAll('#size-stock-tbody .size-stock-row').forEach(row => {
+        const cells = row.querySelectorAll('input');
+        const sz = cells[0]?.value?.trim();
+        const pr = +cells[1]?.value||0;
+        const st = +cells[2]?.value||0;
+        if(sz) sizePrices.push({ size:sz, price:pr, stock:st });
+      });
+      if(!sizePrices.length) { showToast('Add at least one size','error'); return; }
+      quantity = sizePrices.reduce((s,sp)=>s+sp.stock,0);
+      price = Math.min(...sizePrices.map(sp=>sp.price));
+    } else {
+      price = +document.getElementById('prod-price')?.value||0;
+      quantity = +document.getElementById('prod-qty')?.value||0;
+      if(price<=0) { showToast('Price must be greater than 0','error'); return; }
+      if(quantity<0) { showToast('Stock quantity cannot be negative','error'); return; }
+    }
 
     // Validation
     if(!name)        { showToast('Product name is required','error'); return; }
     if(!category)    { showToast('Please enter or select a category','error'); return; }
     if(!subcategory) { showToast('Please enter or select a subcategory','error'); return; }
-    if(basePrice<=0) { showToast('Base price must be greater than 0','error'); return; }
-    if(quantity<0)   { showToast('Stock quantity cannot be negative','error'); return; }
 
     // Auto-save new category/subcategory into DB so they appear in future suggestions
     if(!getMainCategories().includes(category)) {
@@ -3571,24 +3770,23 @@ function attachListeners() {
       const sizes = [];
       sizeRows.forEach(row => {
         const sz = row.querySelector('.size-size-sel')?.value;
-        const pr = +row.querySelector('.size-price-inp')?.value||basePrice;
-        if(sz) sizes.push({ size:sz, price:isNaN(pr)||pr<=0?basePrice:pr });
+        const pr = +row.querySelector('.size-price-inp')?.value||price;
+        if(sz) sizes.push({ size:sz, price:isNaN(pr)||pr<=0?price:pr });
       });
       colors.push({ id:uid(), name:colorName, image:imageData, sizes });
     });
 
-    if(colors.length===0)        { showToast('Add at least one color variant','error'); return; }
-    if(!colors[0].image)         { showToast('Please upload an image for the first color variant','error'); return; }
-    if(colors[0].sizes.length===0){ showToast('Add at least one size for the first color','error'); return; }
+    if(colors.length===0)  { showToast('Add at least one color variant','error'); return; }
+    if(!colors[0].image)   { showToast('Please upload an image for the first color variant','error'); return; }
 
     const firstColor = colors[0];
     const allSizes   = firstColor.sizes;
     const prod = {
       name, category, subcategory, material, description,
-      quantity, basePrice, colors,
+      quantity, basePrice: price, price, colors,
       color: firstColor.name, image: firstColor.image,
       sizes: allSizes, size: allSizes[0]?.size||'',
-      price: allSizes[0]?.price||basePrice,
+      hasSizes, sizePrices: hasSizes ? sizePrices : [],
       addedBy: DB.getSession()?.role||'admin',
     };
     if(state.editingId) {
@@ -3803,6 +4001,84 @@ function attachListeners() {
 
   /* Orders */
   onAll('[data-view-order]','click', e=>{state.viewingOrderId=e.currentTarget.dataset.viewOrder;state.modalOpen='order-bill';render();});
+
+  /* hasSizes toggle */
+  onAll('input[name="hasSizes"]','change', e=>{
+    const yes = e.target.value==='yes';
+    const noFields = document.getElementById('no-size-fields');
+    const sizeFields = document.getElementById('size-fields');
+    if(noFields) noFields.style.display = yes?'none':'';
+    if(sizeFields) sizeFields.style.display = yes?'':'none';
+    document.querySelectorAll('.size-toggle-opt').forEach(l=>l.classList.toggle('selected',l.querySelector('input')?.value===e.target.value));
+  });
+
+  /* Add size row */
+  on('#add-size-stock-row','click',()=>{
+    const tbody=document.getElementById('size-stock-tbody');
+    if(!tbody) return;
+    const row=document.createElement('tr');row.className='size-stock-row';
+    row.innerHTML=`<td><input class="form-control form-control-sm" placeholder="e.g. L" style="width:70px;"/></td>
+      <td><input type="number" class="form-control form-control-sm" placeholder="0" min="0"/></td>
+      <td><input type="number" class="form-control form-control-sm" placeholder="0" min="0"/></td>
+      <td><button type="button" class="btn-icon remove-size-stock-row" style="color:#c62828;width:26px;height:26px;font-size:0.75rem;">✕</button></td>`;
+    tbody.appendChild(row);
+  });
+
+  /* Quick fill sizes */
+  on('#quick-fill-sizes','click',()=>{
+    const tbody=document.getElementById('size-stock-tbody');
+    if(!tbody) return;
+    tbody.innerHTML=['XS','S','M','L','XL','XXL'].map(sz=>`<tr class="size-stock-row">
+      <td><input class="form-control form-control-sm" value="${sz}" style="width:70px;"/></td>
+      <td><input type="number" class="form-control form-control-sm" placeholder="0" min="0"/></td>
+      <td><input type="number" class="form-control form-control-sm" placeholder="0" min="0"/></td>
+      <td><button type="button" class="btn-icon remove-size-stock-row" style="color:#c62828;width:26px;height:26px;font-size:0.75rem;">✕</button></td>
+    </tr>`).join('');
+  });
+
+  /* Remove size row (delegated) */
+  document.addEventListener('click',e=>{
+    if(e.target.closest('.remove-size-stock-row')){
+      const row=e.target.closest('.size-stock-row');
+      if(document.querySelectorAll('.size-stock-row').length>1) row?.remove();
+      else showToast('At least one size required','error');
+    }
+  });
+
+  /* Size btn on shop cards (delegated) */
+  document.addEventListener('click', e=>{
+    const btn=e.target.closest('.size-btn');
+    if(!btn) return;
+    const prodId=btn.dataset.prod;
+    document.querySelectorAll(`.size-btn[data-prod="${prodId}"]`).forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const card=btn.closest('[data-prod-card]');
+    const priceEl=card?.querySelector('.shop-card-price');
+    if(priceEl) priceEl.textContent='₹'+Number(btn.dataset.price).toLocaleString('en-IN');
+  });
+
+  /* Employee pack time (delegated) */
+  onAll('.pack-time-btn','click', e=>{
+    const ordId=e.currentTarget.dataset.orderId;
+    const time=+e.currentTarget.dataset.time;
+    const session=DB.getSession();
+    DB.updateOrder(ordId,{status:'accepted',estimatedTime:time,employeeId:session?.id,employeeName:session?.name});
+    showToast(`✅ Order accepted — ${time} min packing time set`,'success');
+    render();
+  });
+
+  /* Mark Ready (delegated) */
+  onAll('[data-mark-ready]','click', e=>{
+    DB.updateOrder(e.currentTarget.dataset.markReady,{status:'ready'});
+    showToast('Order marked as ready!','success');
+    render();
+  });
+
+  /* Payment mode in checkout (delegated) */
+  onAll('input[name="payMode"]','change', e=>{
+    state.selectedPaymentMode=e.target.value;
+    document.querySelectorAll('.payment-mode-opt').forEach(l=>l.classList.toggle('selected',l.querySelector('input')?.value===e.target.value));
+  });
 
 }
 

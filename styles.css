@@ -1007,50 +1007,23 @@ tbody tr:hover td { background: var(--cream); }
 
 /* ── 17. Bill/Receipt ────────────────────────────── */
 /* ── Bill / Receipt Styles ───────────────────────── */
-.pay-mode-bar {
-  display: flex; align-items: center; gap: 12px;
-  background: #f8f8ff; border-bottom: 1px solid var(--border);
-  padding: 12px 20px; flex-wrap: wrap;
-}
-.pay-mode-label { font-weight: 600; font-size: 0.85rem; color: var(--text-medium); }
-.pay-mode-opt {
-  display: flex; align-items: center; gap: 6px;
-  cursor: pointer; font-size: 0.88rem;
-  border: 2px solid var(--border); border-radius: 8px;
-  padding: 6px 16px; transition: all 0.15s;
-}
-.pay-mode-opt input { accent-color: var(--gold-dark); }
-.pay-mode-opt.selected,
-.pay-mode-opt:has(input:checked) {
-  border-color: var(--gold-dark); background: var(--gold-lighter); font-weight: 700;
-}
-.bill-preview-wrap { padding: 16px 20px; }
 .bill-receipt {
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 0.82rem; color: #111;
-  max-width: 320px; margin: 0 auto;
-  background: #fff;
+  background: var(--white);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  padding: 28px;
+  font-size: 0.85rem;
 }
-.bill-header { text-align: center; padding-bottom: 10px; }
-.bill-shop-name { font-family: var(--font-serif); font-size: 1.2rem; font-weight: 700; letter-spacing: 0.03em; }
-.bill-shop-addr { font-size: 0.72rem; color: #444; margin-top: 2px; }
-.bill-shop-meta { font-size: 0.7rem; color: #666; }
-.bill-divider { text-align: center; color: #aaa; font-size: 0.7rem; margin: 8px 0; letter-spacing: 0.1em; }
-.bill-meta-row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 0.78rem; flex-wrap: wrap; gap: 4px; }
-.bill-meta-label { color: #666; }
-.bill-pay-badge { font-weight: 700; padding: 1px 8px; border-radius: 4px; font-size: 0.78rem; }
-.bill-pay-badge.cash    { background: #e8f5e9; color: #2e7d32; }
-.bill-pay-badge.online  { background: #e3f2fd; color: #1565c0; }
-.bill-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; margin: 6px 0; }
-.bill-table th { text-align: left; padding: 5px 3px; border-top: 1px dashed #bbb; border-bottom: 1px dashed #bbb; font-weight: 700; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
-.bill-table th:last-child, .bill-table td:last-child { text-align: right; }
-.bill-table td { padding: 5px 3px; border-bottom: 1px dotted #e0e0e0; vertical-align: top; }
-.bill-item-sub { font-size: 0.68rem; color: #777; }
-.bill-totals-block { padding: 4px 0; }
-.bill-total-line { display: flex; justify-content: space-between; padding: 2px 0; font-size: 0.8rem; }
-.bill-grand { font-size: 1rem; font-weight: 700; border-top: 2px solid #333; margin-top: 4px; padding-top: 6px; }
-.bill-words { font-size: 0.68rem; color: #555; font-style: italic; margin: 8px 0; padding: 4px 6px; border: 1px dashed #ccc; }
-.bill-footer-msg { text-align: center; margin-top: 10px; font-size: 0.75rem; color: #666; font-style: italic; padding: 8px 0; }
+.bill-header { text-align: center; padding-bottom: 20px; border-bottom: 2px dashed var(--border); margin-bottom: 20px; }
+.bill-shop-name { font-family: var(--font-serif); font-size: 1.6rem; font-weight: 700; }
+.bill-shop-address { font-size: 0.75rem; color: var(--text-light); margin-top: 4px; }
+.bill-meta { display: flex; justify-content: space-between; margin-bottom: 16px; font-size: 0.78rem; color: var(--text-medium); }
+.bill-table { width: 100%; font-size: 0.82rem; }
+.bill-table th { text-align: left; padding: 6px 0; color: var(--text-light); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--border-light); }
+.bill-table td { padding: 10px 0; border-bottom: 1px solid var(--border-light); vertical-align: top; }
+.bill-table td:last-child { text-align: right; }
+.bill-total-row td { font-weight: 700; font-size: 1rem; color: var(--gold-dark); border-top: 2px dashed var(--border); border-bottom: none; padding-top: 14px; }
+.bill-footer-msg { text-align: center; margin-top: 20px; font-size: 0.78rem; color: var(--text-light); font-style: italic; }
 
 /* ── 18. Toast Notifications ─────────────────────── */
 #toast-container {
@@ -1220,29 +1193,9 @@ tbody tr:hover td { background: var(--cream); }
 
 /* ── 24. Print ───────────────────────────────────── */
 @media print {
-  /* Hide everything except print-area */
-  body > * { display: none !important; }
-  #print-area {
-    display: block !important;
-    position: fixed !important;
-    top: 0; left: 0;
-    width: 100%;
-    background: white;
-    padding: 16px;
-    box-sizing: border-box;
-  }
-  /* Bill receipt print styles */
-  #print-area .bill-receipt {
-    font-family: 'Courier New', Courier, monospace;
-    max-width: 320px;
-    margin: 0 auto;
-    font-size: 0.82rem;
-    color: #000;
-  }
-  #print-area .bill-shop-name { font-size: 1.1rem; font-weight: 700; }
-  #print-area .bill-pay-badge.cash    { background: none; color: #000; font-weight: 700; }
-  #print-area .bill-pay-badge.online  { background: none; color: #000; font-weight: 700; }
-  #print-area .bill-grand { font-size: 0.95rem; font-weight: 700; }
+  .no-print { display: none !important; }
+  body { background: white; }
+  .bill-receipt { box-shadow: none; border: none; }
 }
 
 /* ── 25. Super Admin ─────────────────────────────── */
@@ -2425,187 +2378,4 @@ tbody tr:hover td { background: var(--cream); }
   font-size: 0.75rem;
   color: var(--text-light);
   font-style: italic;
-}
-
-/* ════════════════════════════════════════════════════
-   BILLING MODULE
-════════════════════════════════════════════════════ */
-.billing-layout {
-  display: grid;
-  grid-template-columns: 340px 1fr;
-  gap: 20px;
-  align-items: start;
-}
-@media (max-width: 900px) {
-  .billing-layout { grid-template-columns: 1fr; }
-}
-.billing-left .card-header,
-.billing-right .card-header {
-  font-weight: 700;
-  font-size: 0.9rem;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
-}
-.bill-totals {
-  border-top: 2px solid var(--border);
-  padding: 16px 18px;
-}
-.bill-total-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 0;
-  font-size: 0.88rem;
-  color: var(--text-medium);
-}
-.bill-grand-total {
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--text);
-  border-top: 1px solid var(--border);
-  margin-top: 6px;
-  padding-top: 8px;
-}
-.badge-info {
-  background: #e3f2fd;
-  color: #1565c0;
-  padding: 2px 8px;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  margin-left: 8px;
-}
-.card-footer {
-  border-top: 1px solid var(--border);
-}
-
-/* ─── Invoice Preview (screen) ─── */
-.invoice-preview {
-  max-width: 860px;
-  margin: 0 auto;
-}
-.inv-wrap {
-  font-family: 'Times New Roman', Times, serif;
-  color: #111;
-  padding: 8px;
-}
-.inv-header {
-  text-align: center;
-  border-bottom: 2px solid #1a237e;
-  padding-bottom: 12px;
-  margin-bottom: 14px;
-}
-.inv-company-name {
-  font-size: 1.6rem;
-  font-weight: 700;
-  color: #1a237e;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.inv-company-sub {
-  font-size: 0.82rem;
-  color: #444;
-  margin-top: 2px;
-}
-.inv-title {
-  text-align: center;
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  border: 2px solid #1a237e;
-  padding: 6px;
-  margin: 12px 0;
-  color: #1a237e;
-  text-transform: uppercase;
-}
-.inv-meta {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 14px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid #ccc;
-}
-.inv-meta-label { font-size: 0.78rem; color: #555; text-transform: uppercase; letter-spacing: 0.05em; }
-.inv-meta-value { font-size: 0.88rem; margin-top: 2px; }
-.inv-meta-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-.inv-meta-table td { padding: 3px 6px; }
-.inv-meta-table td:first-child { color: #555; width: 100px; }
-.inv-items-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.82rem;
-  margin-bottom: 0;
-}
-.inv-items-table th {
-  background: #1a237e;
-  color: #fff;
-  padding: 8px 6px;
-  text-align: left;
-  font-weight: 600;
-}
-.inv-items-table td {
-  padding: 7px 6px;
-  border-bottom: 1px solid #e0e0e0;
-  vertical-align: middle;
-}
-.inv-items-table tr:nth-child(even) td { background: #f5f7ff; }
-.inv-summary-wrap {
-  display: flex;
-  justify-content: flex-end;
-  border-top: 2px solid #1a237e;
-  padding-top: 10px;
-  margin-top: 0;
-}
-.inv-summary {
-  border-collapse: collapse;
-  font-size: 0.85rem;
-  min-width: 240px;
-}
-.inv-summary td { padding: 4px 10px; }
-.inv-summary td:last-child { text-align: right; font-weight: 500; }
-.inv-grand-total td {
-  border-top: 2px solid #1a237e;
-  padding-top: 8px;
-  font-size: 0.95rem;
-  color: #1a237e;
-}
-.inv-words {
-  border: 1px solid #ccc;
-  padding: 10px 14px;
-  font-size: 0.82rem;
-  margin: 14px 0;
-  background: #f9f9f9;
-  border-radius: 4px;
-}
-.inv-footer {
-  display: grid;
-  grid-template-columns: 1fr 220px;
-  gap: 24px;
-  margin-top: 20px;
-  padding-top: 14px;
-  border-top: 1px solid #ccc;
-  font-size: 0.78rem;
-}
-.inv-terms { color: #555; line-height: 1.7; }
-.inv-sign { text-align: center; }
-.inv-sign-line { border-top: 1px solid #333; padding-top: 6px; font-weight: 600; margin-top: 44px; }
-.inv-sign-role { font-size: 0.75rem; color: #555; }
-
-/* ─── Print CSS ─── */
-@media print {
-  body * { visibility: hidden; }
-  #print-area, #print-area * { visibility: visible; }
-  #print-area {
-    display: block !important;
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%;
-    background: white;
-  }
-  .inv-wrap {
-    padding: 20px 28px;
-    font-family: 'Times New Roman', Times, serif;
-  }
-  .inv-items-table th { background: #1a237e !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .inv-items-table tr:nth-child(even) td { background: #f5f7ff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }

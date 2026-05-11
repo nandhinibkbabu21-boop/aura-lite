@@ -61,6 +61,7 @@ const KEYS = {
   products:       `${APP_KEY}_products`,
   categories:     `${APP_KEY}_categories`,
   orders:         `${APP_KEY}_orders`,
+  coupons:        `${APP_KEY}_coupons`,
   session:        `${APP_KEY}_session`,
   shopId:         `${APP_KEY}_shopId`,
   mainCategories: `${APP_KEY}_mainCategories`,
@@ -168,6 +169,10 @@ let state = {
   selectedColorIdx: 0, selectedSizeIdx: 0, activeSubFilter: 'all', productCategoryTab: 'all', openCategoryAccordion: null,
   fpStep: 1, fpVerifiedUser: null, fpOtp: null, fpOtpExpiry: null, fpFoundUser: null,
   selectedPaymentMode: 'Cash',
+  selectedSizes: {},
+  paymentMode: '',
+  couponCode: '',
+  couponDiscount: 0,
 };
 
 /* ═══════════════════════════════════════════════════
@@ -183,7 +188,7 @@ const Sync = {
     this.active = true;
     const shopRef = db.collection('shops').doc(shopId);
 
-    ['products','employees','customers','orders'].forEach(col => {
+    ['products','employees','customers','orders','coupons'].forEach(col => {
       this._unsubs.push(
         shopRef.collection(col).onSnapshot(snap => {
           const data = snap.docs.map(d => ({ ...d.data(), id: d.id }));
@@ -298,6 +303,23 @@ const DB = {
     _ls(KEYS.orders, list);
     DB._col('orders')?.doc(id).update(data).catch(console.error);
   },
+
+  /* ── Coupons ── */
+  getCoupons() { return _ls(KEYS.coupons) || []; },
+  addCoupon(c) {
+    const list = DB.getCoupons(); list.push(c); _ls(KEYS.coupons, list);
+    DB._col('coupons')?.doc(c.id).set(c).catch(console.error);
+  },
+  updateCoupon(id, data) {
+    const list = DB.getCoupons().map(c => c.id===id ? {...c,...data} : c);
+    _ls(KEYS.coupons, list);
+    DB._col('coupons')?.doc(id).update(data).catch(console.error);
+  },
+  deleteCoupon(id) {
+    _ls(KEYS.coupons, DB.getCoupons().filter(c => c.id !== id));
+    DB._col('coupons')?.doc(id).delete().catch(console.error);
+  },
+
   addCategory(cat) {
     const list = DB.getCategories();
     if (!list.includes(cat)) {
@@ -908,9 +930,9 @@ function renderSidebar(role) {
   const links = role === 'admin'
     ? [['overview','◈','Overview'],['products','✦','Products'],['categories','◻','Categories'],
        ['employees','◉','Employees'],['customers','◎','Customers'],['orders','◊','Orders'],
-       ['analytics','📊','Analytics'],['sms','📣','Send Offers'],['feedback','⭐','Feedback']]
+       ['analytics','📊','Analytics'],['coupons','🎟','Coupons'],['sms','📣','Send Offers'],['feedback','⭐','Feedback']]
     : role === 'employee'
-    ? [['products','✦','Products'],['categories','◻','Categories'],['stock','📦','Stock'],['salary','💰','My Salary']]
+    ? [['orders','🔔','Orders'],['products','✦','Products'],['categories','◻','Categories'],['stock','📦','Stock'],['salary','💰','My Salary']]
     : [['products','✦','Products'],['stock','◻','Stock'],['feedback','⭐','My Feedback']];
   const session = DB.getSession();
   return `
@@ -938,7 +960,7 @@ function renderAdminDash() {
   const subViews = { overview:renderAdminOverview, products:renderAdminProducts,
     categories:renderAdminCategories, employees:renderAdminEmployees,
     customers:renderAdminCustomers, orders:renderAdminOrders,
-    analytics:renderAdminAnalytics, sms:renderAdminSms, feedback:renderAdminFeedback };
+    analytics:renderAdminAnalytics, coupons:renderAdminCoupons, sms:renderAdminSms, feedback:renderAdminFeedback };
   return `<div>${renderAppHeader({ shopName:shop?.name, userName:session?.name })}
     <div class="dash-layout">${renderSidebar('admin')}
       <main class="dash-main">${(subViews[state.subRoute]||renderAdminOverview)()}</main>
@@ -968,8 +990,23 @@ function renderCustomerFeedbackPage() {
 
 function renderAdminOverview() {
   const prods=DB.getProducts(), emps=DB.getEmployees(), custs=DB.getCustomers(), ords=DB.getOrders();
-  const low=prods.filter(p=>+p.quantity>0&&+p.quantity<=5), oos=prods.filter(p=>+p.quantity===0);
   const rev=ords.reduce((s,o)=>s+(+o.total||0),0);
+  // Low stock logic — handles both sized and unsized products
+  const oos=[], low=[];
+  prods.forEach(p=>{
+    if(p.hasSizes&&p.sizeStock?.length){
+      const allOos=p.sizeStock.every(s=>+s.stock===0);
+      const anyLow=p.sizeStock.some(s=>+s.stock>0&&+s.stock<=5);
+      const allOosNames=p.sizeStock.filter(s=>+s.stock===0).map(s=>s.size);
+      if(allOos) oos.push({...p,_detail:'all sizes OOS'});
+      else if(anyLow){const lowSizes=p.sizeStock.filter(s=>+s.stock>0&&+s.stock<=5).map(s=>`${s.size}:${s.stock}`).join(', ');low.push({...p,_detail:lowSizes});}
+    } else {
+      if(+p.quantity===0) oos.push(p);
+      else if(+p.quantity>0&&+p.quantity<=5) low.push(p);
+    }
+  });
+  const weekOrds=ords.filter(o=>{const d=new Date(o.date);const now=new Date();return now-d<7*24*60*60*1000;});
+  const weekRev=weekOrds.reduce((s,o)=>s+(+o.total||0),0);
   return `
   <div class="animate-fadeIn">
     <div class="dash-page-title">Dashboard Overview</div>
@@ -981,9 +1018,15 @@ function renderAdminOverview() {
       ${statCard('◎','Customers',custs.length,'registered')}
       ${statCard('◊','Revenue',fmt(rev),`${ords.length} orders`)}
     </div>
+    <div class="grid-4" style="margin-bottom:24px;">
+      ${statCard('🛍','Today\'s Orders',ords.filter(o=>new Date(o.date).toDateString()===new Date().toDateString()).length,'orders today')}
+      ${statCard('📅','This Week',weekOrds.length,fmt(weekRev))}
+      ${statCard('⚠','Low Stock',low.length,'items')}
+      ${statCard('❌','Out of Stock',oos.length,'items')}
+    </div>
     ${(oos.length||low.length)?`<div style="margin-bottom:24px;">
-      ${oos.slice(0,3).map(p=>`<div class="alert alert-danger">✕ &nbsp; <strong>${esc(p.name)}</strong> is out of stock</div>`).join('')}
-      ${low.slice(0,5).map(p=>`<div class="alert alert-warning">⚠ &nbsp; <strong>${esc(p.name)}</strong> – only ${p.quantity} left</div>`).join('')}
+      ${oos.slice(0,3).map(p=>`<div class="alert alert-danger">❌ &nbsp; <strong>${esc(p.name)}</strong> is out of stock${p._detail?' ('+esc(p._detail)+')':''}</div>`).join('')}
+      ${low.slice(0,5).map(p=>`<div class="alert alert-warning">⚠ &nbsp; <strong>${esc(p.name)}</strong> – low stock${p._detail?' ('+esc(p._detail)+')':' (only '+p.quantity+' left)'}</div>`).join('')}
     </div>`:''}
     <div class="grid-2">
       <div class="card"><h4 style="font-family:var(--font-serif);margin-bottom:14px;">Recent Products</h4>
@@ -1009,22 +1052,17 @@ function renderAdminOverview() {
       </div>
     </div>
     <!-- QR Code Card -->
-    <div class="card" style="margin-top:24px;">
-      <div class="card-header" style="font-weight:700;">📱 Shop QR Code — Scan to Order</div>
-      <div class="card-body" style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(window.location.href)}&bgcolor=ffffff&color=1a237e&qzone=2"
-             alt="QR Code" style="border-radius:8px;border:3px solid #1a237e;"/>
-        <div>
-          <div style="font-weight:700;font-size:1rem;margin-bottom:6px;">Customer Ordering QR</div>
-          <div style="font-size:0.82rem;color:var(--text-medium);margin-bottom:12px;">
-            Customers scan this to browse &amp; order products from their phone during rush hours.
-          </div>
-          <div style="font-size:0.75rem;background:#f5f5f5;padding:8px 12px;border-radius:6px;word-break:break-all;">
-            ${window.location.href}
-          </div>
+    ${(()=>{
+      const _custUrl=window.location.origin+window.location.pathname;
+      const _qrSrc=`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(_custUrl)}&bgcolor=ffffff&color=1a237e&qzone=1`;
+      return `<div class="card" style="margin-top:20px;max-width:260px;">
+        <div class="card-header" style="font-size:0.85rem;">📱 Customer QR Code</div>
+        <div class="card-body" style="text-align:center;padding:16px;">
+          <img src="${_qrSrc}" style="width:160px;height:160px;border-radius:8px;" alt="QR"/>
+          <p style="font-size:0.72rem;color:var(--text-light);margin-top:8px;">Customers scan to shop</p>
         </div>
-      </div>
-    </div>
+      </div>`;
+    })()}
   </div>`;
 }
 function statCard(icon,label,value,sub){
@@ -1253,23 +1291,16 @@ function renderProductModal() {
                 <table class="size-stock-table" id="size-stock-table">
                   <thead><tr><th>Size</th><th>Price (₹)</th><th>Stock</th><th></th></tr></thead>
                   <tbody id="size-stock-tbody">
-                    ${(v.sizePrices||[]).map((sp,i)=>`<tr class="size-stock-row">
-                      <td><input class="form-control form-control-sm" value="${esc(sp.size)}" placeholder="e.g. M" style="width:70px;"/></td>
-                      <td><input type="number" class="form-control form-control-sm" value="${esc(sp.price)}" placeholder="0" min="0"/></td>
-                      <td><input type="number" class="form-control form-control-sm" value="${esc(sp.stock)}" placeholder="0" min="0"/></td>
-                      <td><button type="button" class="btn-icon remove-size-stock-row" style="color:#c62828;width:26px;height:26px;font-size:0.75rem;">✕</button></td>
+                    ${(v.sizeStock||v.sizePrices||[{size:'S',price:v.basePrice||v.price||'',stock:10},{size:'M',price:v.basePrice||v.price||'',stock:10},{size:'L',price:v.basePrice||v.price||'',stock:10}]).map((sp)=>`<tr class="size-stock-row">
+                      <td><input class="form-control form-control-sm ss-size" value="${esc(sp.size)}" placeholder="S/M/L/XL"/></td>
+                      <td><input type="number" class="form-control form-control-sm ss-price" value="${esc(sp.price)}" placeholder="₹" min="0"/></td>
+                      <td><input type="number" class="form-control form-control-sm ss-stock" value="${esc(sp.stock)}" placeholder="Qty" min="0"/></td>
+                      <td><button type="button" class="btn-icon remove-ss-row" style="color:#c62828;width:26px;height:26px;font-size:0.75rem;">✕</button></td>
                     </tr>`).join('')}
-                    ${!(v.sizePrices||[]).length?`<tr class="size-stock-row">
-                      <td><input class="form-control form-control-sm" placeholder="e.g. S" style="width:70px;"/></td>
-                      <td><input type="number" class="form-control form-control-sm" placeholder="499" min="0"/></td>
-                      <td><input type="number" class="form-control form-control-sm" placeholder="10" min="0"/></td>
-                      <td><button type="button" class="btn-icon remove-size-stock-row" style="color:#c62828;width:26px;height:26px;font-size:0.75rem;">✕</button></td>
-                    </tr>`:''}
                   </tbody>
                 </table>
                 <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
-                  <button type="button" id="add-size-stock-row" class="btn btn-outline btn-sm">+ Add Size</button>
-                  <button type="button" id="quick-fill-sizes" class="btn btn-ghost btn-sm">Quick Fill: XS S M L XL XXL</button>
+                  <button type="button" id="add-size-row-btn" class="btn btn-outline btn-sm">+ Add Size</button>
                 </div>
               </div>
             </div>
@@ -1379,10 +1410,15 @@ function renderAdminCategories() {
 
 function renderAdminEmployees() {
   const emps=DB.getEmployees();
+  const orders=DB.getOrders();
   const q=state.searchQuery.toLowerCase();
   const filtered=emps.filter(e=>!q||e.name.toLowerCase().includes(q)||e.phone.includes(q));
+  // Build performance map: empId → orders handled
+  const empOrderCount={};
+  orders.forEach(o=>{if(o.employeeId)empOrderCount[o.employeeId]=(empOrderCount[o.employeeId]||0)+1;});
+  const topEmpId=Object.entries(empOrderCount).sort((a,b)=>b[1]-a[1])[0]?.[0];
   return `<div class="animate-fadeIn">
-    <div class="dash-page-title">Team Members</div><div class="dash-page-subtitle">Manage your shop staff</div>
+    <div class="dash-page-title">Team Members</div><div class="dash-page-subtitle">Manage your shop staff & track performance</div>
     <div class="dash-toolbar">
       <div class="dash-search" style="flex:1;"><span class="dash-search-icon">⌕</span>
         <input type="text" placeholder="Search employees…" id="emp-search" value="${esc(state.searchQuery)}"/></div>
@@ -1390,25 +1426,37 @@ function renderAdminEmployees() {
     </div>
     ${filtered.length===0?`<div class="empty-state"><div class="empty-state-icon">◉</div><div class="empty-state-title">No employees added</div></div>`:
     `<div class="table-wrap"><table>
-      <thead><tr><th>Employee</th><th>Phone</th><th>Join Date</th><th>Current Salary</th><th>Actions</th></tr></thead>
-      <tbody>${filtered.map(e=>`<tr>
+      <thead><tr><th>Employee</th><th>Phone</th><th>Join Date</th><th>Orders Handled</th><th>Salary</th><th>Actions</th></tr></thead>
+      <tbody>${filtered.map(e=>{
+        const ordCount=empOrderCount[e.id]||0;
+        const isTop=e.id===topEmpId&&ordCount>0;
+        return `<tr>
         <td><div style="display:flex;align-items:center;gap:10px;">
           <div style="width:36px;height:36px;border-radius:50%;background:var(--gold-lighter);border:1px solid var(--gold-light);display:flex;align-items:center;justify-content:center;">${e.gender==='Female'?'👩':'👨'}</div>
-          <div><div class="td-name">${esc(e.name)}</div>
+          <div><div class="td-name">${esc(e.name)}${isTop?'&nbsp;<span title="Top performer" style="font-size:0.75rem;">🏆</span>':''}</div>
             <div style="font-size:0.72rem;color:var(--text-light);">${esc(e.username)}</div></div></div></td>
         <td>${esc(e.phone)}</td>
         <td style="font-size:0.82rem;color:var(--text-light);">${e.joinDate?fmtDate(e.joinDate):'—'}</td>
         <td>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:1.1rem;font-weight:700;color:${ordCount>0?'var(--gold-dark)':'var(--text-light)'};">${ordCount}</span>
+            ${ordCount>0?`<div style="flex:1;height:6px;background:var(--cream-2);border-radius:3px;min-width:40px;">
+              <div style="height:6px;background:var(--gold);border-radius:3px;width:${Math.min(100,ordCount*10)}%;"></div>
+            </div>`:''}
+          </div>
+          <div style="font-size:0.7rem;color:var(--text-xlight);">orders handled</div>
+        </td>
+        <td>
           ${e.salary
             ? `<span style="font-family:var(--font-serif);font-weight:700;color:var(--gold-dark);font-size:1rem;">${fmt(e.salary)}</span>
-               <div style="font-size:0.7rem;color:var(--text-light);">per month · ${(e.salaryHistory||[]).length} entr${(e.salaryHistory||[]).length===1?'y':'ies'}</div>`
+               <div style="font-size:0.7rem;color:var(--text-light);">per month</div>`
             : `<span style="color:var(--text-xlight);font-size:0.82rem;">Not set</span>`}
         </td>
         <td><div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn btn-gold btn-sm" data-salary-emp="${esc(e.id)}">💰 Salary</button>
           <button class="btn btn-outline btn-sm" data-edit-emp="${esc(e.id)}">Edit</button>
           <button class="btn btn-ghost btn-sm" data-delete-emp="${esc(e.id)}">Remove</button>
-        </div></td></tr>`).join('')}
+        </div></td></tr>`;}).join('')}
       </tbody></table></div>`}
     ${state.modalOpen==='employee'?renderEmployeeModal():''}
     ${state.modalOpen==='salary'?renderAdminSalaryModal(state.salaryEmpId):''}
@@ -1577,17 +1625,26 @@ function renderAdminCustomers() {
 
 function renderAdminOrders() {
   const ords=DB.getOrders().slice().reverse(), custs=DB.getCustomers();
+  const statusColors={pending:'#f59e0b',accepted:'#3b82f6',ready:'#10b981',completed:'#6b7280'};
+  const pmIcon={GPay:'📱',PhonePe:'💜',Cash:'💵'};
   return `<div class="animate-fadeIn">
     <div class="dash-page-title">Orders</div><div class="dash-page-subtitle">${ords.length} order${ords.length!==1?'s':''} total</div>
     ${ords.length===0?`<div class="empty-state"><div class="empty-state-icon">◊</div><div class="empty-state-title">No orders yet</div></div>`:
     `<div class="table-wrap"><table>
-      <thead><tr><th>Order ID</th><th>Customer</th><th>Date</th><th>Items</th><th>Total</th><th>Action</th></tr></thead>
-      <tbody>${ords.map(o=>{const c=custs.find(x=>x.id===o.customerId);
+      <thead><tr><th>Order ID</th><th>Customer</th><th>Date</th><th>Items</th><th>Payment</th><th>Status</th><th>Handled By</th><th>Total</th><th>Action</th></tr></thead>
+      <tbody>${ords.map(o=>{
+        const c=custs.find(x=>x.id===o.customerId);
+        const custName=o.customerName||c?.name||'Guest';
+        const stat=o.status||'pending';
+        const color=statusColors[stat]||'#6b7280';
         return `<tr>
           <td><code style="font-size:0.75rem;background:var(--cream-2);padding:2px 8px;border-radius:4px;">#${o.id.slice(-6).toUpperCase()}</code></td>
-          <td class="td-name">${esc(c?.name||'Guest')}</td>
+          <td class="td-name">${esc(custName)}</td>
           <td style="font-size:0.82rem;color:var(--text-light);">${fmtDate(o.date)}</td>
-          <td>${o.items.length} item${o.items.length!==1?'s':''}</td>
+          <td>${(o.items||[]).length} item${(o.items||[]).length!==1?'s':''}</td>
+          <td>${pmIcon[o.paymentMode]||'💵'} ${esc(o.paymentMode||'Cash')}</td>
+          <td><span style="padding:2px 8px;border-radius:12px;font-size:0.72rem;font-weight:600;background:${color}20;color:${color};text-transform:capitalize;">${stat}</span></td>
+          <td style="font-size:0.8rem;color:var(--text-medium);">${esc(o.employeeName||'—')}</td>
           <td style="font-family:var(--font-serif);font-weight:700;color:var(--gold-dark);">${fmt(o.total)}</td>
           <td><button class="btn btn-outline btn-sm" data-view-order="${esc(o.id)}">View Bill</button></td>
         </tr>`;}).join('')}
@@ -1698,6 +1755,53 @@ function renderAdminAnalytics() {
         </tr>`).join('')}</tbody>
       </table></div>`}
     </div>
+    ${(()=>{
+      const emps=DB.getEmployees();
+      const empMap={};
+      orders.forEach(o=>{if(o.employeeId){if(!empMap[o.employeeId])empMap[o.employeeId]={count:0,rev:0,name:o.employeeName};empMap[o.employeeId].count++;empMap[o.employeeId].rev+=+o.total||0;}});
+      const empRows=Object.entries(empMap).sort((a,b)=>b[1].count-a[1].count).slice(0,10);
+      if(!empRows.length) return '';
+      const maxCount=empRows[0][1].count;
+      return `<div class="card" style="margin-top:20px;">
+        <h4 style="font-family:var(--font-serif);margin-bottom:14px;">🏆 Employee Performance</h4>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          ${empRows.map(([eid,stat],idx)=>{
+            const e=emps.find(x=>x.id===eid);
+            const pct=Math.round((stat.count/maxCount)*100);
+            return `<div style="display:flex;align-items:center;gap:12px;">
+              <div style="width:24px;text-align:center;font-weight:700;color:${idx===0?'#f59e0b':idx===1?'#9ca3af':idx===2?'#cd7f32':'var(--text-light)'};">${idx===0?'🥇':idx===1?'🥈':idx===2?'🥉':idx+1}</div>
+              <div style="flex:1;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                  <span style="font-weight:600;">${esc(e?.name||stat.name||'Employee')}</span>
+                  <span style="font-size:0.8rem;color:var(--text-medium);">${stat.count} orders · ${fmt(stat.rev)}</span>
+                </div>
+                <div style="height:8px;background:var(--cream-2);border-radius:4px;overflow:hidden;">
+                  <div style="height:8px;background:${idx===0?'var(--gold)':'var(--gold-light)'};border-radius:4px;width:${pct}%;transition:width 0.6s;"></div>
+                </div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    })()}
+    ${(()=>{
+      // Payment mode breakdown
+      const pmCounts={Cash:0,GPay:0,PhonePe:0};
+      orders.forEach(o=>{const pm=o.paymentMode||'Cash';if(pmCounts[pm]!==undefined)pmCounts[pm]++;else pmCounts[pm]=1;});
+      const total=Object.values(pmCounts).reduce((a,b)=>a+b,0)||1;
+      return `<div class="card" style="margin-top:20px;">
+        <h4 style="font-family:var(--font-serif);margin-bottom:14px;">💳 Payment Methods</h4>
+        <div class="grid-3">
+          ${Object.entries(pmCounts).map(([pm,cnt])=>`<div class="stat-card">
+            <div class="stat-icon">${pm==='GPay'?'📱':pm==='PhonePe'?'💜':'💵'}</div>
+            <div class="stat-info"><div class="stat-value">${cnt}</div>
+              <div class="stat-label">${pm}</div>
+              <div class="stat-badge">${Math.round(cnt/total*100)}%</div>
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    })()}
   </div>`;
 }
 
@@ -1768,18 +1872,60 @@ function renderEmpOrdersNotification() {
 
 function renderEmployeeDash() {
   const session=DB.getSession(), shop=DB.getShop();
-  const mainView = state.subRoute==='stock'      ? renderEmpStock()
-                 : state.subRoute==='salary'     ? renderEmpSalary()
-                 : state.subRoute==='categories' ? renderEmpCategories()
+  const pendingOrders=DB.getOrders().filter(o=>o.status==='pending'||!o.status);
+  const mainView = state.subRoute==='orders'    ? renderEmpOrderNotifications()
+                 : state.subRoute==='stock'     ? renderEmpStock()
+                 : state.subRoute==='salary'    ? renderEmpSalary()
+                 : state.subRoute==='categories'? renderEmpCategories()
                  : renderEmpProducts();
   return `<div>${renderAppHeader({ shopName:shop?.name, userName:session?.name })}
+    ${pendingOrders.length?`<div class="emp-notif-bar">
+      🔔 <strong>${pendingOrders.length} new order${pendingOrders.length!==1?'s':''}</strong> waiting to be packed —
+      <button class="btn btn-sm btn-gold" id="emp-view-orders-btn" style="margin-left:8px;">View Orders</button>
+    </div>`:''}
     <div class="dash-layout">${renderSidebar('employee')}
-      <main class="dash-main">
-        ${renderEmpOrdersNotification()}
-        ${mainView}
-      </main>
+      <main class="dash-main">${mainView}</main>
     </div></div>`;
 }
+function renderEmpOrderNotifications() {
+  const orders = DB.getOrders().filter(o=>o.status==='pending'||!o.status).slice().reverse();
+  if(!orders.length) return `<div style="text-align:center;padding:48px;color:var(--text-light);">✓ No pending orders right now</div>`;
+  return `<div class="animate-fadeIn">
+    <div class="dash-page-title">🔔 Pending Orders</div>
+    <div class="dash-page-subtitle">${orders.length} order${orders.length!==1?'s':''} waiting</div>
+    <div style="display:flex;flex-direction:column;gap:16px;margin-top:16px;">
+    ${orders.map(o=>{
+      const cust=DB.getCustomers().find(c=>c.id===o.customerId);
+      const custName=o.guestName||cust?.name||'Walk-in Customer';
+      const payIcon=o.paymentMode==='GPay'||o.paymentMode==='PhonePe'?'📱':'💵';
+      return `<div class="emp-order-card">
+        <div class="emp-order-header">
+          <span class="emp-order-id">#${o.id.slice(-6).toUpperCase()}</span>
+          <span class="emp-order-customer">👤 ${esc(custName)}</span>
+          <span class="emp-order-pay pay-${(o.paymentMode||'cash').toLowerCase()}">${payIcon} ${o.paymentMode||'Cash'}</span>
+          <span class="emp-order-total">${fmt(o.total)}</span>
+        </div>
+        <div class="emp-order-items">
+          ${(o.items||[]).map(i=>`<div class="emp-order-item">
+            ${i.image?`<img src="${i.image}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;flex-shrink:0;">`:``}
+            <span>${esc(i.name)}${i.size?` — <strong>Size: ${esc(i.size)}</strong>`:''} × ${i.qty} = ${fmt(i.qty*i.price)}</span>
+          </div>`).join('')}
+        </div>
+        ${o.status==='accepted'?
+          `<div class="emp-order-accepted">✅ Accepted — Ready in ${o.estimatedTime} min (by ${esc(o.employeeName||'you')})</div>`:
+          `<div class="emp-order-actions">
+            <span style="font-size:0.82rem;font-weight:600;color:var(--text-medium);">Set packing time:</span>
+            <button class="emp-accept-btn btn btn-sm" data-oid="${esc(o.id)}" data-time="10">⏱ 10 min</button>
+            <button class="emp-accept-btn btn btn-sm" data-oid="${esc(o.id)}" data-time="15">⏱ 15 min</button>
+            <button class="emp-accept-btn btn btn-sm" data-oid="${esc(o.id)}" data-time="20">⏱ 20 min</button>
+          </div>`
+        }
+      </div>`;
+    }).join('')}
+    </div>
+  </div>`;
+}
+
 function renderEmpProducts() {
   const q=state.searchQuery.toLowerCase();
   const allProds=DB.getProducts();
@@ -2293,9 +2439,23 @@ function renderCartSidebar() {
       </div>`).join('')}
     </div>
     <div class="cart-footer">
+      <div class="cart-coupon-row">
+        <input class="form-control form-control-sm" id="coupon-input" placeholder="Coupon code..." value="${esc(state.couponCode||'')}"/>
+        <button class="btn btn-outline btn-sm" id="apply-coupon-btn">Apply</button>
+      </div>
       <div class="cart-summary-row"><span>Subtotal</span><span>${fmt(total)}</span></div>
-      <div class="cart-total-row"><span>Total</span><span class="cart-total-amount">${fmt(total)}</span></div>
-      <button class="btn btn-gold btn-block btn-lg" style="margin-top:14px;" id="checkout-btn">✦ &nbsp; Checkout</button>
+      ${state.couponDiscount>0?`<div class="cart-summary-row" style="color:#2e7d32;"><span>Discount (${esc(state.couponCode)})</span><span>-${fmt(state.couponDiscount)}</span></div>`:''}
+      <div class="cart-total-row"><span>Total</span><span class="cart-total-amount">${fmt(Math.max(0,total-(state.couponDiscount||0)))}</span></div>
+      <div style="margin:12px 0 4px;">
+        <div style="font-size:0.78rem;font-weight:600;color:var(--text-medium);margin-bottom:8px;">Payment Mode <span style="color:red;">*</span></div>
+        <div class="pay-mode-select">
+          ${['Cash','GPay','PhonePe'].map(pm=>`<label class="pay-mode-btn${state.paymentMode===pm?' selected':''}">
+            <input type="radio" name="cartPayMode" value="${pm}" ${state.paymentMode===pm?'checked':''} style="display:none;"/>
+            ${pm==='Cash'?'💵':'📱'} ${pm}
+          </label>`).join('')}
+        </div>
+      </div>
+      <button class="btn btn-gold btn-block btn-lg" style="margin-top:10px;" id="checkout-btn">✦ &nbsp; Send Order to Counter ${fmt(Math.max(0,total-(state.couponDiscount||0)))}</button>
     </div>`}
   </div>`;
 }
@@ -2305,26 +2465,25 @@ function renderCartSidebar() {
 ═══════════════════════════════════════════════════ */
 function renderBillHTML(order, shop, cust) {
   const items=order?.items||[], sub=items.reduce((s,i)=>s+i.qty*i.price,0);
-  const pm=order?.paymentMode||'Cash';
-  const pmIcon=pm==='GPay'?'📱 GPay':pm==='PhonePe'?'💜 PhonePe':'💵 Cash';
+  const discount=order?.discount||0, total=sub-discount;
   return `<div class="bill-receipt">
     <div class="bill-header">
       <div class="bill-shop-name gold-text">${esc(shop?.name||'Zara Aura')}</div>
       <div class="bill-shop-address">${esc(shop?.address||'')}</div>
-      ${shop?.gst?`<div style="font-size:0.72rem;color:var(--text-light);margin-top:4px;">GST: ${esc(shop.gst)}</div>`:''}
+      ${shop?.gst?`<div style="font-size:0.72rem;color:var(--text-light);">GST: ${esc(shop.gst)}</div>`:''}
     </div>
-    <div class="bill-meta"><span>Bill No: #${order.id.slice(-8).toUpperCase()}</span><span>${fmtDate(order.date)}</span></div>
-    <div style="margin-bottom:10px;font-size:0.82rem;">
-      <strong>Customer:</strong> ${esc(cust?.name||'Guest')}<br/>
-      <span style="color:var(--text-light);">Phone: ${esc(cust?.whatsapp||'—')}</span><br/>
-      <strong>Payment:</strong> ${pmIcon}
-      ${order.employeeName?`<br/><span style="color:var(--text-light);">Handled by: ${esc(order.employeeName)}</span>`:''}
+    <div class="bill-meta"><span>Bill #${order.id.slice(-8).toUpperCase()}</span><span>${fmtDate(order.date)}</span></div>
+    <div style="font-size:0.82rem;margin-bottom:10px;line-height:1.7;">
+      <strong>Customer:</strong> ${esc(cust?.name||order?.guestName||'Guest')}<br/>
+      <strong>Payment:</strong> ${order?.paymentMode==='GPay'?'📱 GPay':order?.paymentMode==='PhonePe'?'📱 PhonePe':order?.paymentMode==='Cash'?'💵 Cash':'—'}
+      ${order?.employeeName?`<br/><strong>Served by:</strong> ${esc(order.employeeName)}`:''}
     </div>
     <table class="bill-table">
-      <thead><tr><th>Item</th><th>Size</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
+      <thead><tr><th>Item</th><th>Size</th><th>Qty</th><th>Rate</th><th>Amt</th></tr></thead>
       <tbody>
         ${items.map(i=>`<tr><td>${esc(i.name)}</td><td>${esc(i.size||'—')}</td><td>${i.qty}</td><td>${fmt(i.price)}</td><td>${fmt(i.qty*i.price)}</td></tr>`).join('')}
-        <tr class="bill-total-row"><td colspan="4">Total Amount</td><td>${fmt(sub)}</td></tr>
+        ${discount>0?`<tr style="color:#2e7d32;"><td colspan="4">Discount (${esc(order.couponCode||'')})</td><td>-${fmt(discount)}</td></tr>`:''}
+        <tr class="bill-total-row"><td colspan="4">Total</td><td>${fmt(total)}</td></tr>
       </tbody>
     </table>
     <div class="bill-footer-msg">Thank you for shopping with us! ✦</div>
@@ -2654,42 +2813,95 @@ function renderCheckoutModal() {
 function confirmOrder() {
   const session=DB.getSession(), cart=state.cart;
   if(!cart.length){showToast('Cart is empty','error');return;}
-  const total=cart.reduce((s,i)=>s+i.qty*i.price,0);
-  const paymentMode = document.querySelector('input[name="payMode"]:checked')?.value || state.selectedPaymentMode || 'Cash';
+  if(!state.paymentMode){showToast('Please select a payment mode','error');document.getElementById('checkout-overlay')?.remove();return;}
+  const sub=cart.reduce((s,i)=>s+i.qty*i.price,0);
+  const total=Math.max(0,sub-(state.couponDiscount||0));
+  // Reduce stock per item (size-aware)
   cart.forEach(item=>{
     const p=DB.getProducts().find(pr=>pr.id===item.id);
     if(!p) return;
-    if(p.hasSizes && item.size) {
-      const updatedSizePrices = (p.sizePrices||[]).map(sp => sp.size===item.size ? {...sp, stock: Math.max(0,sp.stock-item.qty)} : sp);
-      DB.updateProduct(item.id, {sizePrices: updatedSizePrices, quantity: updatedSizePrices.reduce((s,sp)=>s+sp.stock,0)});
+    if(p.hasSizes&&p.sizeStock?.length&&item.size){
+      const newSS=p.sizeStock.map(s=>s.size===item.size?{...s,stock:Math.max(0,s.stock-item.qty)}:s);
+      DB.updateProduct(item.id,{sizeStock:newSS,quantity:newSS.reduce((s,x)=>s+x.stock,0)});
     } else {
       DB.updateProduct(item.id,{quantity:Math.max(0,+p.quantity-item.qty)});
     }
   });
-  const order={id:uid(),customerId:session?.id,customerName:session?.name,items:cart.map(i=>({id:i.id,name:i.name,size:i.size,color:i.color,price:i.price,qty:i.qty})),total,date:Date.now(),paymentMode,status:'pending'};
-  DB.addOrder(order); state.cart=[];
+  const order={
+    id:uid(), customerId:session?.id,
+    customerName:session?.name||'Guest',
+    guestName:session?.isGuest?session?.name:null,
+    items:cart.map(i=>({id:i.id,name:i.name,size:i.size||'',color:i.color||'',price:i.price,qty:i.qty,image:i.image||''})),
+    total, paymentMode:state.paymentMode,
+    discount:state.couponDiscount||0, couponCode:state.couponCode||'',
+    status:'pending', date:Date.now()
+  };
+  DB.addOrder(order);
+  // Track coupon usage
+  if(state.couponCode){
+    const c=DB.getCoupons().find(x=>x.code===state.couponCode);
+    if(c) DB.updateCoupon(c.id,{usedCount:(c.usedCount||0)+1});
+  }
+  state.cart=[]; state.couponCode=''; state.couponDiscount=0; state.paymentMode=''; state.cartOpen=false;
   document.getElementById('checkout-overlay')?.remove();
   document.body.insertAdjacentHTML('beforeend', renderOrderSuccess(order.id));
-  document.getElementById('close-success-btn')?.addEventListener('click', ()=>{document.getElementById('success-overlay')?.remove();render();});
-
-  // Auto-send order confirmation SMS via backend
+  document.getElementById('close-success-btn')?.addEventListener('click',()=>{document.getElementById('success-overlay')?.remove();render();});
   const cust=DB.getCustomers().find(c=>c.id===session?.id);
   const shop=DB.getShop();
-  const shopId=DB.getShopId();
-  // Open WhatsApp with pre-filled bill message
-  if (cust?.whatsapp) {
-    const waMsg = buildWhatsAppBill(order, shop, cust);
-    const waUrl = `https://wa.me/91${cust.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(waMsg)}`;
-    const a = document.createElement('a');
-    a.href = waUrl; a.target = '_blank'; a.rel = 'noopener';
-    document.body.appendChild(a); a.click();
-    setTimeout(() => a.remove(), 300);
-    showToast('📲 WhatsApp opened with order details!', 'success');
+  if(cust?.whatsapp){
+    const waMsg=buildWhatsAppBill(order,shop,cust);
+    const a=document.createElement('a'); a.href=`https://wa.me/91${cust.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(waMsg)}`; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); setTimeout(()=>a.remove(),300);
   }
+  showToast('✅ Order sent to counter!','success');
 }
 
 /* ═══════════════════════════════════════════════════
-   22a. ADMIN SMS OFFERS
+   22a. ADMIN COUPONS
+═══════════════════════════════════════════════════ */
+function renderAdminCoupons() {
+  const coupons=DB.getCoupons();
+  return `<div class="animate-fadeIn">
+    <div class="dash-page-title">🎟 Coupon Codes</div>
+    <div class="dash-page-subtitle">Create discount coupons for customers</div>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header">Create New Coupon</div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Code *</label>
+            <input class="form-control" id="cp-code" placeholder="e.g. SAVE20" style="text-transform:uppercase;"/></div>
+          <div class="form-group"><label class="form-label">Type</label>
+            <select class="form-control" id="cp-type">
+              <option value="percent">Percentage (%)</option>
+              <option value="fixed">Fixed (₹)</option>
+            </select></div>
+          <div class="form-group"><label class="form-label">Value *</label>
+            <input type="number" class="form-control" id="cp-value" placeholder="e.g. 10" min="1"/></div>
+          <div class="form-group"><label class="form-label">Min. Order (₹)</label>
+            <input type="number" class="form-control" id="cp-min" placeholder="0 = no min" min="0"/></div>
+        </div>
+        <button class="btn btn-gold" id="create-coupon-btn">+ Create Coupon</button>
+      </div>
+    </div>
+    ${coupons.length?`<div class="table-wrap"><table>
+      <thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Min Order</th><th>Used</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>${coupons.map(c=>`<tr>
+        <td><strong><code style="background:var(--cream-2);padding:2px 6px;border-radius:4px;">${esc(c.code)}</code></strong></td>
+        <td>${c.type==='percent'?'%':'₹ Fixed'}</td>
+        <td style="font-weight:700;color:var(--gold-dark);">${c.type==='percent'?c.discount+'% off':'₹'+c.discount+' off'}</td>
+        <td style="color:var(--text-light);">${c.minOrder>0?'₹'+c.minOrder:'—'}</td>
+        <td style="color:var(--text-medium);">${c.usedCount||0}×</td>
+        <td><span class="badge ${c.active?'badge-success':'badge-danger'}">${c.active?'Active':'Inactive'}</span></td>
+        <td style="display:flex;gap:8px;">
+          <button class="btn btn-sm btn-outline coupon-toggle-btn" data-cid="${esc(c.id)}">${c.active?'Deactivate':'Activate'}</button>
+          <button class="btn btn-sm btn-danger-icon coupon-delete-btn" data-cid="${esc(c.id)}">✕</button>
+        </td>
+      </tr>`).join('')}</tbody>
+    </table></div>`:'<div class="empty-state"><div class="empty-state-icon">🎟</div><div class="empty-state-title">No coupons yet</div></div>'}
+  </div>`;
+}
+
+/* ═══════════════════════════════════════════════════
+   22b. ADMIN SMS OFFERS
 ═══════════════════════════════════════════════════ */
 function renderAdminSms() {
   const customers = DB.getCustomers();
@@ -3725,20 +3937,22 @@ function attachListeners() {
 
     // Read size mode
     const hasSizes = document.querySelector('input[name="hasSizes"]:checked')?.value === 'yes';
+    let sizeStock = [];
+    if(hasSizes) {
+      document.querySelectorAll('.size-stock-row').forEach(row=>{
+        const sz  = row.querySelector('.ss-size')?.value.trim();
+        const pr  = +row.querySelector('.ss-price')?.value||0;
+        const st  = +row.querySelector('.ss-stock')?.value||0;
+        if(sz) sizeStock.push({size:sz,price:pr,stock:st});
+      });
+      if(!sizeStock.length){showToast('Add at least one size with price and stock','error');return;}
+    }
 
     let price = 0, quantity = 0, sizePrices = [];
     if(hasSizes) {
-      // Read size rows
-      document.querySelectorAll('#size-stock-tbody .size-stock-row').forEach(row => {
-        const cells = row.querySelectorAll('input');
-        const sz = cells[0]?.value?.trim();
-        const pr = +cells[1]?.value||0;
-        const st = +cells[2]?.value||0;
-        if(sz) sizePrices.push({ size:sz, price:pr, stock:st });
-      });
-      if(!sizePrices.length) { showToast('Add at least one size','error'); return; }
-      quantity = sizePrices.reduce((s,sp)=>s+sp.stock,0);
-      price = Math.min(...sizePrices.map(sp=>sp.price));
+      sizePrices = sizeStock;
+      quantity = sizeStock.reduce((s,x)=>s+x.stock,0);
+      price = Math.min(...sizeStock.map(sp=>sp.price));
     } else {
       price = +document.getElementById('prod-price')?.value||0;
       quantity = +document.getElementById('prod-qty')?.value||0;
@@ -3786,7 +4000,7 @@ function attachListeners() {
       quantity, basePrice: price, price, colors,
       color: firstColor.name, image: firstColor.image,
       sizes: allSizes, size: allSizes[0]?.size||'',
-      hasSizes, sizePrices: hasSizes ? sizePrices : [],
+      hasSizes, sizePrices: hasSizes ? sizePrices : [], sizeStock: hasSizes ? sizeStock : [],
       addedBy: DB.getSession()?.role||'admin',
     };
     if(state.editingId) {
@@ -4012,15 +4226,15 @@ function attachListeners() {
     document.querySelectorAll('.size-toggle-opt').forEach(l=>l.classList.toggle('selected',l.querySelector('input')?.value===e.target.value));
   });
 
-  /* Add size row */
-  on('#add-size-stock-row','click',()=>{
+  /* Add size row (new id) */
+  on('#add-size-row-btn','click',()=>{
     const tbody=document.getElementById('size-stock-tbody');
     if(!tbody) return;
-    const row=document.createElement('tr');row.className='size-stock-row';
-    row.innerHTML=`<td><input class="form-control form-control-sm" placeholder="e.g. L" style="width:70px;"/></td>
-      <td><input type="number" class="form-control form-control-sm" placeholder="0" min="0"/></td>
-      <td><input type="number" class="form-control form-control-sm" placeholder="0" min="0"/></td>
-      <td><button type="button" class="btn-icon remove-size-stock-row" style="color:#c62828;width:26px;height:26px;font-size:0.75rem;">✕</button></td>`;
+    const row=document.createElement('tr'); row.className='size-stock-row';
+    row.innerHTML=`<td><input class="form-control form-control-sm ss-size" placeholder="e.g. XL"/></td>
+      <td><input type="number" class="form-control form-control-sm ss-price" min="0" placeholder="₹"/></td>
+      <td><input type="number" class="form-control form-control-sm ss-stock" min="0" placeholder="Qty"/></td>
+      <td><button type="button" class="btn-icon remove-ss-row" style="color:#c62828;">✕</button></td>`;
     tbody.appendChild(row);
   });
 
@@ -4036,9 +4250,9 @@ function attachListeners() {
     </tr>`).join('');
   });
 
-  /* Remove size row (delegated) */
+  /* Remove size row (delegated) — handles both old and new class names */
   document.addEventListener('click',e=>{
-    if(e.target.closest('.remove-size-stock-row')){
+    if(e.target.closest('.remove-size-stock-row')||e.target.closest('.remove-ss-row')){
       const row=e.target.closest('.size-stock-row');
       if(document.querySelectorAll('.size-stock-row').length>1) row?.remove();
       else showToast('At least one size required','error');
@@ -4078,6 +4292,60 @@ function attachListeners() {
   onAll('input[name="payMode"]','change', e=>{
     state.selectedPaymentMode=e.target.value;
     document.querySelectorAll('.payment-mode-opt').forEach(l=>l.classList.toggle('selected',l.querySelector('input')?.value===e.target.value));
+  });
+
+  /* Payment mode in cart */
+  onAll('input[name="cartPayMode"]','change',e=>{
+    state.paymentMode=e.target.value;
+    document.querySelectorAll('.pay-mode-btn').forEach(b=>b.classList.toggle('selected',b.querySelector('input')?.value===state.paymentMode));
+  });
+
+  /* Coupon apply */
+  on('#apply-coupon-btn','click',()=>{
+    const code=(document.getElementById('coupon-input')?.value||'').trim().toUpperCase();
+    if(!code){showToast('Enter a coupon code','error');return;}
+    const c=DB.getCoupons().find(x=>x.code===code&&x.active);
+    if(!c){showToast('❌ Invalid or inactive coupon','error');return;}
+    const total=state.cart.reduce((s,i)=>s+i.qty*i.price,0);
+    if(c.minOrder&&total<c.minOrder){showToast(`Min. order ₹${c.minOrder} required for this coupon`,'error');return;}
+    const disc=c.type==='percent'?+(total*(c.discount/100)).toFixed(0):+c.discount;
+    state.couponCode=code; state.couponDiscount=Math.min(disc,total);
+    showToast(`✅ Coupon applied — ${fmt(state.couponDiscount)} off!`,'success');
+    render();
+  });
+
+  /* Employee accept order (new emp-accept-btn) */
+  onAll('.emp-accept-btn','click',e=>{
+    const oid=e.currentTarget.dataset.oid, time=+e.currentTarget.dataset.time;
+    const session=DB.getSession();
+    DB.updateOrder(oid,{status:'accepted',estimatedTime:time,employeeId:session?.id,employeeName:session?.name,acceptedAt:Date.now()});
+    showToast(`✅ Order accepted — ${time} min packing time set`,'success');
+    render();
+  });
+
+  /* View orders btn in notif bar */
+  on('#emp-view-orders-btn','click',()=>{state.subRoute='orders';render();});
+
+  /* Coupon management (admin) */
+  on('#create-coupon-btn','click',()=>{
+    const code=(document.getElementById('cp-code')?.value||'').trim().toUpperCase();
+    const type=document.getElementById('cp-type')?.value||'percent';
+    const discount=+document.getElementById('cp-value')?.value||0;
+    const minOrder=+document.getElementById('cp-min')?.value||0;
+    if(!code||!discount){showToast('Enter code and value','error');return;}
+    if(DB.getCoupons().find(c=>c.code===code)){showToast('Code already exists','error');return;}
+    DB.addCoupon({id:uid(),code,type,discount,minOrder,active:true,createdAt:Date.now(),usedCount:0});
+    showToast(`Coupon ${code} created!`,'success'); render();
+  });
+  onAll('.coupon-toggle-btn','click',e=>{
+    const cid=e.currentTarget.dataset.cid;
+    const c=DB.getCoupons().find(x=>x.id===cid);
+    if(c) DB.updateCoupon(cid,{active:!c.active});
+    render();
+  });
+  onAll('.coupon-delete-btn','click',e=>{
+    if(!confirm('Delete coupon?')) return;
+    DB.deleteCoupon(e.currentTarget.dataset.cid); render();
   });
 
 }

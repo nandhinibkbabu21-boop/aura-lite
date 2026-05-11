@@ -2438,3 +2438,33 @@ tbody tr:hover td { background: var(--cream); }
 .status-step.done { background:#e8f5e9;color:#2e7d32; }
 .status-step.waiting { background:#f5f5f5;color:#999; }
 .order-eta { background:var(--gold-lighter);color:var(--gold-dark);padding:10px 16px;border-radius:8px;font-weight:700;font-size:0.95rem;margin-top:8px; }
+
+/* ── Size buttons on shop cards ── */
+.shop-card-sizes { display:flex; flex-wrap:wrap; gap:6px; padding:6px 14px 2px; }
+.size-btn.size-oos { opacity:0.4; cursor:not-allowed; text-decoration:line-through; }
+.size-price-tip { display:block; font-size:0.65rem; color:var(--text-light); font-weight:400; }
+.size-btn.active .size-price-tip { color:rgba(255,255,255,0.8); }
+
+/* ── Payment mode in cart ── */
+.pay-mode-select { display:flex; gap:8px; flex-wrap:wrap; }
+.pay-mode-btn { flex:1; min-width:76px; border:2px solid var(--border); border-radius:8px; padding:10px 6px; text-align:center; cursor:pointer; font-size:0.82rem; font-weight:600; transition:all 0.15s; user-select:none; }
+.pay-mode-btn.selected { border-color:var(--gold-dark); background:var(--gold-lighter); color:var(--gold-dark); }
+.cart-coupon-row { display:flex; gap:8px; margin-bottom:10px; }
+
+/* ── Employee order notification bar ── */
+.emp-notif-bar { background:#fff8e1; border-bottom:3px solid #f9a825; padding:10px 24px; display:flex; align-items:center; gap:12px; font-size:0.9rem; position:sticky; top:0; z-index:50; }
+.emp-order-header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; border-bottom:1px solid var(--border-light); padding-bottom:10px; }
+.emp-order-id { font-weight:700; font-family:monospace; font-size:0.88rem; background:#f0f4ff; padding:2px 8px; border-radius:4px; color:#1a237e; }
+.emp-order-customer { font-weight:600; flex:1; min-width:100px; }
+.emp-order-pay { font-size:0.78rem; padding:2px 10px; border-radius:20px; font-weight:700; }
+.emp-order-pay.pay-cash { background:#e8f5e9; color:#2e7d32; }
+.emp-order-pay.pay-gpay,.emp-order-pay.pay-phonepe { background:#e3f2fd; color:#1565c0; }
+.emp-order-total { font-weight:800; font-size:1rem; color:var(--gold-dark); margin-left:auto; }
+.emp-order-item { display:flex; align-items:center; gap:8px; font-size:0.84rem; background:var(--cream-2); padding:6px 10px; border-radius:6px; }
+.emp-order-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding-top:6px; }
+.emp-accept-btn { background:#1a237e !important; color:#fff !important; border:none; border-radius:8px; padding:8px 16px; font-weight:700; cursor:pointer; }
+.emp-accept-btn:hover { background:#3949ab !important; }
+
+/* ── Customer order status banner ── */
+.order-status-banner { background:linear-gradient(135deg,#1a237e,#3949ab); color:#fff; padding:14px 20px; text-align:center; font-size:0.9rem; animation:pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.85;} }

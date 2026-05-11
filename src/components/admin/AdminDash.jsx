@@ -60,47 +60,66 @@ export default function AdminDash() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background:'var(--cream)' }}>
       {/* Top header */}
-      <header className="bg-white border-b sticky top-0 z-30">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div>
-            <h1 className="font-bold text-lg">
-              <span className="text-gold-500 font-serif">ZARA</span>
-              <span className="text-gray-400 font-light text-sm ml-1">Aura</span>
-            </h1>
-            <p className="text-xs text-gray-500">{shop?.name} · Admin</p>
+      <header className="sticky top-0 z-30" style={{
+        background:'rgba(255,255,255,0.95)',
+        backdropFilter:'blur(12px)',
+        borderBottom:'1px solid var(--border-light)'
+      }}>
+        <div className="max-w-6xl mx-auto px-6 py-3.5 flex items-center justify-between">
+          <div className="flex items-baseline gap-2">
+            <span style={{ fontFamily:'var(--font-serif)', fontSize:'1.4rem', fontWeight:600 }}
+              className="gold-text">ZARA</span>
+            <span style={{ fontFamily:'var(--font-sans)', fontSize:'0.65rem', fontWeight:300, letterSpacing:'0.28em', color:'var(--text-light)' }}
+              className="uppercase">Aura</span>
+            {shop?.name && (
+              <span className="ml-3 text-xs hidden sm:inline"
+                style={{ color:'var(--text-medium)', fontWeight:500, letterSpacing:'0.06em' }}>
+                {shop.name}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3">
             {pendingCount > 0 && (
-              <button onClick={() => setTab('orders')} className="bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1 animate-pulse">
+              <button onClick={() => setTab('orders')}
+                className="text-white text-[0.65rem] font-bold px-3 py-1.5 rounded-full flex items-center gap-1 animate-pulse"
+                style={{ background:'#c0392b' }}>
                 <Bell className="w-3 h-3" /> {pendingCount} new
               </button>
             )}
-            <button onClick={logout} className="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100">
-              <LogOut className="w-4 h-4" />
+            <button onClick={logout}
+              className="flex items-center gap-1.5 text-xs py-1.5 px-3 rounded-[6px] transition-colors"
+              style={{ color:'var(--text-light)', border:'1px solid var(--border-light)' }}>
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sign Out</span>
             </button>
           </div>
         </div>
 
-        {/* Tab bar (scrollable) */}
+        {/* Tab bar */}
         <div className="max-w-6xl mx-auto overflow-x-auto scrollbar-hide">
-          <div className="flex gap-0 min-w-max px-2">
+          <div className="flex gap-0 min-w-max px-4">
             {TABS.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
-                className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors relative ${tab === t.id ? 'text-gold-700' : 'text-gray-500 hover:text-gray-700'}`}>
+                className="px-4 py-3 text-[0.72rem] font-semibold tracking-[0.08em] uppercase whitespace-nowrap transition-colors relative"
+                style={{ color: tab===t.id ? 'var(--gold-dark)' : 'var(--text-light)' }}>
                 {t.label}
                 {t.id === 'orders' && pendingCount > 0 && (
-                  <span className="ml-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full inline-flex items-center justify-center">{pendingCount}</span>
+                  <span className="ml-1 text-white text-[0.6rem] w-4 h-4 rounded-full inline-flex items-center justify-center"
+                    style={{ background:'#c0392b' }}>{pendingCount}</span>
                 )}
-                {tab === t.id && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gold-500 rounded-t" />}
+                {tab === t.id && (
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-t"
+                    style={{ background:'linear-gradient(to right, var(--gold-dark), var(--gold-accent))' }} />
+                )}
               </button>
             ))}
           </div>
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 py-4">
+      <div className="max-w-6xl mx-auto px-4 py-6">
         {loading ? (
           <div className="flex justify-center py-20"><Spinner size="lg" /></div>
         ) : (
@@ -119,28 +138,40 @@ function CustomersTab({ customers, orders }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold">Customers ({customers.length})</h2>
+        <h2 style={{ fontFamily:'var(--font-serif)', fontSize:'1.6rem', color:'var(--text-dark)' }}>
+          Customers ({customers.length})
+        </h2>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search…"
-          className="px-3 py-2 rounded-xl border text-sm focus:outline-none focus:border-gold-400 w-40" />
+          className="px-4 py-2 text-sm w-40"
+          style={{ border:'1.5px solid var(--border)', borderRadius:'6px', background:'var(--white)', color:'var(--text-dark)' }} />
       </div>
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+      <div className="overflow-hidden" style={{ background:'var(--white)', border:'1px solid var(--border-light)', borderRadius:'12px', boxShadow:'var(--shadow-sm)' }}>
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-xs text-gray-500 font-bold uppercase">
-            <tr><th className="text-left py-3 px-4">Name</th><th className="text-left py-3 px-4">Username</th><th className="text-left py-3 px-4">Phone</th><th className="text-left py-3 px-4">Orders</th></tr>
+          <thead style={{ background:'var(--cream-2)' }}>
+            <tr>
+              {['Name','Username','Phone','Orders'].map(h => (
+                <th key={h} className="text-left py-3.5 px-5 text-[0.68rem] font-bold tracking-[0.12em] uppercase"
+                  style={{ color:'var(--text-light)', borderBottom:'1px solid var(--border-light)' }}>{h}</th>
+              ))}
+            </tr>
           </thead>
           <tbody>
             {filtered.map(c => {
               const custOrders = orders.filter(o => o.customerId === c.id)
               return (
-                <tr key={c.id} className="border-t border-gray-50 hover:bg-gray-50">
-                  <td className="py-3 px-4 font-semibold">{c.name}</td>
-                  <td className="py-3 px-4 text-gray-500">@{c.username}</td>
-                  <td className="py-3 px-4 text-gray-500">{c.phone || '—'}</td>
-                  <td className="py-3 px-4"><Badge color="gold">{custOrders.length}</Badge></td>
+                <tr key={c.id} className="transition-colors" style={{ borderTop:'1px solid var(--border-light)' }}
+                  onMouseEnter={e=>e.currentTarget.style.background='var(--cream)'}
+                  onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                  <td className="py-3.5 px-5 font-semibold" style={{ color:'var(--text-dark)' }}>{c.name}</td>
+                  <td className="py-3.5 px-5" style={{ color:'var(--text-medium)' }}>@{c.username}</td>
+                  <td className="py-3.5 px-5" style={{ color:'var(--text-medium)' }}>{c.phone || '—'}</td>
+                  <td className="py-3.5 px-5"><Badge color="gold">{custOrders.length}</Badge></td>
                 </tr>
               )
             })}
-            {!filtered.length && <tr><td colSpan={4} className="py-8 text-center text-gray-400">No customers found</td></tr>}
+            {!filtered.length && (
+              <tr><td colSpan={4} className="py-10 text-center text-sm" style={{ color:'var(--text-xlight)' }}>No customers found</td></tr>
+            )}
           </tbody>
         </table>
       </div>

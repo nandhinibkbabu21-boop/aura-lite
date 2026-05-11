@@ -7,9 +7,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     rollupOptions: {
+      external: ['canvg', 'html2canvas', 'dompurify'],
       output: {
         manualChunks: {
-          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage'],
+          firebase: ['firebase/app', 'firebase/firestore', 'firebase/storage'],
           vendor: ['react', 'react-dom', 'react-router-dom'],
         }
       }

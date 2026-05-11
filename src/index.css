@@ -2,15 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Original Design Tokens ─────────────────────── */
+:root {
+  --gold:           #C9A84C;
+  --gold-light:     #E8D5A3;
+  --gold-lighter:   #F6EDD8;
+  --gold-dark:      #9B7A2F;
+  --gold-accent:    #D4AF37;
+  --gold-shine:     #F0D070;
+  --white:          #FFFFFF;
+  --cream:          #FDFCFA;
+  --cream-2:        #F9F6F1;
+  --cream-3:        #F3EDE3;
+  --text-dark:      #1C1510;
+  --text-medium:    #5C4E3C;
+  --text-light:     #9C8C7C;
+  --text-xlight:    #C4B8AD;
+  --border:         #E8D5A3;
+  --border-light:   #F0E8D4;
+  --shadow-sm:      0 2px 12px rgba(201,168,76,0.10);
+  --shadow-md:      0 8px 32px rgba(201,168,76,0.15);
+  --shadow-lg:      0 20px 60px rgba(201,168,76,0.18);
+  --shadow-xl:      0 32px 80px rgba(28,21,16,0.12);
+  --radius-sm:      6px;
+  --radius-md:      12px;
+  --radius-lg:      20px;
+  --radius-xl:      28px;
+  --font-serif:     'Cormorant Garamond', Georgia, serif;
+  --font-sans:      'Montserrat', system-ui, sans-serif;
+  --transition:     all 0.3s cubic-bezier(0.4,0,0.2,1);
+  --transition-slow: all 0.5s cubic-bezier(0.4,0,0.2,1);
+}
+
 @layer base {
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; font-size: 16px; }
   body {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: var(--font-sans);
+    background: var(--cream);
+    color: var(--text-dark);
+    line-height: 1.6;
+    overflow-x: hidden;
     -webkit-tap-highlight-color: transparent;
     -webkit-font-smoothing: antialiased;
   }
-  input, textarea, select { outline: none; }
+  h1, h2, h3, h4 {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text-dark);
+  }
+  input, textarea, select { outline: none; font-family: var(--font-sans); }
+  a { text-decoration: none; color: inherit; }
 }
 
 @layer utilities {
@@ -22,4 +65,12 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+}
+
+/* Gold gradient text */
+.gold-text {
+  background: linear-gradient(135deg, var(--gold-dark) 0%, var(--gold-accent) 40%, var(--gold-shine) 60%, var(--gold-accent) 80%, var(--gold-dark) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }

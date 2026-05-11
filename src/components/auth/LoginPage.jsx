@@ -2,40 +2,35 @@ import React, { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
-import { Eye, EyeOff, ArrowLeft, Crown, Tag, ShoppingBag, User, Phone } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import { Btn, Input, Divider } from '../ui/index.jsx'
 import useAuthStore from '../../store/authStore.js'
 
 const ROLE_META = {
-  admin:    { icon: Crown,        title: 'Admin Login',    color: 'text-amber-600', bg: 'bg-amber-50' },
-  employee: { icon: Tag,          title: 'Employee Login', color: 'text-blue-600',  bg: 'bg-blue-50'  },
-  customer: { icon: ShoppingBag,  title: 'Customer Login', color: 'text-green-600', bg: 'bg-green-50' },
+  admin:    { icon: '👑', title: 'Admin',    label: 'Admin Login' },
+  employee: { icon: '🏷️', title: 'Employee', label: 'Employee Login' },
+  customer: { icon: '🛍️', title: 'Customer', label: 'Customer Login' },
 }
 
 export default function LoginPage() {
   const { role } = useParams()
-  const navigate = useNavigate()
+  const navigate  = useNavigate()
   const { login, loginCustomer, loginGuest, shopId } = useAuthStore()
   const { register, handleSubmit, formState: { errors } } = useForm()
-  const [showPwd, setShowPwd] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [loginMode, setLoginMode] = useState('username') // 'username' | 'phone'
+  const [showPwd,   setShowPwd]   = useState(false)
+  const [loading,   setLoading]   = useState(false)
+  const [loginMode, setLoginMode] = useState('username')
   const [guestMode, setGuestMode] = useState(false)
   const meta = ROLE_META[role] || ROLE_META.customer
-  const Icon = meta.icon
 
   const onSubmit = async (data) => {
     setLoading(true)
     try {
-      let res
-      if (role === 'customer') {
-        res = await loginCustomer(data.identifier, data.credential)
-      } else {
-        res = await login(role, data.identifier, data.credential)
-      }
-
+      const res = role === 'customer'
+        ? await loginCustomer(data.identifier, data.credential)
+        : await login(role, data.identifier, data.credential)
       if (res.ok) {
-        toast.success('Welcome back! 👋')
+        toast.success('Welcome back!')
         navigate(role === 'admin' ? '/admin' : role === 'employee' ? '/employee' : '/shop')
       } else {
         toast.error(res.error || 'Login failed')
@@ -45,105 +40,125 @@ export default function LoginPage() {
     }
   }
 
-  const onGuest = async (data) => {
-    setLoading(true)
+  const onGuest = (data) => {
     const res = loginGuest(data.guestName, data.guestPhone)
-    setLoading(false)
-    if (res.ok) {
-      toast.success(`Welcome, ${data.guestName}!`)
-      navigate('/shop')
-    } else {
-      toast.error(res.error)
-    }
+    if (res.ok) { toast.success(`Welcome, ${data.guestName}!`); navigate('/shop') }
+    else toast.error(res.error)
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-gold-50 flex flex-col">
-      <div className="flex-1 flex flex-col justify-center px-4 py-8">
-        <div className="w-full max-w-sm mx-auto">
-          {/* Back */}
-          <button onClick={() => navigate('/')} className="flex items-center gap-2 text-gray-500 hover:text-gray-700 mb-6 text-sm">
-            <ArrowLeft className="w-4 h-4" /> Back
-          </button>
+    <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-5 py-12"
+      style={{ background:'var(--white)' }}>
+      {/* BG patterns */}
+      <div className="absolute inset-0 pointer-events-none" style={{
+        backgroundImage:`radial-gradient(circle at 20% 60%, rgba(201,168,76,0.06) 0%, transparent 50%),
+                         radial-gradient(circle at 80% 20%, rgba(201,168,76,0.06) 0%, transparent 40%)`
+      }} />
+      <div className="absolute inset-0 pointer-events-none opacity-[0.025]" style={{
+        backgroundImage:`repeating-linear-gradient(0deg,#C9A84C 0,#C9A84C 1px,transparent 1px,transparent 60px),
+                         repeating-linear-gradient(90deg,#C9A84C 0,#C9A84C 1px,transparent 1px,transparent 60px)`
+      }} />
 
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className={`w-14 h-14 ${meta.bg} rounded-2xl flex items-center justify-center mx-auto mb-3`}>
-              <Icon className={`w-7 h-7 ${meta.color}`} />
+      <div className="relative z-10 w-full max-w-sm">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div style={{ fontFamily:'var(--font-serif)', lineHeight:1 }} className="mb-4">
+            <span className="text-3xl font-semibold gold-text">ZARA</span>
+            <span className="ml-2 text-sm font-light tracking-[0.25em] uppercase align-middle"
+              style={{ color:'var(--text-light)' }}>Aura</span>
+          </div>
+          <div className="text-3xl mb-2">{meta.icon}</div>
+          <h2 style={{ fontFamily:'var(--font-serif)', color:'var(--text-dark)' }} className="text-2xl font-semibold">
+            {meta.label}
+          </h2>
+        </div>
+
+        <div className="rounded-[28px] p-8"
+          style={{ background:'var(--white)', border:'1px solid var(--border-light)', boxShadow:'var(--shadow-xl)' }}>
+
+          {/* Customer login type toggle */}
+          {role === 'customer' && !guestMode && (
+            <div className="flex rounded-[8px] overflow-hidden mb-6"
+              style={{ border:'1px solid var(--border)', background:'var(--cream-2)' }}>
+              {[['username','👤 Username'],['phone','📱 Phone']].map(([m,l]) => (
+                <button key={m} onClick={() => setLoginMode(m)}
+                  className="flex-1 py-2.5 text-xs font-semibold tracking-[0.05em] transition-all"
+                  style={{
+                    background: loginMode===m ? 'var(--white)' : 'transparent',
+                    color: loginMode===m ? 'var(--gold-dark)' : 'var(--text-light)',
+                    borderRight: m==='username' ? '1px solid var(--border-light)' : 'none',
+                    boxShadow: loginMode===m ? 'var(--shadow-sm)' : 'none',
+                  }}>
+                  {l}
+                </button>
+              ))}
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">{meta.title}</h1>
-            <p className="text-sm text-gray-500 mt-1">Sign in to access your dashboard</p>
-          </div>
+          )}
 
-          <div className="bg-white rounded-3xl shadow-lg p-6">
-            {/* Customer: toggle login mode */}
-            {role === 'customer' && !guestMode && (
-              <div className="flex gap-1 p-1 bg-gray-100 rounded-xl mb-5">
-                {[['username','👤 Username'],['phone','📱 Phone']].map(([m,l]) => (
-                  <button key={m} onClick={() => setLoginMode(m)}
-                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${loginMode===m ? 'bg-white shadow text-gold-700' : 'text-gray-500'}`}>
-                    {l}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {!guestMode ? (
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {!guestMode ? (
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <Input
+                label={loginMode === 'phone' ? 'Phone Number' : (role === 'customer' ? 'Username or Phone' : 'Username')}
+                placeholder={loginMode === 'phone' ? '10-digit phone number' : 'Enter your username'}
+                type={loginMode === 'phone' ? 'tel' : 'text'}
+                required
+                error={errors.identifier?.message}
+                {...register('identifier', { required: 'This field is required' })}
+              />
+              <div className="relative">
                 <Input
-                  label={loginMode === 'phone' ? 'Phone Number' : (role === 'customer' ? 'Username or Phone' : 'Username')}
-                  placeholder={loginMode === 'phone' ? '10-digit phone number' : 'Enter your username'}
-                  type={loginMode === 'phone' ? 'tel' : 'text'}
-                  required
-                  error={errors.identifier?.message}
-                  {...register('identifier', { required: 'This field is required' })}
+                  label={role === 'customer' ? 'Password or Phone' : 'Password'}
+                  placeholder={role === 'customer' ? 'Password or registered phone' : 'Enter password'}
+                  type={showPwd ? 'text' : 'password'}
+                  required={role !== 'customer'}
+                  error={errors.credential?.message}
+                  {...register('credential', role !== 'customer' ? { required: 'Password required' } : {})}
                 />
-                <div className="relative">
-                  <Input
-                    label={role === 'customer' ? 'Password or Phone (if registered)' : 'Password'}
-                    placeholder={role === 'customer' ? 'Password or registered phone' : 'Enter password'}
-                    type={showPwd ? 'text' : 'password'}
-                    required={role !== 'customer'}
-                    error={errors.credential?.message}
-                    {...register('credential', role !== 'customer' ? { required: 'Password required' } : {})}
-                  />
-                  <button type="button" onClick={() => setShowPwd(v => !v)}
-                    className="absolute right-3 top-9 text-gray-400">
-                    {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                <Btn type="submit" variant="gold" size="lg" className="w-full" loading={loading}>
-                  Sign In
-                </Btn>
-              </form>
-            ) : (
-              <form onSubmit={handleSubmit(onGuest)} className="space-y-4">
-                <Input label="Your Name" placeholder="Enter your name" required
-                  error={errors.guestName?.message}
-                  {...register('guestName', { required: 'Name required' })} />
-                <Input label="Phone Number" placeholder="10-digit phone" type="tel"
-                  error={errors.guestPhone?.message}
-                  {...register('guestPhone')} />
-                <Btn type="submit" variant="gold" size="lg" className="w-full" loading={loading}>
-                  Continue as Guest →
-                </Btn>
-              </form>
-            )}
+                <button type="button" onClick={() => setShowPwd(v => !v)}
+                  className="absolute right-3 bottom-2.5 transition-colors"
+                  style={{ color:'var(--text-xlight)' }}>
+                  {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <Btn type="submit" variant="gold" size="lg" className="w-full mt-2" loading={loading}>
+                Sign In
+              </Btn>
+            </form>
+          ) : (
+            <form onSubmit={handleSubmit(onGuest)} className="space-y-4">
+              <Input label="Your Name" placeholder="Enter your name" required
+                error={errors.guestName?.message}
+                {...register('guestName', { required: 'Name required' })} />
+              <Input label="Phone Number" placeholder="10-digit phone" type="tel"
+                {...register('guestPhone')} />
+              <Btn type="submit" variant="gold" size="lg" className="w-full" loading={loading}>
+                Continue as Guest →
+              </Btn>
+            </form>
+          )}
 
-            {role === 'customer' && (
-              <>
-                <Divider text="or" />
-                <div className="space-y-2">
-                  <Btn variant="outline" size="md" className="w-full" onClick={() => navigate('/register')}>
-                    ✦ Create New Account
-                  </Btn>
-                  <Btn variant="ghost" size="md" className="w-full" onClick={() => setGuestMode(v => !v)}>
-                    {guestMode ? '← Back to Login' : '👤 Continue as Guest'}
-                  </Btn>
-                </div>
-              </>
-            )}
-          </div>
+          {role === 'customer' && (
+            <>
+              <Divider label="or" />
+              <div className="space-y-2.5">
+                <Btn variant="outline" size="md" className="w-full" onClick={() => navigate('/register')}>
+                  ✦ &nbsp; Create New Account
+                </Btn>
+                <Btn variant="ghost" size="md" className="w-full" onClick={() => setGuestMode(v => !v)}>
+                  {guestMode ? '← Back to Login' : '👤 Continue as Guest'}
+                </Btn>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Back */}
+        <div className="text-center mt-6">
+          <button onClick={() => navigate('/')}
+            className="text-xs font-medium transition-colors"
+            style={{ color:'var(--text-light)' }}>
+            ← Back to Home
+          </button>
         </div>
       </div>
     </div>

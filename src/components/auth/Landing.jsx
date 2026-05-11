@@ -1,13 +1,11 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../../store/authStore.js'
-import { Crown, Tag, ShoppingBag, Store } from 'lucide-react'
-import { Btn } from '../ui/index.jsx'
 
-const roles = [
-  { id: 'admin',    icon: Crown,       title: 'Admin',    desc: 'Manage shop, products & team', color: 'bg-amber-50 border-amber-200', iconColor: 'text-amber-600' },
-  { id: 'employee', icon: Tag,         title: 'Employee', desc: 'Handle orders & inventory',    color: 'bg-blue-50 border-blue-200',   iconColor: 'text-blue-600' },
-  { id: 'customer', icon: ShoppingBag, title: 'Customer', desc: 'Browse & order products',      color: 'bg-green-50 border-green-200', iconColor: 'text-green-600' },
+const ROLES = [
+  { id: 'admin',    icon: '👑', title: 'Admin',    desc: 'Manage shop, products & team' },
+  { id: 'employee', icon: '🏷️', title: 'Employee', desc: 'Stock & product management' },
+  { id: 'customer', icon: '🛍️', title: 'Customer', desc: 'Browse & shop the collection' },
 ]
 
 export default function Landing() {
@@ -15,74 +13,100 @@ export default function Landing() {
   const { shop, shopId } = useAuthStore()
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-gold-50 flex flex-col">
-      {/* Hero */}
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-12">
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2 bg-gold-100 text-gold-800 text-xs font-semibold px-4 py-1.5 rounded-full mb-6">
-            ✦ &nbsp; Smart Retail Ordering &nbsp; ✦
+    <div className="min-h-screen relative overflow-hidden" style={{ background:'var(--white)' }}>
+      {/* Background pattern (matches original) */}
+      <div className="absolute inset-0 z-0 pointer-events-none" style={{
+        backgroundImage: `
+          radial-gradient(circle at 15% 50%, rgba(201,168,76,0.06) 0%, transparent 50%),
+          radial-gradient(circle at 85% 20%, rgba(201,168,76,0.06) 0%, transparent 40%),
+          radial-gradient(circle at 50% 90%, rgba(201,168,76,0.04) 0%, transparent 35%)`
+      }} />
+      <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.025]" style={{
+        backgroundImage: `repeating-linear-gradient(0deg,#C9A84C 0,#C9A84C 1px,transparent 1px,transparent 60px),
+                          repeating-linear-gradient(90deg,#C9A84C 0,#C9A84C 1px,transparent 1px,transparent 60px)`
+      }} />
+
+      {/* Content */}
+      <div className="relative z-10 min-h-screen flex items-center justify-center px-6 py-16">
+        <div className="w-full max-w-sm text-center">
+
+          {/* Badge */}
+          <div className="inline-flex items-center gap-2 px-5 py-2 mb-7 rounded-full text-[0.7rem] font-semibold tracking-[0.1em] uppercase"
+            style={{ background:'var(--gold-lighter)', border:'1px solid var(--gold-light)', color:'var(--gold-dark)' }}>
+            ✦ &nbsp; Fashion Management for Everyone &nbsp; ✦
           </div>
-          <h1 className="text-5xl font-bold mb-2">
-            <span className="text-gold-500 font-serif">ZARA</span>
-            <span className="text-gray-400 font-light ml-1 text-3xl">Aura</span>
-          </h1>
-          <p className="text-gray-500 mt-3 text-sm max-w-xs mx-auto leading-relaxed">
-            Reduce counter wait time — customers order ahead while staff packs on time
+
+          {/* Logo */}
+          <div className="mb-3" style={{ fontFamily:'var(--font-serif)', lineHeight:1 }}>
+            <span className="text-[3.6rem] font-semibold gold-text">ZARA</span>
+            <span className="ml-3 text-[1rem] font-light tracking-[0.3em] uppercase align-middle"
+              style={{ color:'var(--text-light)' }}>Aura</span>
+          </div>
+
+          {/* Divider */}
+          <div className="flex items-center justify-center gap-3 my-4">
+            <div className="h-px w-12" style={{ background:'var(--border-light)' }} />
+            <span style={{ color:'var(--gold)', fontSize:'0.55rem' }}>◆</span>
+            <div className="h-px w-12" style={{ background:'var(--border-light)' }} />
+          </div>
+
+          {/* Tagline */}
+          <p className="text-base mb-2 leading-relaxed" style={{ color:'var(--text-medium)', fontFamily:'var(--font-serif)', fontStyle:'italic' }}>
+            Elegance in every stitch,<br />precision in every sale.
           </p>
+
+          {/* Highlights */}
+          <div className="mt-5 mb-6 space-y-2 text-left max-w-xs mx-auto">
+            {[
+              ['🏘️', 'Designed for small & rural boutiques'],
+              ['📦', 'Easy billing, stock & inventory management'],
+              ['🔄', 'Real-time sync across all your devices'],
+              ['📵', 'Simple to use — no technical knowledge needed'],
+            ].map(([icon, text]) => (
+              <div key={text} className="flex items-center gap-2.5 text-[0.78rem]" style={{ color:'var(--text-medium)' }}>
+                <span className="text-base">{icon}</span>
+                <span>{text}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Shop chip */}
           {shop && (
-            <div className="mt-5 inline-flex items-center gap-2 bg-white border border-gold-200 px-4 py-2 rounded-full text-sm text-gold-700 shadow-sm">
-              <Store className="w-4 h-4" /> {shop.name}
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm mb-5"
+              style={{ background:'var(--gold-lighter)', border:'1px solid var(--gold-light)', color:'var(--gold-dark)' }}>
+              ✦ &nbsp; {shop.name}
             </div>
           )}
-        </div>
 
-        {/* Role cards */}
-        <div className="w-full max-w-sm space-y-3">
-          {roles.map(role => {
-            const Icon = role.icon
-            return (
-              <button
-                key={role.id}
-                onClick={() => navigate(`/login/${role.id}`)}
-                className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl border-2 ${role.color} hover:shadow-md active:scale-98 transition-all text-left`}
-              >
-                <div className={`w-11 h-11 rounded-xl bg-white shadow-sm flex items-center justify-center ${role.iconColor}`}>
-                  <Icon className="w-5 h-5" />
-                </div>
+          {/* Role cards */}
+          <div className="space-y-3 mt-2">
+            {ROLES.map(role => (
+              <button key={role.id} onClick={() => navigate(`/login/${role.id}`)}
+                className="w-full flex items-center gap-4 px-5 py-4 rounded-[20px] text-left transition-all duration-200 hover:-translate-y-0.5"
+                style={{
+                  background:'var(--white)',
+                  border:'1px solid var(--border-light)',
+                  boxShadow:'var(--shadow-sm)',
+                }}>
+                <div className="text-2xl w-10 text-center">{role.icon}</div>
                 <div className="flex-1">
-                  <div className="font-bold text-gray-900">{role.title}</div>
-                  <div className="text-xs text-gray-500">{role.desc}</div>
+                  <div className="text-sm font-semibold" style={{ color:'var(--text-dark)' }}>{role.title}</div>
+                  <div className="text-[0.72rem] mt-0.5" style={{ color:'var(--text-light)' }}>{role.desc}</div>
                 </div>
-                <span className="text-gray-400 text-lg">›</span>
+                <span className="text-lg" style={{ color:'var(--text-xlight)' }}>›</span>
               </button>
-            )
-          })}
-        </div>
-
-        {/* Register shop */}
-        {!shopId && (
-          <div className="mt-8 text-center">
-            <p className="text-xs text-gray-500 mb-2">New boutique owner?</p>
-            <Btn variant="outline" size="sm" onClick={() => navigate('/register-shop')}>
-              ✦ &nbsp; Set Up My Shop
-            </Btn>
+            ))}
           </div>
-        )}
-      </div>
 
-      {/* Feature highlights */}
-      <div className="pb-8 px-4">
-        <div className="max-w-sm mx-auto grid grid-cols-3 gap-3">
-          {[
-            { emoji: '⚡', text: 'Real-time orders' },
-            { emoji: '📦', text: 'Smart packing' },
-            { emoji: '📊', text: 'Analytics' },
-          ].map(f => (
-            <div key={f.text} className="text-center py-3 bg-white rounded-xl border border-gray-100 shadow-sm">
-              <div className="text-xl mb-1">{f.emoji}</div>
-              <div className="text-xs text-gray-500 font-medium">{f.text}</div>
-            </div>
-          ))}
+          {/* Footer */}
+          <p className="mt-8 text-[0.78rem]" style={{ color:'var(--text-light)' }}>
+            New shop?{' '}
+            <button onClick={() => navigate('/register-shop')}
+              className="font-semibold transition-colors hover:underline"
+              style={{ color:'var(--gold-dark)' }}>
+              Set up your boutique →
+            </button>
+          </p>
         </div>
       </div>
     </div>

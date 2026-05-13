@@ -2457,26 +2457,26 @@ function renderCustomerShop() {
   const latestActive = activeOrders.sort((a,b)=>b.date-a.date)[0];
   const activeBanner = latestActive ? (()=>{
     const st=latestActive.status||'pending';
+    // Only show banner for statuses after "order placed" — never show for pending/order-placed
+    if (st==='pending'||st==='order-placed') return '';
     const msgs={
-      'pending':         '📋 Order Placed',
-      'order-placed':    '📋 Order Placed',
       'accepted':        `⚙️ Processing — Est. time: <strong>${latestActive.estimatedTime||'—'} min</strong>`,
       'processing':      `⚙️ Processing — Est. time: <strong>${latestActive.estimatedTime||'—'} min</strong>`,
       'packing':         `⚙️ Processing — Est. time: <strong>${latestActive.estimatedTime||'—'} min</strong>`,
-      'payment-pending': '💳 Payment Pending',
+      'payment-pending': '💳 Payment Pending — Please complete payment at the counter',
       'payment-completed':'✅ Payment Completed',
-      'bill-generated':  '🧾 Bill Generated',
+      'bill-generated':  '🧾 Bill Generated — Please collect your order',
       'ready':           '✅ Your order is <strong>ready for pickup</strong>!'
     };
     const colors={
-      'pending':'#4caf50','order-placed':'#4caf50',
       'accepted':'#1565c0','processing':'#1565c0','packing':'#6a1b9a',
       'payment-pending':'#f59e0b','payment-completed':'#059669',
       'bill-generated':'#7c3aed','ready':'#2e7d32'
     };
     const c=colors[st]||'#555';
+    if (!msgs[st]) return '';
     return `<div class="active-order-banner" style="background:${c}10;border-bottom:2px solid ${c};padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-      <div style="font-size:0.88rem;color:${c};font-weight:600;">${msgs[st]||st}</div>
+      <div style="font-size:0.88rem;color:${c};font-weight:600;">${msgs[st]}</div>
       <button class="btn btn-sm" style="background:${c};color:#fff;border:none;font-size:0.78rem;" data-cust-nav="orders">View Order</button>
     </div>`;
   })() : '';
@@ -3002,20 +3002,28 @@ function renderViewBillModal(billId) {
   if (!bill) return '';
   const shop = DB.getShop();
   return `<div class="modal-overlay" id="view-bill-overlay">
-    <div class="modal animate-slideUp" style="max-width:560px;width:95vw;">
-      <div class="modal-header no-print">
-        <div class="modal-title">GST Invoice</div>
+    <div class="modal animate-slideUp" style="max-width:580px;width:95vw;">
+      <div class="modal-header no-print" style="background:var(--gold-lighter);border-bottom:2px solid var(--gold-light);">
+        <div class="modal-title" style="font-family:var(--font-serif);color:var(--gold-dark);">✦ &nbsp; GST Invoice Generated</div>
         <button class="modal-close" data-close-modal="view-bill">✕</button>
       </div>
-      <div class="modal-body" style="max-height:75vh;overflow-y:auto;">
+      <div class="modal-body" style="max-height:72vh;overflow-y:auto;padding:0;">
         ${renderGSTInvoice(bill, shop)}
-        <div id="billing-action-result"></div>
+        <div id="billing-action-result" style="padding:0 16px 12px;"></div>
       </div>
-      <div class="modal-footer no-print" style="gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-ghost" data-close-modal="view-bill">Close</button>
-        <button class="btn btn-outline" id="wa-bill-btn" data-bill-id="${esc(bill.id)}">💬 &nbsp; WhatsApp</button>
-        <button class="btn btn-outline" id="print-bill-btn" data-bill-id="${esc(bill.id)}">🖨️ &nbsp; Print</button>
-        <button class="btn btn-gold" id="parallel-action-btn" data-bill-id="${esc(bill.id)}">⚡ &nbsp; Print &amp; WhatsApp</button>
+      <div class="modal-footer no-print" style="flex-direction:column;gap:10px;align-items:stretch;padding:16px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <button class="btn btn-outline btn-lg" id="print-bill-btn" data-bill-id="${esc(bill.id)}" style="display:flex;align-items:center;justify-content:center;gap:8px;">
+            🖨️ &nbsp; Print Bill
+          </button>
+          <button class="btn btn-outline btn-lg" id="wa-bill-btn" data-bill-id="${esc(bill.id)}" style="display:flex;align-items:center;justify-content:center;gap:8px;">
+            💬 &nbsp; WhatsApp
+          </button>
+        </div>
+        <button class="btn btn-gold btn-lg" id="parallel-action-btn" data-bill-id="${esc(bill.id)}" style="display:flex;align-items:center;justify-content:center;gap:10px;font-size:1rem;">
+          ⚡ &nbsp; Print &amp; Send WhatsApp Simultaneously
+        </button>
+        <button class="btn btn-ghost" data-close-modal="view-bill" style="font-size:0.85rem;">Close</button>
       </div>
     </div>
   </div>`;
@@ -3023,66 +3031,108 @@ function renderViewBillModal(billId) {
 
 function renderGSTInvoice(bill, shop) {
   const items = bill.items || [];
-  const sub = bill.subtotal || items.reduce((s,i) => s + i.qty * i.price, 0);
+  const sub     = bill.subtotal      || items.reduce((s,i) => s + i.qty * i.price, 0);
   const discAmt = bill.discountAmount || 0;
-  const taxable = bill.taxableAmount || (sub - discAmt);
-  const gstAmt = bill.gstAmount || 0;
-  const grand = bill.grandTotal || (taxable + gstAmt);
-  const amtPaid = bill.amountPaid || 0;
-  const balance = bill.balance || 0;
+  const taxable = bill.taxableAmount  || (sub - discAmt);
+  const gstAmt  = bill.gstAmount      || 0;
+  const grand   = bill.grandTotal     || (taxable + gstAmt);
+  const amtPaid = bill.amountPaid     || 0;
+  const balance = bill.balance        || 0;
+  const pmIcon  = bill.paymentMode==='Cash'?'💵':bill.paymentMode==='UPI'?'📱':bill.paymentMode==='Card'?'💳':'🌐';
 
   return `<div class="gst-invoice">
+    <!-- ── SHOP HEADER ── -->
     <div class="invoice-header">
       <div class="invoice-shop-name">${esc(shop?.name||'Shop')}</div>
       ${shop?.address?`<div class="invoice-shop-sub">${esc(shop.address)}</div>`:''}
       ${shop?.phone?`<div class="invoice-shop-sub">📞 ${esc(shop.phone)}</div>`:''}
       ${shop?.gst?`<div class="invoice-gst-tag">GSTIN: ${esc(shop.gst)}</div>`:''}
     </div>
-    <div class="invoice-center-divider">— GST INVOICE —</div>
-    <div class="invoice-meta-row">
-      <div><span class="invoice-lbl">Bill No:</span> <strong>${esc(bill.billNo||bill.id.slice(-8).toUpperCase())}</strong></div>
-      <div><span class="invoice-lbl">Date:</span> ${fmtDate(bill.date)}</div>
+
+    <div class="invoice-center-divider">── GST TAX INVOICE ──</div>
+
+    <!-- ── BILL META ── -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin:10px 0;font-size:0.83rem;">
+      <div><span class="invoice-lbl">Bill No</span><br/><strong style="font-size:0.9rem;">${esc(bill.billNo||bill.id.slice(-8).toUpperCase())}</strong></div>
+      <div><span class="invoice-lbl">Date</span><br/><strong>${fmtDate(bill.date)}</strong></div>
+      <div style="margin-top:8px;"><span class="invoice-lbl">Customer</span><br/><strong>${esc(bill.customerName||'Guest')}</strong></div>
+      ${bill.customerPhone?`<div style="margin-top:8px;"><span class="invoice-lbl">Phone</span><br/><strong>${esc(bill.customerPhone)}</strong></div>`:'<div></div>'}
     </div>
-    <div class="invoice-cust-row">
-      <div><span class="invoice-lbl">Customer:</span> ${esc(bill.customerName||'Guest')}</div>
-      ${bill.customerPhone?`<div><span class="invoice-lbl">Phone:</span> ${esc(bill.customerPhone)}</div>`:''}
-    </div>
+
     <div class="invoice-dashed-line"></div>
+
+    <!-- ── ITEMS TABLE ── -->
     <table class="invoice-items-table">
-      <thead><tr>
-        <th style="width:30px;">Sr.</th>
-        <th>Product</th>
-        <th style="text-align:center;">Qty</th>
-        <th style="text-align:right;">Rate</th>
-        <th style="text-align:right;">Amount</th>
-      </tr></thead>
+      <thead>
+        <tr>
+          <th style="width:28px;text-align:center;">Sr.</th>
+          <th>Product Name</th>
+          <th style="text-align:center;width:40px;">Qty</th>
+          <th style="text-align:right;width:80px;">Rate (₹)</th>
+          <th style="text-align:right;width:90px;">Amount (₹)</th>
+        </tr>
+      </thead>
       <tbody>
         ${items.map((item,i)=>`<tr>
-          <td style="text-align:center;">${i+1}</td>
-          <td>${esc(item.name)}</td>
+          <td style="text-align:center;color:#888;">${i+1}</td>
+          <td style="font-weight:500;">${esc(item.name)}</td>
           <td style="text-align:center;">${item.qty}</td>
-          <td style="text-align:right;">₹${Number(item.price).toLocaleString('en-IN')}</td>
-          <td style="text-align:right;">₹${Number(item.qty*item.price).toLocaleString('en-IN')}</td>
+          <td style="text-align:right;">${Number(item.price).toLocaleString('en-IN')}</td>
+          <td style="text-align:right;font-weight:600;">${Number(item.qty*item.price).toLocaleString('en-IN')}</td>
         </tr>`).join('')}
       </tbody>
     </table>
+
     <div class="invoice-dashed-line"></div>
+
+    <!-- ── PRICING TOTALS ── -->
     <div class="invoice-totals-block">
-      <div class="invoice-total-line"><span>Subtotal</span><span>₹${sub.toLocaleString('en-IN')}</span></div>
-      ${discAmt>0?`<div class="invoice-total-line" style="color:#2e7d32;"><span>Discount${bill.discountType==='percent'?` (${bill.discountValue}%)`:''}:</span><span>−₹${discAmt.toLocaleString('en-IN')}</span></div>`:''}
-      <div class="invoice-total-line"><span>Taxable Amount</span><span>₹${taxable.toLocaleString('en-IN')}</span></div>
-      ${gstAmt>0?`<div class="invoice-total-line"><span>GST (${bill.gstRate||0}%)</span><span>₹${gstAmt.toLocaleString('en-IN')}</span></div>`:''}
-      <div class="invoice-total-line invoice-grand-total-line"><span>Grand Total</span><span>₹${grand.toLocaleString('en-IN')}</span></div>
+      <div class="invoice-total-line">
+        <span style="color:#666;">Subtotal</span>
+        <span>₹${sub.toLocaleString('en-IN')}</span>
+      </div>
+      ${discAmt>0?`<div class="invoice-total-line" style="color:#2e7d32;">
+        <span>Discount${bill.discountType==='percent'?` (${bill.discountValue}%)`:''}  </span>
+        <span>− ₹${discAmt.toLocaleString('en-IN')}</span>
+      </div>`:''}
+      <div class="invoice-total-line">
+        <span style="color:#666;">Taxable Amount</span>
+        <span>₹${taxable.toLocaleString('en-IN')}</span>
+      </div>
+      ${gstAmt>0?`<div class="invoice-total-line">
+        <span style="color:#666;">GST @ ${bill.gstRate||0}%</span>
+        <span>₹${gstAmt.toLocaleString('en-IN')}</span>
+      </div>`:''}
+      <div class="invoice-total-line invoice-grand-total-line">
+        <span>Grand Total</span>
+        <span>₹${grand.toLocaleString('en-IN')}</span>
+      </div>
     </div>
+
     <div class="invoice-dashed-line"></div>
+
+    <!-- ── PAYMENT ── -->
     <div class="invoice-payment-block">
-      <div class="invoice-total-line"><span>Payment Mode</span><span><strong>${bill.paymentMode==='Cash'?'💵 Cash':bill.paymentMode==='UPI'?'📱 UPI':bill.paymentMode==='Card'?'💳 Card':'🌐 '+(bill.paymentMode||'—')}</strong></span></div>
-      <div class="invoice-total-line"><span>Amount Paid</span><span>₹${amtPaid.toLocaleString('en-IN')}</span></div>
-      ${balance>0?`<div class="invoice-total-line" style="color:#c62828;"><span>Balance Due</span><span>₹${balance.toLocaleString('en-IN')}</span></div>`:'<div class="invoice-total-line" style="color:#2e7d32;"><span>Balance</span><span>✅ Nil</span></div>'}
+      <div class="invoice-total-line">
+        <span style="color:#666;">Payment Mode</span>
+        <span style="font-weight:700;">${pmIcon} ${esc(bill.paymentMode||'—')}</span>
+      </div>
+      <div class="invoice-total-line">
+        <span style="color:#666;">Amount Paid</span>
+        <span>₹${amtPaid.toLocaleString('en-IN')}</span>
+      </div>
+      ${balance>0
+        ?`<div class="invoice-total-line" style="color:#c62828;font-weight:600;">
+            <span>Balance Due</span><span>₹${balance.toLocaleString('en-IN')}</span>
+          </div>`
+        :`<div class="invoice-total-line" style="color:#2e7d32;">
+            <span>Balance</span><span>✅ Nil</span>
+          </div>`}
     </div>
+
     <div class="invoice-dashed-line"></div>
     <div class="invoice-footer-msg">Thank you for shopping with us! ✦</div>
-    <div class="invoice-footer-shop">${esc(shop?.name||'')}${shop?.phone?' · '+esc(shop.phone):''}</div>
+    <div class="invoice-footer-shop">${esc(shop?.name||'')}${shop?.phone?' · Tel: '+esc(shop.phone):''}</div>
   </div>`;
 }
 
@@ -3308,23 +3358,19 @@ function renderOrderSuccess(orderId) {
       <div class="modal-body" style="text-align:center;padding:36px 28px;">
         <div class="order-status-card" id="order-status-card-${order.id}">
           <div class="order-status-icon">✦</div>
-          <h2 style="font-family:var(--font-serif);margin-bottom:8px;color:var(--gold-dark);">Order Sent to Counter!</h2>
+          <h2 style="font-family:var(--font-serif);margin-bottom:8px;color:var(--gold-dark);">Order Placed Successfully!</h2>
           <p style="font-size:0.82rem;color:var(--text-medium);">Order #${order.id.slice(-6).toUpperCase()}</p>
-          <div class="order-status-steps">
-            <div class="status-step done">📤 Order Sent</div>
-            <div class="status-step ${order.status==='accepted'||order.status==='ready'?'done':'waiting'}">
-              ⏳ ${order.estimatedTime ? `Ready in ${order.estimatedTime} min` : 'Waiting for shopkeeper…'}
-            </div>
-            <div class="status-step ${order.status==='ready'?'done':'waiting'}">✅ Ready for pickup</div>
+          <div class="order-status-steps" style="margin:16px 0 8px;">
+            <div class="status-step done">📋 Order Placed</div>
+            <div class="status-step ${['accepted','processing','packing','payment-pending','payment-completed','bill-generated','ready','completed'].includes(order.status)?'done':'waiting'}">⚙️ Processing</div>
+            <div class="status-step ${['payment-pending','payment-completed','bill-generated','ready','completed'].includes(order.status)?'done':'waiting'}">💳 Payment</div>
+            <div class="status-step ${['bill-generated','ready','completed'].includes(order.status)?'done':'waiting'}">🧾 Bill Generated</div>
+            <div class="status-step ${order.status==='completed'?'done':'waiting'}">✓ Completed</div>
           </div>
-          ${order.estimatedTime ? `<div class="order-eta">🕐 Estimated: ${order.estimatedTime} minutes</div>` : ''}
           <div style="font-size:0.8rem;color:var(--gold-dark);margin-top:8px;">
             Payment: ${order.paymentMode==='GPay'?'📱 GPay':order.paymentMode==='PhonePe'?'💜 PhonePe':'💵 Cash'}
           </div>
         </div>
-        <p style="font-size:0.82rem;color:var(--gold-dark);background:var(--gold-lighter);padding:10px 14px;border-radius:var(--radius-md);margin-bottom:20px;">
-          📲 Order confirmation sent to ${esc(cust?.whatsapp||'your phone')}
-        </p>
         ${renderBillHTML(order,shop,cust)}
         <div style="margin-top:20px;display:flex;flex-direction:column;gap:10px;">
           <button class="btn btn-gold btn-lg btn-block" id="go-feedback-btn" data-feedback-url="${esc(feedbackUrl)}">⭐ &nbsp; Share Your Feedback</button>
@@ -5207,13 +5253,10 @@ function attachListeners() {
     DB.addBill(bill);
     showToast(`✅ Invoice ${bill.billNo} generated!`, 'success');
 
-    // Close billing modal, open view-bill modal
+    // Show the full invoice on screen — user manually triggers Print / WhatsApp
     state.modalOpen = 'view-bill';
     state.currentBillId = bill.id;
     render();
-
-    // Auto-execute: print + WhatsApp simultaneously after short delay
-    setTimeout(() => executeBillingActions(bill.id), 600);
   });
 
   /* WhatsApp bill from view modal */

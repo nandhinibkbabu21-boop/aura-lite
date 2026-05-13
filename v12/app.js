@@ -622,18 +622,48 @@ async function _loginViaFirebase(role, username, password, mobile) {
 async function login(role, username, password, mobile) {
   if (role === 'super-admin') return loginSuperAdmin(username, password);
 
+  /* ── CUSTOMER: local storage first (instant), Firebase only if not found ── */
+  if (role === 'customer') {
+    const custs = DB.getCustomers();
+    const cust = custs.find(c => c.username === username);
+    if (cust) {
+      // Found locally — verify credentials immediately, no network needed
+      const mv = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
+      const pwdOk = password && cust.password ? cust.password === password : false;
+      const mobOk = mv && cust.whatsapp ? cust.whatsapp === mv : false;
+      const noCred = !cust.password && !cust.whatsapp;
+      if (!pwdOk && !mobOk && !noCred) {
+        showToast('Wrong password or mobile number. Try again.', 'error');
+        return false;
+      }
+      const shopId = DB.getShopId();
+      DB.setSession({ role:'customer', name:cust.name, username:cust.username, id:cust.id, shopId:shopId||undefined });
+      recordDeviceLogin(shopId, { role:'customer', name:cust.name });
+      if (firebaseReady && shopId) Sync.start(shopId);
+      return true;
+    }
+    // Not in local storage — try Firebase (cross-device login)
+    if (firebaseReady) {
+      const fbResult = await Promise.race([
+        _loginViaFirebase('customer', username, password, mobile),
+        new Promise(resolve => setTimeout(() => resolve(null), 6000))
+      ]).catch(() => null);
+      if (fbResult === true || fbResult === false) return fbResult;
+    }
+    showToast('Account not found. Please tap "New Customer" to register first.', 'error');
+    return false;
+  }
+
+  /* ── ADMIN & EMPLOYEE: Firebase first, local fallback ── */
   if (firebaseReady) {
-    // Hard 7-second timeout — prevents infinite "Signing in…" freeze
     const fbResult = await Promise.race([
       _loginViaFirebase(role, username, password, mobile),
       new Promise(resolve => setTimeout(() => resolve(null), 7000))
     ]).catch(() => null);
-
     if (fbResult === true || fbResult === false) return fbResult;
-    // null = not found in Firebase OR timed out → fall through to local
   }
 
-  /* ── Local fallback ── */
+  // Local fallback for admin / employee
   let shop = DB.getShop();
   if (!shop && firebaseReady) {
     const shopId = _ls(KEYS.shopId) || state.shopId;
@@ -647,7 +677,7 @@ async function login(role, username, password, mobile) {
       } catch(_) {}
     }
   }
-  if (!shop) { showToast('No shop found. Please open on the shop\'s device or set up your shop first.','error'); return false; }
+  if (!shop) { showToast('No shop found. Please open the app on the shop device first.','error'); return false; }
 
   if (role === 'admin') {
     if (shop.adminUsername===username && shop.adminPassword===password) {
@@ -673,21 +703,6 @@ async function login(role, username, password, mobile) {
     const emp = DB.getEmployees().find(e=>e.username===username&&e.password===password);
     if (emp) { DB.setSession({role:'employee',name:emp.name,username,id:emp.id}); recordDeviceLogin(DB.getShopId(),{role:'employee',name:emp.name}); return true; }
     showToast('Invalid employee credentials','error'); return false;
-  }
-  if (role === 'customer') {
-    const custs = DB.getCustomers();
-    const cust = custs.find(c=>c.username===username);
-    if (!cust) {
-      showToast(custs.length===0 ? 'No account found. Please register as New Customer first.' : 'Username not found. Check your username or register as New Customer.','error');
-      return false;
-    }
-    const mv = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
-    const pwdOk = password && cust.password && cust.password===password;
-    const mobOk = mv && cust.whatsapp && cust.whatsapp===mv;
-    const noCred = !cust.password && !cust.whatsapp;
-    if (!pwdOk && !mobOk && !noCred) { showToast('Wrong password or mobile. Try again or use Forgot Password.','error'); return false; }
-    DB.setSession({role:'customer',name:cust.name,username:cust.username,id:cust.id,shopId:DB.getShopId()||undefined});
-    recordDeviceLogin(DB.getShopId(),{role:'customer',name:cust.name}); return true;
   }
   return false;
 }

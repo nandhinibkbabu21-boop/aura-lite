@@ -2516,6 +2516,7 @@ function renderCustomerShop() {
   const shop=DB.getShop(), session=DB.getSession();
   const cust=DB.getCustomers().find(c=>c.id===session?.id);
   const prods=DB.getProducts().filter(p=>+p.quantity>0);
+  const activeOrders=DB.getOrders().filter(o=>o.customerId===session?.id&&!['completed','cancelled'].includes(o.status));
   const cats=['all',...new Set(prods.map(p=>p.category).filter(Boolean))];
   const _catIconMap={'Men':'👔','Women':'👗','Kids':'🧒','Newborn':'🍼','Accessories':'👜','Footwear':'👟','Sports':'⚽','Ethnic':'🥻','Western':'👔'};
   function dynCatIcon(c){return _catIconMap[c]||'👕';}

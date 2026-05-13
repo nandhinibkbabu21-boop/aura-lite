@@ -1308,36 +1308,6 @@ function renderAdminOverview() {
     </div>`;})()}
     ${state.modalOpen==='edit-shop'?renderEditShopModal():''}
 
-    <!-- Shop QR Code Card -->
-    <div class="card" style="margin-bottom:24px;border-left:4px solid var(--gold-light);">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
-        <h4 style="font-family:var(--font-serif);margin:0;">📲 Share Your Shop</h4>
-        <a href="https://nandhinibkbabu21-boop.github.io/aura-lite/" target="_blank" rel="noopener"
-           style="font-size:0.78rem;color:var(--gold-dark);text-decoration:none;font-family:var(--font-serif);">
-          Open Shop ↗
-        </a>
-      </div>
-      <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
-        <div style="background:#fff;padding:12px;border-radius:12px;border:1px solid var(--border-light);flex-shrink:0;">
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=https%3A%2F%2Fnandhinibkbabu21-boop.github.io%2Faura-lite%2F&color=3d2b1f&bgcolor=ffffff&qzone=1"
-               alt="Shop QR Code"
-               style="width:160px;height:160px;display:block;border-radius:4px;"
-               loading="lazy"/>
-        </div>
-        <div style="flex:1;min-width:180px;">
-          <div style="font-weight:600;font-size:0.95rem;margin-bottom:6px;">Let customers scan &amp; shop instantly</div>
-          <div style="font-size:0.82rem;color:var(--text-light);line-height:1.7;margin-bottom:14px;">
-            Print this QR code and display it in your shop.<br/>Customers scan it to browse your catalogue &amp; place orders.
-          </div>
-          <a href="https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=https%3A%2F%2Fnandhinibkbabu21-boop.github.io%2Faura-lite%2F&color=3d2b1f&bgcolor=ffffff&qzone=2"
-             download="ZaraAura-QR.png" target="_blank" rel="noopener"
-             class="btn btn-gold btn-sm" style="text-decoration:none;display:inline-block;">
-            ⬇️ &nbsp; Download QR
-          </a>
-        </div>
-      </div>
-    </div>
-
     <div class="grid-2">
       <div class="card"><h4 style="font-family:var(--font-serif);margin-bottom:14px;">Recent Products</h4>
         ${prods.length===0?`<p class="text-muted">No products yet.</p>`:

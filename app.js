@@ -2926,7 +2926,20 @@ function renderCartSidebar() {
           </label>`).join('')}
         </div>
       </div>
-      <button class="btn btn-gold btn-block btn-lg" style="margin-top:10px;" id="checkout-btn">✦ &nbsp; Send Order to Counter ${fmt(total)}</button>
+      ${state.paymentMode ? `
+      <div style="margin-top:14px;border-top:1px dashed var(--border-light);padding-top:12px;">
+        <div style="font-size:0.75rem;font-weight:700;color:var(--gold-dark);margin-bottom:8px;text-align:center;letter-spacing:0.07em;text-transform:uppercase;">📄 Your Bill</div>
+        <div style="border:1px solid var(--border-light);border-radius:8px;overflow:hidden;max-height:360px;overflow-y:auto;">
+          ${renderGSTInvoice(cartToInvoiceBill(cart, DB.getShop(), state.paymentMode), DB.getShop())}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-gold btn-block" id="cart-whatsapp-btn" style="font-size:0.82rem;padding:10px 8px;">📱 WhatsApp</button>
+          <button class="btn btn-outline btn-block" id="cart-print-btn" style="font-size:0.82rem;padding:10px 8px;">🖨️ Print</button>
+        </div>
+      </div>
+      ` : `
+      <button class="btn btn-ghost btn-block btn-lg" style="margin-top:10px;opacity:0.5;cursor:default;" disabled>✦ &nbsp; Select payment to continue</button>
+      `}
     </div>`}
   </div>`;
 }
@@ -3506,6 +3519,30 @@ function orderToInvoiceBill(order, shop) {
   };
 }
 
+/* Convert current cart array into a preview bill object (before order is created) */
+function cartToInvoiceBill(cart, shop, paymentMode) {
+  const gstRate = +(shop?.gstRate || 0);
+  const sub     = cart.reduce((s,i) => s + i.qty * i.price, 0);
+  const gstAmt  = Math.round(sub * gstRate / 100);
+  const grand   = sub + gstAmt;
+  const session = DB.getSession();
+  return {
+    id: 'PREVIEW',
+    billNo: '#PREVIEW',
+    date: Date.now(),
+    customerName: session?.name || 'Guest',
+    customerPhone: session?.phone || '',
+    items: cart.map(i => ({id:i.id, name:i.name, size:i.size||'', color:i.color||'', price:i.price, qty:i.qty})),
+    subtotal: sub,
+    discountType: 'amount', discountValue: 0, discountAmount: 0,
+    taxableAmount: sub,
+    gstRate, gstAmount: gstAmt,
+    grandTotal: grand,
+    paymentMode: paymentMode || 'Cash',
+    amountPaid: grand, balance: 0,
+  };
+}
+
 /* Well-formatted WhatsApp text invoice for cart orders */
 function buildOrderWhatsAppText(order, shop, cust) {
   const bill = orderToInvoiceBill(order, shop);
@@ -4056,6 +4093,59 @@ function confirmOrder() {
     executeOrderDelivery(oid, pref);
   });
   showToast('✅ Order placed! Select delivery method below.','success');
+}
+
+/* confirmAndDeliver — creates order from cart then immediately WhatsApps or prints */
+async function confirmAndDeliver(pref) {
+  const session = DB.getSession(), cart = state.cart;
+  if (!cart.length) { showToast('Cart is empty','error'); return; }
+  if (!state.paymentMode) { showToast('Please select a payment mode','error'); return; }
+  const shop = DB.getShop();
+  const sub   = cart.reduce((s,i) => s + i.qty * i.price, 0);
+
+  // Reduce stock per item (size-aware)
+  cart.forEach(item => {
+    const p = DB.getProducts().find(pr => pr.id === item.id);
+    if (!p) return;
+    if ((p.hasSizes || p.sizeStock?.length) && item.size) {
+      const newSS = (p.sizeStock||[]).map(s => s.size===item.size ? {...s, stock: Math.max(0, s.stock-item.qty)} : s);
+      DB.updateProduct(item.id, {sizeStock: newSS, quantity: newSS.reduce((s,x)=>s+x.stock,0)});
+    } else {
+      DB.updateProduct(item.id, {quantity: Math.max(0, +p.quantity - item.qty)});
+    }
+  });
+
+  const order = {
+    id: uid(), customerId: session?.id,
+    customerName: session?.name || 'Guest',
+    guestName: session?.isGuest ? session?.name : null,
+    customerPhone: session?.phone || '',
+    items: cart.map(i => ({id:i.id, name:i.name, size:i.size||'', color:i.color||'', price:i.price, qty:i.qty, image:i.image||''})),
+    total: sub, paymentMode: state.paymentMode,
+    status: 'pending', date: Date.now()
+  };
+  DB.addOrder(order);
+  state.cart = []; state.paymentMode = ''; state.selectedPaymentMode = 'Cash'; state.cartOpen = false;
+  render();
+
+  if (pref === 'whatsapp') {
+    const cust = DB.getCustomers().find(c => c.id === session?.id);
+    const phone = (cust?.whatsapp || cust?.phone || order.customerPhone || '').replace(/\D/g,'');
+    if (!phone) {
+      showToast('No WhatsApp number on your profile — ask the counter for your bill','warning');
+    } else {
+      const msg = buildOrderWhatsAppText(order, shop, cust);
+      const a = document.createElement('a');
+      a.href = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
+      a.target = '_blank'; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 300);
+      showToast('📱 Opening WhatsApp with your invoice!','success');
+    }
+  } else if (pref === 'print') {
+    try { window._printOrderBill(order.id); showToast('🖨️ Opening print window…','success'); }
+    catch(e) { showToast('Could not open print window — please allow popups','warning'); }
+  }
+  showToast('✅ Order placed successfully!','success');
 }
 
 /* ═══════════════════════════════════════════════════
@@ -5495,7 +5585,11 @@ function attachListeners() {
   onAll('[data-cart-dec]','click', e=>updateCartQty(e.currentTarget.dataset.cartDec,-1));
   onAll('[data-cart-remove]','click', e=>removeFromCart(e.currentTarget.dataset.cartRemove));
 
-  /* Checkout */
+  /* Cart bill delivery buttons (shown after payment mode selected) */
+  on('#cart-whatsapp-btn','click', () => confirmAndDeliver('whatsapp'));
+  on('#cart-print-btn',   'click', () => confirmAndDeliver('print'));
+
+  /* Checkout (legacy modal — still wired up as fallback) */
   on('#checkout-btn','click', ()=>{
     state.cartOpen=false;
     document.body.insertAdjacentHTML('beforeend', renderCheckoutModal());
@@ -5826,10 +5920,10 @@ function attachListeners() {
     document.querySelectorAll('.payment-mode-opt').forEach(l=>l.classList.toggle('selected',l.querySelector('input')?.value===e.target.value));
   });
 
-  /* Payment mode in cart */
+  /* Payment mode in cart — re-render to show live bill preview below */
   onAll('input[name="cartPayMode"]','change',e=>{
-    state.paymentMode=e.target.value;
-    document.querySelectorAll('.pay-mode-btn').forEach(b=>b.classList.toggle('selected',b.querySelector('input')?.value===state.paymentMode));
+    state.paymentMode = e.target.value;
+    render(); // re-render so bill preview appears below payment buttons
   });
 
   /* Coupon section removed */

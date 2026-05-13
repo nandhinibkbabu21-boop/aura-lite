@@ -2920,9 +2920,9 @@ function renderCartSidebar() {
       <div style="margin:12px 0 4px;">
         <div style="font-size:0.78rem;font-weight:600;color:var(--text-medium);margin-bottom:8px;">Payment Mode <span style="color:red;">*</span></div>
         <div class="pay-mode-select">
-          ${['Cash','UPI','GPay','PhonePe','Card'].map(pm=>`<label class="pay-mode-btn${state.paymentMode===pm?' selected':''}">
-            <input type="radio" name="cartPayMode" value="${pm}" ${state.paymentMode===pm?'checked':''} style="display:none;"/>
-            ${pm==='Cash'?'💵':pm==='Card'?'💳':'📱'} ${pm}
+          ${[{v:'Cash',l:'Cash',i:'💵'},{v:'UPI',l:'UPI / GPay / PhonePe',i:'📱'},{v:'Card',l:'Card',i:'💳'}].map(({v,l,i})=>`<label class="pay-mode-btn${state.paymentMode===v?' selected':''}">
+            <input type="radio" name="cartPayMode" value="${v}" ${state.paymentMode===v?'checked':''} style="display:none;"/>
+            ${i} ${l}
           </label>`).join('')}
         </div>
       </div>
@@ -3634,46 +3634,97 @@ ${shop?.upiId?`<div class="center" style="font-size:10px;margin-top:4px;">📱 U
   win.onload = () => { win.focus(); win.print(); };
 };
 
+/* ── Generate invoice as canvas image (requires html2canvas CDN) ── */
+async function generateInvoiceImage(order, shop) {
+  if (typeof html2canvas === 'undefined') throw new Error('html2canvas not loaded');
+  const bill = orderToInvoiceBill(order, shop);
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:400px;background:#fff;padding:8px;z-index:-9999;';
+  wrap.innerHTML = renderGSTInvoice(bill, shop);
+  document.body.appendChild(wrap);
+  try {
+    const canvas = await html2canvas(wrap, {
+      scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false, width: 400
+    });
+    return canvas;
+  } finally {
+    document.body.removeChild(wrap);
+  }
+}
+
+/* ── Share invoice as IMAGE via WhatsApp (Web Share API on mobile, download on desktop) ── */
+async function shareInvoiceWhatsApp(order, shop) {
+  const cust  = DB.getCustomers().find(c => c.id === order?.customerId);
+  const phone = (cust?.whatsapp || cust?.phone || order?.customerPhone || '').replace(/\D/g,'');
+
+  try {
+    const canvas   = await generateInvoiceImage(order, shop);
+    const blob     = await new Promise(res => canvas.toBlob(res, 'image/png', 0.95));
+    const fileName = `invoice-${(order.id||'').slice(-6).toUpperCase()}.png`;
+    const file     = new File([blob], fileName, {type: 'image/png'});
+
+    // Mobile: native share sheet → user picks WhatsApp → image sent as attachment
+    if (navigator.share && navigator.canShare && navigator.canShare({files: [file]})) {
+      await navigator.share({ files: [file], title: `Invoice — ${shop?.name || 'Zara Aura'}` });
+      return true;
+    }
+
+    // Desktop fallback: auto-download image + open WhatsApp
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href = url; a.download = fileName;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
+
+    if (phone) {
+      const note = `Hi! Your invoice from ${shop?.name || 'our store'} is downloaded — please attach it here.`;
+      setTimeout(() => {
+        const wa = document.createElement('a');
+        wa.href = `https://wa.me/91${phone}?text=${encodeURIComponent(note)}`;
+        wa.target = '_blank'; wa.rel = 'noopener';
+        document.body.appendChild(wa); wa.click(); setTimeout(() => wa.remove(), 300);
+      }, 900);
+    }
+    return true;
+  } catch(e) {
+    // Fallback: formatted text message if image generation fails
+    if (phone) {
+      const msg = buildOrderWhatsAppText(order, shop, cust);
+      const a   = document.createElement('a');
+      a.href = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
+      a.target = '_blank'; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 300);
+      return true;
+    }
+    return false;
+  }
+}
+
 /* Parallel delivery: print AND/OR WhatsApp */
 async function executeOrderDelivery(orderId, pref) {
-  const order = DB.getOrders().find(o => o.id === orderId);
-  const shop  = DB.getShop();
-  const cust  = DB.getCustomers().find(c => c.id === order?.customerId);
+  const order    = DB.getOrders().find(o => o.id === orderId);
+  const shop     = DB.getShop();
   const statusEl = document.getElementById('delivery-status-box');
-  if (statusEl) statusEl.innerHTML = `<div style="padding:10px;text-align:center;color:var(--text-medium);font-size:0.85rem;">⏳ Processing…</div>`;
+  if (statusEl) statusEl.innerHTML = `<div style="padding:10px;text-align:center;color:var(--text-medium);font-size:0.85rem;">⏳ Processing invoice…</div>`;
 
   const doWhatsApp = pref === 'whatsapp' || pref === 'both';
   const doPrint    = pref === 'print'    || pref === 'both';
-  const results    = { wa: null, print: null };
 
   const [waRes, printRes] = await Promise.all([
-    new Promise(res => {
-      if (!doWhatsApp) return res(null);
-      const phone = (cust?.whatsapp || order?.customerPhone || '').replace(/\D/g,'');
-      if (!phone) { showToast('No WhatsApp number — add phone to customer profile','warning'); return res(false); }
-      const msg = buildOrderWhatsAppText(order, shop, cust);
-      try {
-        const a = document.createElement('a');
-        a.href = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
-        a.target = '_blank'; a.rel = 'noopener';
-        document.body.appendChild(a); a.click(); setTimeout(()=>a.remove(),300);
-        res(true);
-      } catch(e) { res(false); }
-    }),
+    doWhatsApp
+      ? shareInvoiceWhatsApp(order, shop).catch(() => false)
+      : Promise.resolve(null),
     new Promise(res => {
       if (!doPrint) return res(null);
-      try { window._printOrderBill(orderId); res(true); }
-      catch(e) { res(false); }
+      try { window._printOrderBill(orderId); res(true); } catch(e) { res(false); }
     }),
   ]);
-
-  results.wa = waRes; results.print = printRes;
 
   const lines = [
     '✔ Payment Successful',
     '✔ Invoice Generated',
-    ...(doWhatsApp ? [results.wa===true?'✔ WhatsApp Sent Successfully':'⚠ WhatsApp could not be opened (check phone number)'] : []),
-    ...(doPrint    ? [results.print===true?'✔ Bill Printed Successfully':'⚠ Print popup blocked — please allow popups'] : []),
+    ...(doWhatsApp ? [waRes !== false ? '✔ WhatsApp Sent Successfully' : '⚠ WhatsApp: add phone number to your profile'] : []),
+    ...(doPrint    ? [printRes === true ? '✔ Bill Printed Successfully' : '⚠ Print popup blocked — please allow popups'] : []),
     '✔ Order Completed',
   ];
 
@@ -3743,7 +3794,7 @@ function renderOrderSuccess(orderId) {
             <div class="status-step ${order.status==='completed'?'done':'waiting'}">✓ Completed</div>
           </div>
           <div style="font-size:0.8rem;color:var(--gold-dark);margin-top:8px;">
-            Payment: ${order.paymentMode==='GPay'?'📱 GPay':order.paymentMode==='PhonePe'?'💜 PhonePe':'💵 Cash'}
+            Payment: ${order.paymentMode==='Cash'?'💵 Cash':order.paymentMode==='Card'?'💳 Card':'📱 '+(order.paymentMode||'UPI')}
           </div>
         </div>
         <!-- GST Invoice -->
@@ -4034,10 +4085,10 @@ function renderCheckoutModal() {
         <div class="payment-mode-section">
           <div class="payment-mode-title">💳 Select Payment Method</div>
           <div class="payment-mode-options">
-            ${[['Cash','💵'],['UPI','📱'],['GPay','📱'],['PhonePe','💜'],['Card','💳']].map(([pm,ic])=>`
-            <label class="payment-mode-opt${(state.selectedPaymentMode||state.paymentMode||'Cash')===pm?' selected':''}">
-              <input type="radio" name="payMode" value="${pm}" ${(state.selectedPaymentMode||state.paymentMode||'Cash')===pm?'checked':''}/>
-              <span class="pm-icon">${ic}</span><span>${pm}</span>
+            ${[{v:'Cash',l:'Cash',i:'💵'},{v:'UPI',l:'UPI / GPay / PhonePe',i:'📱'},{v:'Card',l:'Card',i:'💳'}].map(({v,l,i})=>`
+            <label class="payment-mode-opt${(state.selectedPaymentMode||state.paymentMode||'Cash')===v?' selected':''}">
+              <input type="radio" name="payMode" value="${v}" ${(state.selectedPaymentMode||state.paymentMode||'Cash')===v?'checked':''}/>
+              <span class="pm-icon">${i}</span><span>${l}</span>
             </label>`).join('')}
           </div>
         </div>
@@ -4101,7 +4152,7 @@ async function confirmAndDeliver(pref) {
   if (!cart.length) { showToast('Cart is empty','error'); return; }
   if (!state.paymentMode) { showToast('Please select a payment mode','error'); return; }
   const shop = DB.getShop();
-  const sub   = cart.reduce((s,i) => s + i.qty * i.price, 0);
+  const sub  = cart.reduce((s,i) => s + i.qty * i.price, 0);
 
   // Reduce stock per item (size-aware)
   cart.forEach(item => {
@@ -4125,27 +4176,33 @@ async function confirmAndDeliver(pref) {
     status: 'pending', date: Date.now()
   };
   DB.addOrder(order);
-  state.cart = []; state.paymentMode = ''; state.selectedPaymentMode = 'Cash'; state.cartOpen = false;
+  state.cart = []; state.paymentMode = ''; state.selectedPaymentMode = ''; state.cartOpen = false;
   render();
 
-  if (pref === 'whatsapp') {
-    const cust = DB.getCustomers().find(c => c.id === session?.id);
-    const phone = (cust?.whatsapp || cust?.phone || order.customerPhone || '').replace(/\D/g,'');
-    if (!phone) {
-      showToast('No WhatsApp number on your profile — ask the counter for your bill','warning');
-    } else {
-      const msg = buildOrderWhatsAppText(order, shop, cust);
-      const a = document.createElement('a');
-      a.href = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
-      a.target = '_blank'; a.rel = 'noopener';
-      document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 300);
-      showToast('📱 Opening WhatsApp with your invoice!','success');
-    }
-  } else if (pref === 'print') {
-    try { window._printOrderBill(order.id); showToast('🖨️ Opening print window…','success'); }
-    catch(e) { showToast('Could not open print window — please allow popups','warning'); }
-  }
-  showToast('✅ Order placed successfully!','success');
+  // Show full success overlay (GST invoice + status box + re-send option)
+  document.body.insertAdjacentHTML('beforeend', renderOrderSuccess(order.id));
+
+  // Wire up buttons inside success overlay
+  document.getElementById('close-success-btn')?.addEventListener('click', () => {
+    document.getElementById('success-overlay')?.remove(); render();
+  });
+  document.getElementById('go-feedback-btn')?.addEventListener('click', e => {
+    const url = e.currentTarget.dataset.feedbackUrl; if (url) window.location.href = url;
+  });
+  document.querySelectorAll('input[name="deliveryPref"]').forEach(r => {
+    r.addEventListener('change', () => {
+      document.querySelectorAll('.payment-mode-opt').forEach(l =>
+        l.classList.toggle('selected', !!l.querySelector('input[name="deliveryPref"]')?.checked));
+    });
+  });
+  document.getElementById('send-invoice-btn')?.addEventListener('click', e => {
+    const oid  = e.currentTarget.dataset.orderId;
+    const pref2 = document.querySelector('input[name="deliveryPref"]:checked')?.value || 'whatsapp';
+    executeOrderDelivery(oid, pref2);
+  });
+
+  // Execute the delivery choice immediately and show all status steps
+  await executeOrderDelivery(order.id, pref);
 }
 
 /* ═══════════════════════════════════════════════════

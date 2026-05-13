@@ -3641,22 +3641,52 @@ async function generateInvoiceImage(order, shop) {
   }
 }
 
-/* ── Share invoice via WhatsApp directly (always opens WhatsApp, never generic share sheet) ── */
+/* ── Share invoice IMAGE via WhatsApp ── */
 async function shareInvoiceWhatsApp(order, shop) {
   const cust  = DB.getCustomers().find(c => c.id === order?.customerId);
   const phone = (cust?.whatsapp || cust?.phone || order?.customerPhone || '').replace(/\D/g,'');
 
-  if (!phone) return false;
-
-  // Always send via WhatsApp directly — open wa.me link so WhatsApp opens every time
   try {
-    const msg = buildOrderWhatsAppText(order, shop, cust);
-    const a   = document.createElement('a');
-    a.href    = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
-    a.target  = '_blank'; a.rel = 'noopener';
-    document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 300);
+    // Generate bill as image
+    const canvas   = await generateInvoiceImage(order, shop);
+    const blob     = await new Promise(res => canvas.toBlob(res, 'image/png', 0.95));
+    const fileName = `invoice-${(order.id||'').slice(-6).toUpperCase()}.png`;
+    const file     = new File([blob], fileName, {type: 'image/png'});
+
+    // Mobile: native share with image file — show toast so user knows to pick WhatsApp
+    if (navigator.share && navigator.canShare && navigator.canShare({files: [file]})) {
+      showToast('📲 Please select WhatsApp to send the bill', 'info');
+      await navigator.share({ files: [file], title: `Invoice — ${shop?.name || 'Zara Aura'}` });
+      return true;
+    }
+
+    // Desktop: download the image then open WhatsApp
+    const url = URL.createObjectURL(blob);
+    const dl  = document.createElement('a');
+    dl.href = url; dl.download = fileName;
+    document.body.appendChild(dl); dl.click();
+    setTimeout(() => { URL.revokeObjectURL(url); dl.remove(); }, 500);
+
+    if (phone) {
+      const note = `Hi ${cust?.name||''}! 🛍 Your bill from *${shop?.name||'our store'}* is ready. Please find the invoice image just downloaded — attach it here.`;
+      setTimeout(() => {
+        const wa = document.createElement('a');
+        wa.href = `https://wa.me/91${phone}?text=${encodeURIComponent(note)}`;
+        wa.target = '_blank'; wa.rel = 'noopener';
+        document.body.appendChild(wa); wa.click(); setTimeout(() => wa.remove(), 300);
+      }, 900);
+    }
     return true;
   } catch(e) {
+    // Image generation failed — send formatted text bill via WhatsApp
+    if (phone) {
+      const msg = buildOrderWhatsAppText(order, shop, cust);
+      const a   = document.createElement('a');
+      a.href = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
+      a.target = '_blank'; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 300);
+      return true;
+    }
     return false;
   }
 }

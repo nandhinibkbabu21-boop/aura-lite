@@ -61,7 +61,6 @@ const KEYS = {
   products:       `${APP_KEY}_products`,
   categories:     `${APP_KEY}_categories`,
   orders:         `${APP_KEY}_orders`,
-  bills:          `${APP_KEY}_bills`,
   coupons:        `${APP_KEY}_coupons`,
   session:        `${APP_KEY}_session`,
   shopId:         `${APP_KEY}_shopId`,
@@ -179,7 +178,6 @@ let state = {
   attendanceFilter: 'all',
   attendanceDateFrom: '',
   attendanceDateTo: '',
-  currentBillId: null,
 };
 
 /* ═══════════════════════════════════════════════════
@@ -313,17 +311,6 @@ const DB = {
     const list = DB.getOrders().map(o => o.id===id ? {...o,...data} : o);
     _ls(KEYS.orders, list);
     DB._col('orders')?.doc(id).update(data).catch(console.error);
-  },
-
-  /* ── Bills ── */
-  getBills() { return _ls(KEYS.bills) || []; },
-  addBill(b) {
-    const list = DB.getBills(); list.push(b); _ls(KEYS.bills, list);
-    DB._col('bills')?.doc(b.id).set(b).catch(console.error);
-  },
-  updateBill(id, data) {
-    _ls(KEYS.bills, DB.getBills().map(b => b.id===id ? {...b,...data} : b));
-    DB._col('bills')?.doc(id).update(data).catch(console.error);
   },
 
   /* ── Coupons ── */
@@ -1071,7 +1058,6 @@ function renderSidebar(role) {
   const links = role === 'admin'
     ? [['overview','◈','Overview'],['products','✦','Products'],['categories','◻','Categories'],
        ['employees','◉','Employees'],['customers','◎','Customers'],['orders','◊','Orders'],
-       ['billing','🧾','Billing'],
        ['analytics','📊','Analytics'],['sms','📣','Send Offers'],['feedback','⭐','Feedback']]
     : role === 'employee'
     ? [['orders','🔔','Orders'],['products','✦','Products'],['categories','◻','Categories'],['stock','📦','Stock'],['salary','💰','My Salary']]
@@ -1102,7 +1088,6 @@ function renderAdminDash() {
   const subViews = { overview:renderAdminOverview, products:renderAdminProducts,
     categories:renderAdminCategories, employees:renderAdminEmployees,
     customers:renderAdminCustomers, orders:renderAdminOrders,
-    billing:renderAdminBilling,
     analytics:renderAdminAnalytics, sms:renderAdminSms, feedback:renderAdminFeedback };
   return `<div>${renderAppHeader({ shopName:shop?.name, userName:session?.name })}
     <div class="dash-layout">${renderSidebar('admin')}
@@ -1817,12 +1802,7 @@ function renderAdminCustomers() {
 
 function renderAdminOrders() {
   const ords=DB.getOrders().slice().reverse(), custs=DB.getCustomers();
-  const statusColors={
-    'pending':'#4caf50','order-placed':'#4caf50',
-    'accepted':'#3b82f6','processing':'#3b82f6','packing':'#7b1fa2',
-    'payment-pending':'#f59e0b','payment-completed':'#059669',
-    'bill-generated':'#7c3aed','ready':'#10b981','completed':'#6b7280'
-  };
+  const statusColors={pending:'#f59e0b',accepted:'#3b82f6',ready:'#10b981',completed:'#6b7280'};
   const pmIcon={GPay:'📱',PhonePe:'💜',Cash:'💵'};
   return `<div class="animate-fadeIn">
     <div class="dash-page-title">Orders</div><div class="dash-page-subtitle">${ords.length} order${ords.length!==1?'s':''} total</div>
@@ -2356,18 +2336,8 @@ function renderCustomerOrderHistory() {
       <p class="text-muted">Start shopping to see your order history here!</p>
       <button class="btn btn-gold" id="go-shop-btn" style="margin-top:16px;">Browse Products</button>
     </div>`;
-  const statusColor={
-    'pending':'#4caf50','order-placed':'#4caf50',
-    'accepted':'#1976d2','processing':'#1976d2','packing':'#7b1fa2',
-    'payment-pending':'#f59e0b','payment-completed':'#059669',
-    'bill-generated':'#7c3aed','ready':'#2e7d32','completed':'#388e3c'
-  };
-  const statusLabel={
-    'pending':'📋 Order Placed','order-placed':'📋 Order Placed',
-    'accepted':'⚙️ Processing','processing':'⚙️ Processing','packing':'⚙️ Processing',
-    'payment-pending':'💳 Payment Pending','payment-completed':'✅ Payment Completed',
-    'bill-generated':'🧾 Bill Generated','ready':'✅ Ready','completed':'✓ Completed'
-  };
+  const statusColor={pending:'#f57c00',accepted:'#1976d2',packing:'#7b1fa2',ready:'#2e7d32',completed:'#388e3c'};
+  const statusLabel={pending:'⏳ Pending',accepted:'📦 Accepted',packing:'⏱ Packing',ready:'✅ Ready',completed:'✓ Completed'};
   return `
     <div class="shop-hero"><div class="shop-hero-content">
       <div class="shop-hero-name gold-text">${esc(shop?.name||'Zara Aura')}</div>
@@ -2396,17 +2366,11 @@ function renderCustomerOrderHistory() {
             ${o.estimatedTime?`<span>⏱ Packing: ${o.estimatedTime} min</span>`:''}
             ${o.employeeName?`<span>👤 By: ${esc(o.employeeName)}</span>`:''}
           </div>
-          ${(st==='accepted'||st==='packing'||st==='processing')?`<div class="order-status-notice" style="margin-top:10px;padding:8px 12px;background:#e3f2fd;border-radius:8px;font-size:0.82rem;color:#1565c0;">
-            ⚙️ Your order is being processed. Estimated time: <strong>${o.estimatedTime||'—'} min</strong>
+          ${st==='accepted'||st==='packing'?`<div class="order-status-notice" style="margin-top:10px;padding:8px 12px;background:#e3f2fd;border-radius:8px;font-size:0.82rem;color:#1565c0;">
+            📦 Your order is being prepared. Estimated time: <strong>${o.estimatedTime||'—'} min</strong>
           </div>`:''}
-          ${st==='payment-pending'?`<div class="order-status-notice" style="margin-top:10px;padding:8px 12px;background:#fff3e0;border-radius:8px;font-size:0.82rem;color:#e65100;font-weight:600;">
-            💳 Payment is pending. Please complete payment at the counter.
-          </div>`:''}
-          ${st==='payment-completed'?`<div class="order-status-notice" style="margin-top:10px;padding:8px 12px;background:#e8f5e9;border-radius:8px;font-size:0.82rem;color:#2e7d32;font-weight:600;">
-            ✅ Payment received. Your bill is being generated.
-          </div>`:''}
-          ${(st==='bill-generated'||st==='ready')?`<div class="order-status-notice" style="margin-top:10px;padding:8px 12px;background:#e8f5e9;border-radius:8px;font-size:0.82rem;color:#2e7d32;font-weight:600;">
-            🧾 Bill generated! Please collect your order from the counter.
+          ${st==='ready'?`<div class="order-status-notice" style="margin-top:10px;padding:8px 12px;background:#e8f5e9;border-radius:8px;font-size:0.82rem;color:#2e7d32;font-weight:600;">
+            ✅ Your order is ready! Please collect it from the counter.
           </div>`:''}
         </div>`;
       }).join('')}
@@ -2458,22 +2422,12 @@ function renderCustomerShop() {
   const activeBanner = latestActive ? (()=>{
     const st=latestActive.status||'pending';
     const msgs={
-      'pending':         '📋 Order Placed',
-      'order-placed':    '📋 Order Placed',
-      'accepted':        `⚙️ Processing — Est. time: <strong>${latestActive.estimatedTime||'—'} min</strong>`,
-      'processing':      `⚙️ Processing — Est. time: <strong>${latestActive.estimatedTime||'—'} min</strong>`,
-      'packing':         `⚙️ Processing — Est. time: <strong>${latestActive.estimatedTime||'—'} min</strong>`,
-      'payment-pending': '💳 Payment Pending',
-      'payment-completed':'✅ Payment Completed',
-      'bill-generated':  '🧾 Bill Generated',
-      'ready':           '✅ Your order is <strong>ready for pickup</strong>!'
+      pending:'⏳ Order received — waiting for staff to confirm',
+      accepted:`📦 Your order is being packed. Est. time: <strong>${latestActive.estimatedTime||'—'} min</strong>`,
+      packing:`⏱ Packing in progress. Est. time: <strong>${latestActive.estimatedTime||'—'} min</strong>`,
+      ready:'✅ Your order is <strong>ready for pickup</strong>!'
     };
-    const colors={
-      'pending':'#4caf50','order-placed':'#4caf50',
-      'accepted':'#1565c0','processing':'#1565c0','packing':'#6a1b9a',
-      'payment-pending':'#f59e0b','payment-completed':'#059669',
-      'bill-generated':'#7c3aed','ready':'#2e7d32'
-    };
+    const colors={pending:'#f57c00',accepted:'#1565c0',packing:'#6a1b9a',ready:'#2e7d32'};
     const c=colors[st]||'#555';
     return `<div class="active-order-banner" style="background:${c}10;border-bottom:2px solid ${c};padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <div style="font-size:0.88rem;color:${c};font-weight:600;">${msgs[st]||st}</div>
@@ -2808,456 +2762,6 @@ function renderCartSidebar() {
       <button class="btn btn-gold btn-block btn-lg" style="margin-top:10px;" id="checkout-btn">✦ &nbsp; Send Order to Counter ${fmt(total)}</button>
     </div>`}
   </div>`;
-}
-
-/* ═══════════════════════════════════════════════════
-   17b. ADMIN BILLING (GST Invoice System)
-═══════════════════════════════════════════════════ */
-function generateBillNo() {
-  const now = new Date();
-  const d = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
-  const r = Math.random().toString(36).slice(2,6).toUpperCase();
-  return `BILL-${d}-${r}`;
-}
-
-function renderAdminBilling() {
-  const bills = DB.getBills().slice().reverse();
-  const statusColor = {
-    'order-placed':'#4caf50','processing':'#1976d2',
-    'payment-pending':'#f59e0b','payment-completed':'#059669',
-    'bill-generated':'#7c3aed','completed':'#6b7280'
-  };
-  const statusLabel = {
-    'order-placed':'Order Placed','processing':'Processing',
-    'payment-pending':'Payment Pending','payment-completed':'Payment Completed',
-    'bill-generated':'Bill Generated','completed':'Completed'
-  };
-  return `<div class="animate-fadeIn">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
-      <div>
-        <div class="dash-page-title">Billing &amp; GST Invoices</div>
-        <div class="dash-page-subtitle">${bills.length} bill${bills.length!==1?'s':''} generated</div>
-      </div>
-      <button class="btn btn-gold" id="new-bill-btn">🧾 &nbsp; Generate New Bill</button>
-    </div>
-    ${bills.length===0?`<div class="empty-state"><div class="empty-state-icon">🧾</div>
-      <div class="empty-state-title">No bills yet</div>
-      <div class="empty-state-text">Click "Generate New Bill" to create your first GST invoice.</div></div>`
-    :`<div class="table-wrap"><table>
-      <thead><tr><th>Bill No</th><th>Date</th><th>Customer</th><th>Phone</th><th>Items</th><th>Grand Total</th><th>Payment</th><th>Status</th><th>Actions</th></tr></thead>
-      <tbody>${bills.map(b=>{
-        const st = b.status||'completed';
-        const color = statusColor[st]||'#6b7280';
-        return `<tr>
-          <td><code style="font-size:0.75rem;background:var(--cream-2);padding:2px 8px;border-radius:4px;">${esc(b.billNo||b.id.slice(-8).toUpperCase())}</code></td>
-          <td style="font-size:0.82rem;color:var(--text-light);">${fmtDate(b.date)}</td>
-          <td class="td-name">${esc(b.customerName||'Guest')}</td>
-          <td style="font-size:0.82rem;">${esc(b.customerPhone||'—')}</td>
-          <td>${(b.items||[]).length} item${(b.items||[]).length!==1?'s':''}</td>
-          <td style="font-family:var(--font-serif);font-weight:700;color:var(--gold-dark);">${fmt(b.grandTotal||0)}</td>
-          <td><span style="font-size:0.82rem;">${esc(b.paymentMode||'—')}</span></td>
-          <td><span style="padding:2px 8px;border-radius:12px;font-size:0.72rem;font-weight:600;background:${color}20;color:${color};">${statusLabel[st]||st}</span></td>
-          <td style="white-space:nowrap;">
-            <button class="btn btn-outline btn-sm" data-view-bill="${esc(b.id)}" style="margin-right:4px;">View</button>
-            <button class="btn btn-ghost btn-sm" onclick="window._printBill('${esc(b.id)}')">Print</button>
-          </td>
-        </tr>`;}).join('')}
-      </tbody></table></div>`}
-    ${state.modalOpen==='billing'?renderBillingModal():''}
-    ${state.modalOpen==='view-bill'&&state.currentBillId?renderViewBillModal(state.currentBillId):''}
-  </div>`;
-}
-
-function renderBillingModal() {
-  const shop = DB.getShop();
-  const custs = DB.getCustomers();
-  const prods = DB.getProducts();
-  return `<div class="modal-overlay" id="billing-modal-overlay">
-    <div class="modal modal-lg animate-slideUp" style="max-width:820px;width:95vw;">
-      <div class="modal-header">
-        <div class="modal-title">🧾 Generate New GST Invoice</div>
-        <button class="modal-close" data-close-modal="billing">✕</button>
-      </div>
-      <div class="modal-body" style="max-height:78vh;overflow-y:auto;padding:20px;">
-        <!-- Shop Details Preview -->
-        <div style="background:var(--cream-2);border-radius:var(--radius-md);padding:14px 18px;margin-bottom:20px;border:1px solid var(--border-light);">
-          <div style="font-size:0.7rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:8px;">Shop Details (shown on invoice)</div>
-          <div style="font-weight:700;font-size:1rem;">${esc(shop?.name||'Your Shop')}</div>
-          <div style="font-size:0.82rem;color:var(--text-medium);">${esc(shop?.address||'—')}</div>
-          <div style="font-size:0.82rem;color:var(--text-medium);">${shop?.phone?'📞 '+esc(shop.phone):''}</div>
-          ${shop?.gst?`<div style="font-size:0.78rem;color:var(--text-light);">GSTIN: ${esc(shop.gst)}</div>`:''}
-        </div>
-
-        <!-- Customer Details -->
-        <div class="grid-2" style="margin-bottom:20px;gap:16px;">
-          <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">Customer Name</label>
-            <input type="text" class="form-control" id="bill-cust-name" list="bill-custs-dl" placeholder="Enter customer name" autocomplete="off"/>
-            <datalist id="bill-custs-dl">${custs.map(c=>`<option value="${esc(c.name)}" data-phone="${esc(c.whatsapp||'')}"/>`).join('')}</datalist>
-          </div>
-          <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">Customer Phone (WhatsApp)</label>
-            <input type="tel" class="form-control" id="bill-cust-phone" maxlength="10" placeholder="10-digit number"/>
-          </div>
-        </div>
-
-        <!-- Items Table -->
-        <div style="margin-bottom:20px;">
-          <div style="font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:10px;">Items Purchased</div>
-          <div style="overflow-x:auto;">
-            <table style="width:100%;min-width:500px;border-collapse:collapse;">
-              <thead>
-                <tr style="background:var(--cream-2);">
-                  <th style="padding:8px 6px;text-align:center;width:36px;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Sr.</th>
-                  <th style="padding:8px 6px;text-align:left;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Product Name</th>
-                  <th style="padding:8px 6px;text-align:center;width:72px;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Qty</th>
-                  <th style="padding:8px 6px;text-align:right;width:110px;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Price/Unit (₹)</th>
-                  <th style="padding:8px 6px;text-align:right;width:110px;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Total (₹)</th>
-                  <th style="padding:8px 6px;width:36px;"></th>
-                </tr>
-              </thead>
-              <tbody id="bill-items-tbody">
-                <tr class="bill-item-row" style="border-bottom:1px solid var(--border-light);">
-                  <td style="padding:8px 6px;text-align:center;color:var(--text-light);font-size:0.82rem;">1</td>
-                  <td style="padding:6px;"><input type="text" class="form-control form-control-sm bill-item-name" list="bill-prods-dl" placeholder="Product name" autocomplete="off"/></td>
-                  <td style="padding:6px;"><input type="number" class="form-control form-control-sm bill-item-qty" min="1" value="1" placeholder="1" style="text-align:center;"/></td>
-                  <td style="padding:6px;"><input type="number" class="form-control form-control-sm bill-item-price" min="0" placeholder="0" style="text-align:right;"/></td>
-                  <td style="padding:6px;"><input type="number" class="form-control form-control-sm bill-item-total" readonly placeholder="0" style="text-align:right;background:var(--cream-2);"/></td>
-                  <td style="padding:6px;text-align:center;"><button type="button" class="btn-icon remove-bill-row" title="Remove" style="color:#c62828;width:28px;height:28px;font-size:0.9rem;">✕</button></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <datalist id="bill-prods-dl">${prods.map(p=>`<option value="${esc(p.name)}" data-price="${getProductBasePrice(p)}"/>`).join('')}</datalist>
-          <button type="button" class="btn btn-outline btn-sm" id="add-bill-item-btn" style="margin-top:10px;">+ Add Item</button>
-        </div>
-
-        <!-- Pricing Summary -->
-        <div class="card" style="margin-bottom:20px;padding:18px;">
-          <div style="font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:14px;">Pricing Summary</div>
-          <div style="display:flex;flex-direction:column;gap:12px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:0.9rem;color:var(--text-medium);">Subtotal</span>
-              <span id="bill-subtotal" style="font-weight:600;font-size:0.9rem;">₹0</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
-              <span style="font-size:0.9rem;color:var(--text-medium);">Discount (Optional)</span>
-              <div style="display:flex;align-items:center;gap:8px;">
-                <select class="form-control form-control-sm" id="bill-discount-type" style="width:70px;">
-                  <option value="amount">₹</option>
-                  <option value="percent">%</option>
-                </select>
-                <input type="number" class="form-control form-control-sm" id="bill-discount-val" min="0" placeholder="0" style="width:90px;text-align:right;"/>
-              </div>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:0.9rem;color:var(--text-medium);">Taxable Amount</span>
-              <span id="bill-taxable" style="font-weight:600;font-size:0.9rem;">₹0</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
-              <span style="font-size:0.9rem;color:var(--text-medium);">GST (%)</span>
-              <input type="number" class="form-control form-control-sm" id="bill-gst-rate" min="0" max="28" placeholder="0" value="0" style="width:90px;text-align:right;"/>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:0.9rem;color:var(--text-medium);">GST Amount</span>
-              <span id="bill-gst-amount" style="font-weight:600;font-size:0.9rem;">₹0</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px;border-top:2px solid var(--gold-light);">
-              <span style="font-size:1rem;font-weight:700;">Grand Total</span>
-              <span id="bill-grand-total" style="font-size:1.3rem;font-weight:700;color:var(--gold-dark);font-family:var(--font-serif);">₹0</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Payment Details -->
-        <div class="card" style="margin-bottom:8px;padding:18px;">
-          <div style="font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:14px;">Payment Details <span style="color:#c62828;">*</span> Required</div>
-          <div class="pay-mode-select" style="margin-bottom:14px;flex-wrap:wrap;">
-            ${['Cash','UPI','Card','Online'].map(pm=>`<label class="pay-mode-btn" id="bill-pay-${pm.toLowerCase()}">
-              <input type="radio" name="billPayMode" value="${pm}" style="display:none;"/>${pm==='Cash'?'💵':pm==='UPI'?'📱':pm==='Card'?'💳':'🌐'} ${pm}
-            </label>`).join('')}
-          </div>
-          <div class="grid-2" style="gap:14px;">
-            <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label">Amount Paid (₹)</label>
-              <input type="number" class="form-control" id="bill-amount-paid" min="0" placeholder="0"/>
-            </div>
-            <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label">Balance Amount (₹)</label>
-              <input type="number" class="form-control" id="bill-balance" readonly placeholder="0" style="background:var(--cream-2);"/>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer" style="justify-content:flex-end;gap:10px;">
-        <button class="btn btn-ghost" data-close-modal="billing">Cancel</button>
-        <button class="btn btn-gold btn-lg" id="generate-invoice-btn">🧾 &nbsp; Generate Invoice</button>
-      </div>
-    </div>
-  </div>`;
-}
-
-function renderViewBillModal(billId) {
-  const bill = DB.getBills().find(b => b.id === billId);
-  if (!bill) return '';
-  const shop = DB.getShop();
-  return `<div class="modal-overlay" id="view-bill-overlay">
-    <div class="modal animate-slideUp" style="max-width:560px;width:95vw;">
-      <div class="modal-header no-print">
-        <div class="modal-title">GST Invoice</div>
-        <button class="modal-close" data-close-modal="view-bill">✕</button>
-      </div>
-      <div class="modal-body" style="max-height:75vh;overflow-y:auto;">
-        ${renderGSTInvoice(bill, shop)}
-        <div id="billing-action-result"></div>
-      </div>
-      <div class="modal-footer no-print" style="gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-ghost" data-close-modal="view-bill">Close</button>
-        <button class="btn btn-outline" id="wa-bill-btn" data-bill-id="${esc(bill.id)}">💬 &nbsp; WhatsApp</button>
-        <button class="btn btn-outline" id="print-bill-btn" data-bill-id="${esc(bill.id)}">🖨️ &nbsp; Print</button>
-        <button class="btn btn-gold" id="parallel-action-btn" data-bill-id="${esc(bill.id)}">⚡ &nbsp; Print &amp; WhatsApp</button>
-      </div>
-    </div>
-  </div>`;
-}
-
-function renderGSTInvoice(bill, shop) {
-  const items = bill.items || [];
-  const sub = bill.subtotal || items.reduce((s,i) => s + i.qty * i.price, 0);
-  const discAmt = bill.discountAmount || 0;
-  const taxable = bill.taxableAmount || (sub - discAmt);
-  const gstAmt = bill.gstAmount || 0;
-  const grand = bill.grandTotal || (taxable + gstAmt);
-  const amtPaid = bill.amountPaid || 0;
-  const balance = bill.balance || 0;
-
-  return `<div class="gst-invoice">
-    <div class="invoice-header">
-      <div class="invoice-shop-name">${esc(shop?.name||'Shop')}</div>
-      ${shop?.address?`<div class="invoice-shop-sub">${esc(shop.address)}</div>`:''}
-      ${shop?.phone?`<div class="invoice-shop-sub">📞 ${esc(shop.phone)}</div>`:''}
-      ${shop?.gst?`<div class="invoice-gst-tag">GSTIN: ${esc(shop.gst)}</div>`:''}
-    </div>
-    <div class="invoice-center-divider">— GST INVOICE —</div>
-    <div class="invoice-meta-row">
-      <div><span class="invoice-lbl">Bill No:</span> <strong>${esc(bill.billNo||bill.id.slice(-8).toUpperCase())}</strong></div>
-      <div><span class="invoice-lbl">Date:</span> ${fmtDate(bill.date)}</div>
-    </div>
-    <div class="invoice-cust-row">
-      <div><span class="invoice-lbl">Customer:</span> ${esc(bill.customerName||'Guest')}</div>
-      ${bill.customerPhone?`<div><span class="invoice-lbl">Phone:</span> ${esc(bill.customerPhone)}</div>`:''}
-    </div>
-    <div class="invoice-dashed-line"></div>
-    <table class="invoice-items-table">
-      <thead><tr>
-        <th style="width:30px;">Sr.</th>
-        <th>Product</th>
-        <th style="text-align:center;">Qty</th>
-        <th style="text-align:right;">Rate</th>
-        <th style="text-align:right;">Amount</th>
-      </tr></thead>
-      <tbody>
-        ${items.map((item,i)=>`<tr>
-          <td style="text-align:center;">${i+1}</td>
-          <td>${esc(item.name)}</td>
-          <td style="text-align:center;">${item.qty}</td>
-          <td style="text-align:right;">₹${Number(item.price).toLocaleString('en-IN')}</td>
-          <td style="text-align:right;">₹${Number(item.qty*item.price).toLocaleString('en-IN')}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-    <div class="invoice-dashed-line"></div>
-    <div class="invoice-totals-block">
-      <div class="invoice-total-line"><span>Subtotal</span><span>₹${sub.toLocaleString('en-IN')}</span></div>
-      ${discAmt>0?`<div class="invoice-total-line" style="color:#2e7d32;"><span>Discount${bill.discountType==='percent'?` (${bill.discountValue}%)`:''}:</span><span>−₹${discAmt.toLocaleString('en-IN')}</span></div>`:''}
-      <div class="invoice-total-line"><span>Taxable Amount</span><span>₹${taxable.toLocaleString('en-IN')}</span></div>
-      ${gstAmt>0?`<div class="invoice-total-line"><span>GST (${bill.gstRate||0}%)</span><span>₹${gstAmt.toLocaleString('en-IN')}</span></div>`:''}
-      <div class="invoice-total-line invoice-grand-total-line"><span>Grand Total</span><span>₹${grand.toLocaleString('en-IN')}</span></div>
-    </div>
-    <div class="invoice-dashed-line"></div>
-    <div class="invoice-payment-block">
-      <div class="invoice-total-line"><span>Payment Mode</span><span><strong>${bill.paymentMode==='Cash'?'💵 Cash':bill.paymentMode==='UPI'?'📱 UPI':bill.paymentMode==='Card'?'💳 Card':'🌐 '+(bill.paymentMode||'—')}</strong></span></div>
-      <div class="invoice-total-line"><span>Amount Paid</span><span>₹${amtPaid.toLocaleString('en-IN')}</span></div>
-      ${balance>0?`<div class="invoice-total-line" style="color:#c62828;"><span>Balance Due</span><span>₹${balance.toLocaleString('en-IN')}</span></div>`:'<div class="invoice-total-line" style="color:#2e7d32;"><span>Balance</span><span>✅ Nil</span></div>'}
-    </div>
-    <div class="invoice-dashed-line"></div>
-    <div class="invoice-footer-msg">Thank you for shopping with us! ✦</div>
-    <div class="invoice-footer-shop">${esc(shop?.name||'')}${shop?.phone?' · '+esc(shop.phone):''}</div>
-  </div>`;
-}
-
-function buildWhatsAppGSTBill(bill, shop) {
-  const items = bill.items || [];
-  let m = `🧾 *${shop?.name||'Zara Aura'} — GST Invoice*\n`;
-  if (shop?.address) m += `_${shop.address}_\n`;
-  if (shop?.gst) m += `GSTIN: ${shop.gst}\n`;
-  m += `\n*Bill No:* ${esc(bill.billNo||bill.id.slice(-8).toUpperCase())}\n`;
-  m += `*Date:* ${fmtDate(bill.date)}\n`;
-  m += `*Customer:* ${bill.customerName||'Guest'}\n\n`;
-  m += `*Items:*\n`;
-  items.forEach((item, idx) => { m += `${idx+1}. ${item.name} × ${item.qty} = ₹${(item.qty*item.price).toLocaleString('en-IN')}\n`; });
-  const sub = bill.subtotal || items.reduce((s,i) => s + i.qty*i.price, 0);
-  m += `\n`;
-  if (bill.discountAmount > 0) m += `Discount: −₹${bill.discountAmount.toLocaleString('en-IN')}\n`;
-  if (bill.gstAmount > 0) m += `GST (${bill.gstRate}%): ₹${bill.gstAmount.toLocaleString('en-IN')}\n`;
-  m += `\n*💰 Grand Total: ₹${Number(bill.grandTotal||0).toLocaleString('en-IN')}*\n`;
-  m += `*Payment: ${bill.paymentMode||'—'}*\n\n`;
-  m += `Thank you for shopping with us! 🛍✨\n`;
-  if (shop?.name) m += `— ${shop.name}`;
-  return m;
-}
-
-function sendWhatsAppBill(billId) {
-  const bill = DB.getBills().find(b => b.id === billId);
-  const shop = DB.getShop();
-  if (!bill) { showToast('Bill not found', 'error'); return; }
-  if (!bill.customerPhone) { showToast('No customer phone number — WhatsApp not sent', 'warning'); return; }
-  const msg = buildWhatsAppGSTBill(bill, shop);
-  const phone = bill.customerPhone.replace(/\D/g, '');
-  window.open(`https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`, '_blank');
-}
-
-window._printBill = function(billId) {
-  const bill = DB.getBills().find(b => b.id === billId);
-  const shop = DB.getShop();
-  if (!bill) return;
-  const items = bill.items || [];
-  const printWin = window.open('', '_blank', 'width=420,height=680,scrollbars=yes');
-  if (!printWin) { showToast('Allow popups to print the bill', 'warning'); return; }
-  printWin.document.write(`<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8"/>
-<title>Invoice ${bill.billNo||bill.id.slice(-8).toUpperCase()}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:'Courier New',monospace;font-size:12px;width:80mm;margin:0 auto;padding:10px 8px;color:#000;}
-  .center{text-align:center;}
-  .right{text-align:right;}
-  .shop-name{font-size:15px;font-weight:bold;text-align:center;margin-bottom:3px;}
-  .shop-sub{font-size:10.5px;text-align:center;color:#333;line-height:1.5;}
-  .divider{border-top:1px dashed #000;margin:7px 0;text-align:center;font-size:10.5px;padding-top:4px;font-weight:bold;}
-  .meta{margin:4px 0;font-size:11px;}
-  table{width:100%;border-collapse:collapse;font-size:11px;margin:6px 0;}
-  th{border-bottom:1px solid #000;padding:3px 2px;font-weight:bold;}
-  td{padding:3px 2px;vertical-align:top;}
-  .total-block{margin:6px 0;}
-  .total-row{display:flex;justify-content:space-between;font-size:11px;padding:2px 0;}
-  .grand-row{display:flex;justify-content:space-between;font-size:14px;font-weight:bold;border-top:1px solid #000;padding-top:5px;margin-top:4px;}
-  .footer{text-align:center;font-size:10.5px;margin-top:10px;color:#555;}
-  .print-btn{display:block;margin:14px auto 0;padding:7px 20px;cursor:pointer;font-size:13px;background:#C9A84C;color:#fff;border:none;border-radius:4px;}
-  @media print{.print-btn,.no-print{display:none!important;}body{padding:4px;}}
-</style>
-</head>
-<body>
-<div class="shop-name">${esc(shop?.name||'Shop')}</div>
-${shop?.address?`<div class="shop-sub">${esc(shop.address)}</div>`:''}
-${shop?.phone?`<div class="shop-sub">Tel: ${esc(shop.phone)}</div>`:''}
-${shop?.gst?`<div class="shop-sub">GSTIN: ${esc(shop.gst)}</div>`:''}
-<div class="divider">GST INVOICE</div>
-<div class="meta"><strong>Bill No:</strong> ${esc(bill.billNo||bill.id.slice(-8).toUpperCase())}</div>
-<div class="meta"><strong>Date:</strong> ${fmtDate(bill.date)}</div>
-<div class="meta"><strong>Customer:</strong> ${esc(bill.customerName||'Guest')}</div>
-${bill.customerPhone?`<div class="meta"><strong>Phone:</strong> ${esc(bill.customerPhone)}</div>`:''}
-<div class="divider" style="font-size:0;border-top:1px dashed #000;padding-top:0;"></div>
-<table>
-<thead><tr><th>Sr</th><th>Item</th><th class="center">Qty</th><th class="right">Rate</th><th class="right">Amt</th></tr></thead>
-<tbody>${items.map((item,i)=>`<tr><td class="center">${i+1}</td><td>${esc(item.name)}</td><td class="center">${item.qty}</td><td class="right">₹${Number(item.price).toLocaleString('en-IN')}</td><td class="right">₹${Number(item.qty*item.price).toLocaleString('en-IN')}</td></tr>`).join('')}</tbody>
-</table>
-<div class="divider" style="font-size:0;border-top:1px dashed #000;padding-top:0;"></div>
-<div class="total-block">
-<div class="total-row"><span>Subtotal</span><span>₹${Number(bill.subtotal||0).toLocaleString('en-IN')}</span></div>
-${bill.discountAmount>0?`<div class="total-row"><span>Discount${bill.discountType==='percent'?' ('+bill.discountValue+'%)':''}</span><span>-₹${Number(bill.discountAmount).toLocaleString('en-IN')}</span></div>`:''}
-<div class="total-row"><span>Taxable Amt</span><span>₹${Number(bill.taxableAmount||0).toLocaleString('en-IN')}</span></div>
-${bill.gstAmount>0?`<div class="total-row"><span>GST (${bill.gstRate||0}%)</span><span>₹${Number(bill.gstAmount).toLocaleString('en-IN')}</span></div>`:''}
-<div class="grand-row"><span>TOTAL</span><span>₹${Number(bill.grandTotal||0).toLocaleString('en-IN')}</span></div>
-</div>
-<div class="divider" style="font-size:0;border-top:1px dashed #000;padding-top:0;"></div>
-<div class="total-block">
-<div class="total-row"><strong>Payment:</strong><span>${esc(bill.paymentMode||'—')}</span></div>
-<div class="total-row"><span>Amount Paid</span><span>₹${Number(bill.amountPaid||0).toLocaleString('en-IN')}</span></div>
-${bill.balance>0?`<div class="total-row"><span>Balance</span><span>₹${Number(bill.balance).toLocaleString('en-IN')}</span></div>`:'<div class="total-row"><span>Balance</span><span>NIL</span></div>'}
-</div>
-<div class="footer">Thank you for shopping with us! ✦</div>
-<div class="footer">${esc(shop?.name||'')}</div>
-<button class="print-btn no-print" onclick="window.print();setTimeout(()=>window.close(),500);">🖨 Print Bill</button>
-</body></html>`);
-  printWin.document.close();
-  setTimeout(() => { try { printWin.print(); } catch(_) {} }, 400);
-};
-
-async function executeBillingActions(billId) {
-  const resultEl = document.getElementById('billing-action-result');
-  if (resultEl) {
-    resultEl.innerHTML = `<div style="padding:14px;background:var(--cream-2);border-radius:var(--radius-md);margin-top:14px;">
-      <div style="font-size:0.88rem;font-weight:600;margin-bottom:8px;">⚡ Executing both actions simultaneously…</div>
-      <div id="ba-print-status" style="color:var(--text-medium);font-size:0.82rem;">🖨️ Opening print window…</div>
-      <div id="ba-wa-status" style="color:var(--text-medium);font-size:0.82rem;margin-top:4px;">💬 Preparing WhatsApp…</div>
-    </div>`;
-  }
-
-  const [printRes, waRes] = await Promise.all([
-    new Promise(resolve => {
-      try { window._printBill(billId); resolve({ ok:true }); }
-      catch(e) { resolve({ ok:false, error:e.message }); }
-    }),
-    new Promise(resolve => {
-      try { sendWhatsAppBill(billId); resolve({ ok:true }); }
-      catch(e) { resolve({ ok:false, error:e.message }); }
-    })
-  ]);
-
-  DB.updateBill(billId, { status:'completed' });
-
-  if (resultEl) {
-    resultEl.innerHTML = `<div style="padding:16px;background:#e8f5e9;border-radius:var(--radius-md);border:1px solid #a5d6a7;margin-top:14px;">
-      <div style="font-weight:700;color:#2e7d32;font-size:1rem;margin-bottom:8px;">✦ All Done!</div>
-      <div style="font-size:0.88rem;color:#2e7d32;line-height:2;">
-        ✔ Bill Printed Successfully<br/>
-        ✔ Bill Sent via WhatsApp Successfully<br/>
-        ✔ Order Completed
-      </div>
-    </div>`;
-  }
-
-  render();
-}
-
-function calcBillingTotals() {
-  const rows = document.querySelectorAll('#bill-items-tbody .bill-item-row');
-  let sub = 0;
-  rows.forEach((row, i) => {
-    const qty  = Math.max(1, +row.querySelector('.bill-item-qty')?.value||0);
-    const price = +row.querySelector('.bill-item-price')?.value||0;
-    const total = qty * price;
-    const totalInp = row.querySelector('.bill-item-total');
-    if (totalInp) totalInp.value = total || '';
-    const srEl = row.querySelector('td:first-child');
-    if (srEl) srEl.textContent = i+1;
-    sub += total;
-  });
-
-  const discType = document.getElementById('bill-discount-type')?.value||'amount';
-  const discVal  = +document.getElementById('bill-discount-val')?.value||0;
-  const discAmt  = discType==='percent' ? Math.round(sub * discVal / 100) : discVal;
-  const taxable  = Math.max(0, sub - discAmt);
-  const gstRate  = +document.getElementById('bill-gst-rate')?.value||0;
-  const gstAmt   = Math.round(taxable * gstRate / 100);
-  const grand    = taxable + gstAmt;
-
-  const fmt2 = n => `₹${Number(n).toLocaleString('en-IN')}`;
-  const el = id => document.getElementById(id);
-  if (el('bill-subtotal'))   el('bill-subtotal').textContent   = fmt2(sub);
-  if (el('bill-taxable'))    el('bill-taxable').textContent    = fmt2(taxable);
-  if (el('bill-gst-amount')) el('bill-gst-amount').textContent = fmt2(gstAmt);
-  if (el('bill-grand-total')) el('bill-grand-total').textContent = fmt2(grand);
-
-  // Balance
-  const paid = +el('bill-amount-paid')?.value||0;
-  const bal  = Math.max(0, grand - paid);
-  if (el('bill-balance')) el('bill-balance').value = bal || '';
-
-  return { sub, discAmt, taxable, gstAmt, grand, discType, discVal, gstRate };
 }
 
 /* ═══════════════════════════════════════════════════
@@ -4861,8 +4365,8 @@ function attachListeners() {
 
   /* Close modals */
   onAll('[data-close-modal]','click', ()=>{state.modalOpen=null;state.editingId=null;render();});
-  ['product-modal-overlay','emp-modal-overlay','stock-modal-overlay','order-bill-overlay','product-detail-overlay','salary-modal-overlay','billing-modal-overlay','view-bill-overlay'].forEach(id=>{
-    on(`#${id}`,'click', e=>{if(e.target.id===id){state.modalOpen=null;state.currentBillId=null;render();}});
+  ['product-modal-overlay','emp-modal-overlay','stock-modal-overlay','order-bill-overlay','product-detail-overlay','salary-modal-overlay'].forEach(id=>{
+    on(`#${id}`,'click', e=>{if(e.target.id===id){state.modalOpen=null;render();}});
   });
 
   /* Categories */
@@ -5071,166 +4575,6 @@ function attachListeners() {
 
   /* Orders */
   onAll('[data-view-order]','click', e=>{state.viewingOrderId=e.currentTarget.dataset.viewOrder;state.modalOpen='order-bill';render();});
-
-  /* ── Billing ── */
-  on('#new-bill-btn','click', ()=>{ state.modalOpen='billing'; render(); });
-
-  /* View bill */
-  onAll('[data-view-bill]','click', e=>{
-    state.currentBillId=e.currentTarget.dataset.viewBill;
-    state.modalOpen='view-bill';
-    render();
-  });
-
-  /* Close billing/view-bill overlays by clicking outside */
-  on('#billing-modal-overlay','click', e=>{ if(e.target.id==='billing-modal-overlay'){state.modalOpen=null;render();} });
-  on('#view-bill-overlay','click', e=>{ if(e.target.id==='view-bill-overlay'){state.modalOpen=null;state.currentBillId=null;render();} });
-
-  /* Auto-fill phone when customer selected from datalist */
-  on('#bill-cust-name','input', e=>{
-    const name = e.target.value.trim();
-    const cust = DB.getCustomers().find(c=>c.name===name);
-    const phoneEl = document.getElementById('bill-cust-phone');
-    if (cust && phoneEl && !phoneEl.value) phoneEl.value = cust.whatsapp||'';
-  });
-
-  /* Auto-fill price when product selected from datalist */
-  document.addEventListener('input', function(e){
-    if (!e.target.classList.contains('bill-item-name')) return;
-    const name = e.target.value.trim();
-    const prod = DB.getProducts().find(p=>p.name===name);
-    if (!prod) return;
-    const row = e.target.closest('.bill-item-row');
-    if (!row) return;
-    const priceInp = row.querySelector('.bill-item-price');
-    if (priceInp && !priceInp.value) {
-      priceInp.value = getProductBasePrice(prod) || '';
-    }
-    calcBillingTotals();
-  });
-
-  /* Live totals — delegated for bill items */
-  document.addEventListener('input', function(e){
-    const el = e.target;
-    if (el.matches('.bill-item-qty,.bill-item-price,#bill-discount-val,#bill-gst-rate,#bill-discount-type,#bill-amount-paid')) {
-      calcBillingTotals();
-    }
-  });
-  document.addEventListener('change', function(e){
-    if (e.target.matches('#bill-discount-type,input[name="billPayMode"]')) {
-      calcBillingTotals();
-    }
-    if (e.target.matches('input[name="billPayMode"]')) {
-      document.querySelectorAll('.pay-mode-btn').forEach(lbl=>{
-        lbl.classList.toggle('selected', lbl.querySelector('input')?.value===e.target.value);
-      });
-    }
-  });
-
-  /* Add bill item row */
-  on('#add-bill-item-btn','click', ()=>{
-    const tbody = document.getElementById('bill-items-tbody');
-    if (!tbody) return;
-    const rows = tbody.querySelectorAll('.bill-item-row');
-    const row = document.createElement('tr');
-    row.className = 'bill-item-row';
-    row.style.borderBottom = '1px solid var(--border-light)';
-    row.innerHTML = `
-      <td style="padding:8px 6px;text-align:center;color:var(--text-light);font-size:0.82rem;">${rows.length+1}</td>
-      <td style="padding:6px;"><input type="text" class="form-control form-control-sm bill-item-name" list="bill-prods-dl" placeholder="Product name" autocomplete="off"/></td>
-      <td style="padding:6px;"><input type="number" class="form-control form-control-sm bill-item-qty" min="1" value="1" style="text-align:center;"/></td>
-      <td style="padding:6px;"><input type="number" class="form-control form-control-sm bill-item-price" min="0" placeholder="0" style="text-align:right;"/></td>
-      <td style="padding:6px;"><input type="number" class="form-control form-control-sm bill-item-total" readonly placeholder="0" style="text-align:right;background:var(--cream-2);"/></td>
-      <td style="padding:6px;text-align:center;"><button type="button" class="btn-icon remove-bill-row" title="Remove" style="color:#c62828;width:28px;height:28px;font-size:0.9rem;">✕</button></td>`;
-    tbody.appendChild(row);
-    row.querySelector('.bill-item-name')?.focus();
-  });
-
-  /* Remove bill item row (delegated) */
-  document.addEventListener('click', function(e){
-    if (!e.target.closest('.remove-bill-row')) return;
-    const row = e.target.closest('.bill-item-row');
-    const tbody = document.getElementById('bill-items-tbody');
-    if (!tbody) return;
-    if (tbody.querySelectorAll('.bill-item-row').length > 1) {
-      row?.remove();
-      calcBillingTotals();
-    } else {
-      showToast('At least one item is required', 'error');
-    }
-  });
-
-  /* Generate Invoice */
-  on('#generate-invoice-btn','click', ()=>{
-    const custName  = document.getElementById('bill-cust-name')?.value.trim()||'';
-    const custPhone = document.getElementById('bill-cust-phone')?.value.trim()||'';
-    const payMode   = document.querySelector('input[name="billPayMode"]:checked')?.value||'';
-
-    if (!payMode) { showToast('Please select a payment method', 'error'); return; }
-
-    const rows = document.querySelectorAll('#bill-items-tbody .bill-item-row');
-    const items = [];
-    let hasItem = false;
-    rows.forEach((row, i) => {
-      const name  = row.querySelector('.bill-item-name')?.value.trim();
-      const qty   = Math.max(1, +row.querySelector('.bill-item-qty')?.value||1);
-      const price = +row.querySelector('.bill-item-price')?.value||0;
-      if (name && price > 0) { items.push({ name, qty, price, total: qty*price }); hasItem = true; }
-    });
-    if (!hasItem) { showToast('Add at least one item with name and price', 'error'); return; }
-
-    const totals = calcBillingTotals();
-    const amtPaid = +document.getElementById('bill-amount-paid')?.value||totals.grand;
-    const balance = Math.max(0, totals.grand - amtPaid);
-
-    const bill = {
-      id:          uid(),
-      billNo:      generateBillNo(),
-      date:        Date.now(),
-      customerName: custName||'Guest',
-      customerPhone: custPhone,
-      items,
-      subtotal:      totals.sub,
-      discountType:  totals.discType,
-      discountValue: totals.discVal,
-      discountAmount: totals.discAmt,
-      taxableAmount: totals.taxable,
-      gstRate:       totals.gstRate,
-      gstAmount:     totals.gstAmt,
-      grandTotal:    totals.grand,
-      paymentMode:   payMode,
-      amountPaid:    amtPaid,
-      balance,
-      status:        'bill-generated',
-    };
-
-    DB.addBill(bill);
-    showToast(`✅ Invoice ${bill.billNo} generated!`, 'success');
-
-    // Close billing modal, open view-bill modal
-    state.modalOpen = 'view-bill';
-    state.currentBillId = bill.id;
-    render();
-
-    // Auto-execute: print + WhatsApp simultaneously after short delay
-    setTimeout(() => executeBillingActions(bill.id), 600);
-  });
-
-  /* WhatsApp bill from view modal */
-  on('#wa-bill-btn','click', e=>{
-    const billId = e.currentTarget.dataset.billId;
-    sendWhatsAppBill(billId);
-  });
-
-  /* Print bill from view modal */
-  on('#print-bill-btn','click', e=>{
-    window._printBill(e.currentTarget.dataset.billId);
-  });
-
-  /* Print + WhatsApp parallel */
-  on('#parallel-action-btn','click', e=>{
-    executeBillingActions(e.currentTarget.dataset.billId);
-  });
 
   /* hasSizes toggle removed — sizes always shown */
 

@@ -1705,75 +1705,13 @@ function renderAdminEmployees() {
         </div></td></tr>`;}).join('')}
       </tbody></table></div>`}
 
-    <!-- Attendance Log Section -->
-    ${renderAttendanceLog()}
-
     ${state.modalOpen==='employee'?renderEmployeeModal():''}
     ${state.modalOpen==='salary'?renderAdminSalaryModal(state.salaryEmpId):''}
   </div>`;
 }
 
-function renderAttendanceLog() {
-  const allAttendance = DB.getAttendance();
-  const filter = state.attendanceFilter || 'all';
-  const todayStr = new Date().toISOString().slice(0,10);
-  const now = Date.now();
-  const weekAgo = now - 7*86400000;
-  const monthAgo = now - 30*86400000;
-  let records = allAttendance;
-  if(filter==='today') records = allAttendance.filter(a=>a.date===todayStr);
-  else if(filter==='week') records = allAttendance.filter(a=>a.ts&&a.ts>=weekAgo);
-  else if(filter==='month') records = allAttendance.filter(a=>a.ts&&a.ts>=monthAgo);
-  else if(filter==='custom'){
-    const from=state.attendanceDateFrom, to=state.attendanceDateTo;
-    records=allAttendance.filter(a=>(!from||a.date>=from)&&(!to||a.date<=to));
-  }
-  records=[...records].sort((a,b)=>(b.ts||0)-(a.ts||0));
-  const filterLabels={today:'Today',week:'This Week',month:'This Month',custom:'Custom Range',all:'All Time'};
-  return `
-  <div style="margin-top:32px;border-top:1px solid var(--border-light);padding-top:24px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-      <div>
-        <div class="dash-page-title" style="margin:0;font-size:1.2rem;">📋 Attendance Log</div>
-        <div style="font-size:0.8rem;color:var(--text-light);margin-top:2px;">Employee–customer service records</div>
-      </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-        ${['today','week','month','all'].map(f=>`
-          <button class="period-tab-btn${filter===f?' active':''}" data-att-filter="${f}" style="font-size:0.72rem;padding:4px 10px;">${filterLabels[f]}</button>
-        `).join('')}
-        <button class="period-tab-btn${filter==='custom'?' active':''}" data-att-filter="custom" style="font-size:0.72rem;padding:4px 10px;">📅 Custom</button>
-      </div>
-    </div>
-    ${filter==='custom'?`
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
-      <div class="form-group" style="margin:0;">
-        <label class="form-label" style="font-size:0.72rem;">From</label>
-        <input type="date" class="form-control form-control-sm" id="att-date-from" value="${esc(state.attendanceDateFrom)}" style="width:140px;"/>
-      </div>
-      <div class="form-group" style="margin:0;">
-        <label class="form-label" style="font-size:0.72rem;">To</label>
-        <input type="date" class="form-control form-control-sm" id="att-date-to" value="${esc(state.attendanceDateTo)}" style="width:140px;"/>
-      </div>
-      <button class="btn btn-gold btn-sm" id="att-date-apply-btn">Apply</button>
-    </div>`:''}
-    ${records.length===0
-      ?`<div style="text-align:center;padding:32px 0;color:var(--text-light);font-size:0.88rem;">No attendance records for selected period</div>`
-      :`<div class="table-wrap"><table>
-        <thead><tr>
-          <th>#</th><th>Date</th><th>Time</th>
-          <th>Employee</th><th>Customer</th><th>Order ID</th>
-        </tr></thead>
-        <tbody>${records.map((a,i)=>`<tr>
-          <td style="color:var(--text-xlight);font-size:0.78rem;">${i+1}</td>
-          <td style="font-size:0.82rem;">${esc(a.date||'—')}</td>
-          <td style="font-size:0.82rem;color:var(--text-light);">${esc(a.time||'—')}</td>
-          <td><span style="font-weight:600;color:var(--gold-dark);">${esc(a.employeeName||'—')}</span></td>
-          <td style="font-size:0.82rem;">${esc(a.customerName||'—')}</td>
-          <td><code style="font-size:0.7rem;background:var(--cream-2);padding:2px 6px;border-radius:4px;">#${(a.orderId||'').slice(-6).toUpperCase()||'—'}</code></td>
-        </tr>`).join('')}</tbody>
-      </table></div>`}
-  </div>`;
-}
+/* Attendance log removed per admin cleanup */
+function renderAttendanceLog() { return ''; }
 
 function renderAdminSalaryModal(empId) {
   const emp = DB.getEmployees().find(e=>e.id===empId); if(!emp) return '';
@@ -2260,12 +2198,9 @@ function renderEmpOrderNotifications() {
           </div>`).join('')}
         </div>
         ${o.status==='accepted'?
-          `<div class="emp-order-accepted">✅ Accepted — Ready in ${o.estimatedTime} min (by ${esc(o.employeeName||'you')})</div>`:
+          `<div class="emp-order-accepted">✅ Accepted — Being packed (by ${esc(o.employeeName||'you')})</div>`:
           `<div class="emp-order-actions">
-            <span style="font-size:0.82rem;font-weight:600;color:var(--text-medium);">Set packing time:</span>
-            <button class="emp-accept-btn btn btn-sm" data-oid="${esc(o.id)}" data-time="10">⏱ 10 min</button>
-            <button class="emp-accept-btn btn btn-sm" data-oid="${esc(o.id)}" data-time="15">⏱ 15 min</button>
-            <button class="emp-accept-btn btn btn-sm" data-oid="${esc(o.id)}" data-time="20">⏱ 20 min</button>
+            <button class="emp-accept-btn btn btn-gold btn-sm" data-oid="${esc(o.id)}" data-time="0">✔ Accept Order</button>
           </div>`
         }
       </div>`;
@@ -2936,6 +2871,7 @@ function renderCartSidebar() {
           <button class="btn btn-gold btn-block" id="cart-whatsapp-btn" style="font-size:0.82rem;padding:10px 8px;">📱 WhatsApp</button>
           <button class="btn btn-outline btn-block" id="cart-print-btn" style="font-size:0.82rem;padding:10px 8px;">🖨️ Print</button>
         </div>
+        <button class="btn btn-outline btn-block" id="cart-both-btn" style="margin-top:8px;font-size:0.82rem;padding:9px 8px;">⚡ Both (WhatsApp + Print)</button>
       </div>
       ` : `
       <button class="btn btn-ghost btn-block btn-lg" style="margin-top:10px;opacity:0.5;cursor:default;" disabled>✦ &nbsp; Select payment to continue</button>
@@ -2984,7 +2920,9 @@ function renderAdminBilling() {
           <div style="font-size:0.75rem;color:var(--text-light);margin-top:2px;">These values are auto-applied to all invoices &amp; customer bills</div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;">
+      <!-- MANDATORY FIELDS -->
+      <div style="font-size:0.7rem;letter-spacing:0.1em;text-transform:uppercase;color:#c62828;font-weight:700;margin-bottom:8px;">✔ Mandatory Fields</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px;">
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Shop Name <span class="required">*</span></label>
           <input type="text" class="form-control form-control-sm" id="bs-name" value="${esc(shop.name||'')}"/>
@@ -2993,25 +2931,48 @@ function renderAdminBilling() {
           <label class="form-label">Phone <span class="required">*</span></label>
           <input type="tel" class="form-control form-control-sm" id="bs-phone" value="${esc(shop.phone||'')}" maxlength="10"/>
         </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">Email <span class="optional-tag">(Optional)</span></label>
-          <input type="email" class="form-control form-control-sm" id="bs-email" value="${esc(shop.email||'')}" placeholder="shop@email.com"/>
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">GST Number</label>
-          <input type="text" class="form-control form-control-sm" id="bs-gst" value="${esc(shop.gst||'')}" maxlength="15" style="text-transform:uppercase;" placeholder="15-char GSTIN"/>
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-          <label class="form-label">GST Rate (%) <span style="color:var(--gold-dark);">*</span></label>
-          <input type="number" class="form-control form-control-sm" id="bs-gst-rate" value="${shop.gstRate||0}" min="0" max="28" placeholder="e.g. 18"/>
-          <small class="form-hint">Auto-applied to all checkout invoices</small>
-        </div>
       </div>
-      <div class="form-group" style="margin-top:12px;margin-bottom:0;">
+      <div class="form-group" style="margin-bottom:14px;">
         <label class="form-label">Shop Address <span class="required">*</span></label>
         <textarea class="form-control form-control-sm" id="bs-address" style="min-height:48px;resize:vertical;">${esc(shop.address||'')}</textarea>
       </div>
-      <div style="margin-top:12px;text-align:right;">
+
+      <!-- OPTIONAL FIELDS -->
+      <div style="font-size:0.7rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:8px;padding-top:10px;border-top:1px dashed var(--border-light);">⚪ Optional Fields — shown on invoice only when filled</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Email</label>
+          <input type="email" class="form-control form-control-sm" id="bs-email" value="${esc(shop.email||'')}" placeholder="shop@email.com"/>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">GST Number (GSTIN)</label>
+          <input type="text" class="form-control form-control-sm" id="bs-gst" value="${esc(shop.gst||'')}" maxlength="15" style="text-transform:uppercase;" placeholder="15-char GSTIN"/>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">GST Rate % <span style="font-size:0.68rem;color:var(--text-light);">(total)</span></label>
+          <input type="number" class="form-control form-control-sm" id="bs-gst-rate" value="${shop.gstRate||''}" min="0" max="28" placeholder="e.g. 18"/>
+          <small class="form-hint">Used if SGST/CGST not set</small>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">SGST Rate %</label>
+          <input type="number" class="form-control form-control-sm" id="bs-sgst-rate" value="${shop.sgstRate||''}" min="0" max="14" placeholder="e.g. 9"/>
+          <small class="form-hint">Half of total GST</small>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">CGST Rate %</label>
+          <input type="number" class="form-control form-control-sm" id="bs-cgst-rate" value="${shop.cgstRate||''}" min="0" max="14" placeholder="e.g. 9"/>
+          <small class="form-hint">Half of total GST</small>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">UPI / GPay ID</label>
+          <input type="text" class="form-control form-control-sm" id="bs-upi-id" value="${esc(shop.upiId||'')}" placeholder="yourshop@upi"/>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:12px;margin-bottom:0;">
+        <label class="form-label">Invoice Footer Message</label>
+        <input type="text" class="form-control form-control-sm" id="bs-bill-footer" value="${esc(shop.billFooter||'Thank you for visiting again')}" placeholder="Thank you for visiting again"/>
+      </div>
+      <div style="margin-top:14px;text-align:right;">
         <button class="btn btn-gold btn-sm" id="save-billing-settings-btn">💾 &nbsp; Save Settings</button>
       </div>
     </div>
@@ -3205,15 +3166,18 @@ function renderViewBillModal(billId) {
 }
 
 function renderGSTInvoice(bill, shop) {
-  const items = bill.items || [];
-  const sub     = bill.subtotal      || items.reduce((s,i) => s + i.qty * i.price, 0);
-  const discAmt = bill.discountAmount || 0;
-  const taxable = bill.taxableAmount  || (sub - discAmt);
-  const gstAmt  = bill.gstAmount      || 0;
-  const grand   = bill.grandTotal     || (taxable + gstAmt);
-  const amtPaid = bill.amountPaid     || 0;
-  const balance = bill.balance        || 0;
-  const pmIcon  = bill.paymentMode==='Cash'?'💵':bill.paymentMode==='Card'?'💳':'📱';
+  const items    = bill.items || [];
+  const sub      = bill.subtotal      || items.reduce((s,i) => s + i.qty * i.price, 0);
+  const discAmt  = bill.discountAmount || 0;
+  const taxable  = bill.taxableAmount  || (sub - discAmt);
+  const sgstAmt  = bill.sgstAmount     || 0;
+  const cgstAmt  = bill.cgstAmount     || 0;
+  const gstAmt   = bill.gstAmount      || 0;
+  const grand    = bill.grandTotal     || (taxable + gstAmt);
+  const amtPaid  = bill.amountPaid     || 0;
+  const balance  = bill.balance        || 0;
+  const pmIcon   = bill.paymentMode==='Cash'?'💵':bill.paymentMode==='Card'?'💳':'📱';
+  const useSplit = (sgstAmt > 0 || cgstAmt > 0); // show SGST/CGST separately
 
   return `<div class="gst-invoice">
     <!-- ── SHOP HEADER ── -->
@@ -3221,6 +3185,7 @@ function renderGSTInvoice(bill, shop) {
       <div class="invoice-shop-name">${esc(shop?.name||'Shop')}</div>
       ${shop?.address?`<div class="invoice-shop-sub">${esc(shop.address)}</div>`:''}
       ${shop?.phone?`<div class="invoice-shop-sub">📞 ${esc(shop.phone)}</div>`:''}
+      ${shop?.email?`<div class="invoice-shop-sub">✉ ${esc(shop.email)}</div>`:''}
       ${shop?.gst?`<div class="invoice-gst-tag">GSTIN: ${esc(shop.gst)}</div>`:''}
     </div>
 
@@ -3274,10 +3239,19 @@ function renderGSTInvoice(bill, shop) {
         <span style="color:#666;">Taxable Amount</span>
         <span>₹${taxable.toLocaleString('en-IN')}</span>
       </div>
-      ${gstAmt>0?`<div class="invoice-total-line">
+      ${useSplit?`
+        ${sgstAmt>0?`<div class="invoice-total-line">
+          <span style="color:#666;">SGST @ ${bill.sgstRate||0}%</span>
+          <span>₹${sgstAmt.toLocaleString('en-IN')}</span>
+        </div>`:''}
+        ${cgstAmt>0?`<div class="invoice-total-line">
+          <span style="color:#666;">CGST @ ${bill.cgstRate||0}%</span>
+          <span>₹${cgstAmt.toLocaleString('en-IN')}</span>
+        </div>`:''}`
+      :(gstAmt>0?`<div class="invoice-total-line">
         <span style="color:#666;">GST @ ${bill.gstRate||0}%</span>
         <span>₹${gstAmt.toLocaleString('en-IN')}</span>
-      </div>`:''}
+      </div>`:'')}
       <div class="invoice-total-line invoice-grand-total-line">
         <span>Grand Total</span>
         <span>₹${grand.toLocaleString('en-IN')}</span>
@@ -3307,12 +3281,12 @@ function renderGSTInvoice(bill, shop) {
 
     ${shop?.upiId?`<div class="invoice-payment-block" style="border-top:none;padding-top:0;">
       <div class="invoice-total-line">
-        <span style="color:#666;">UPI / PhonePe / GPay</span>
+        <span style="color:#666;">UPI / GPay / PhonePe</span>
         <span style="font-weight:600;">📱 ${esc(shop.upiId)}</span>
       </div>
     </div>`:''}
     <div class="invoice-dashed-line"></div>
-    <div class="invoice-footer-msg">${esc(shop?.billFooter||'Thank you for shopping with us! ✦')}</div>
+    <div class="invoice-footer-msg">${esc(shop?.billFooter||'Thank you for visiting again')}</div>
     <div class="invoice-footer-shop">${esc(shop?.name||'')}${shop?.phone?' · 📞 '+esc(shop.phone):''}</div>
   </div>`;
 }
@@ -3495,13 +3469,18 @@ function calcBillingTotals() {
 /* ═══════════════════════════════════════════════════
    17c. ORDER → GST INVOICE HELPERS
 ═══════════════════════════════════════════════════ */
-/* Convert a cart order into a bill-like object applying shop GST rate */
+/* Convert a cart order into a bill-like object applying shop GST / SGST / CGST */
 function orderToInvoiceBill(order, shop) {
-  const gstRate = +(shop?.gstRate || 0);
-  const items   = order.items || [];
-  const sub     = items.reduce((s,i) => s + i.qty * i.price, 0);
-  const gstAmt  = Math.round(sub * gstRate / 100);
-  const grand   = sub + gstAmt;
+  const gstRate  = +(shop?.gstRate  || 0);
+  const sgstRate = +(shop?.sgstRate || 0);
+  const cgstRate = +(shop?.cgstRate || 0);
+  const items    = order.items || [];
+  const sub      = items.reduce((s,i) => s + i.qty * i.price, 0);
+  // If SGST+CGST configured separately, use them; else use total gstRate
+  const sgstAmt  = sgstRate > 0 ? Math.round(sub * sgstRate / 100) : 0;
+  const cgstAmt  = cgstRate > 0 ? Math.round(sub * cgstRate / 100) : 0;
+  const gstAmt   = (sgstAmt + cgstAmt) || Math.round(sub * gstRate / 100);
+  const grand    = sub + gstAmt;
   return {
     id: order.id,
     billNo: '#' + order.id.slice(-8).toUpperCase(),
@@ -3513,6 +3492,8 @@ function orderToInvoiceBill(order, shop) {
     discountType: 'amount', discountValue: 0, discountAmount: 0,
     taxableAmount: sub,
     gstRate, gstAmount: gstAmt,
+    sgstRate, sgstAmount: sgstAmt,
+    cgstRate, cgstAmount: cgstAmt,
     grandTotal: grand,
     paymentMode: order.paymentMode || 'Cash',
     amountPaid: grand, balance: 0,
@@ -3521,14 +3502,18 @@ function orderToInvoiceBill(order, shop) {
 
 /* Convert current cart array into a preview bill object (before order is created) */
 function cartToInvoiceBill(cart, shop, paymentMode) {
-  const gstRate = +(shop?.gstRate || 0);
-  const sub     = cart.reduce((s,i) => s + i.qty * i.price, 0);
-  const gstAmt  = Math.round(sub * gstRate / 100);
-  const grand   = sub + gstAmt;
-  const session = DB.getSession();
+  const gstRate  = +(shop?.gstRate  || 0);
+  const sgstRate = +(shop?.sgstRate || 0);
+  const cgstRate = +(shop?.cgstRate || 0);
+  const sub      = cart.reduce((s,i) => s + i.qty * i.price, 0);
+  const sgstAmt  = sgstRate > 0 ? Math.round(sub * sgstRate / 100) : 0;
+  const cgstAmt  = cgstRate > 0 ? Math.round(sub * cgstRate / 100) : 0;
+  const gstAmt   = (sgstAmt + cgstAmt) || Math.round(sub * gstRate / 100);
+  const grand    = sub + gstAmt;
+  const session  = DB.getSession();
   return {
     id: 'PREVIEW',
-    billNo: '#PREVIEW',
+    billNo: 'PREVIEW',
     date: Date.now(),
     customerName: session?.name || 'Guest',
     customerPhone: session?.phone || '',
@@ -3537,6 +3522,8 @@ function cartToInvoiceBill(cart, shop, paymentMode) {
     discountType: 'amount', discountValue: 0, discountAmount: 0,
     taxableAmount: sub,
     gstRate, gstAmount: gstAmt,
+    sgstRate, sgstAmount: sgstAmt,
+    cgstRate, cgstAmount: cgstAmt,
     grandTotal: grand,
     paymentMode: paymentMode || 'Cash',
     amountPaid: grand, balance: 0,
@@ -3621,13 +3608,18 @@ ${shop?.gst?`<div class="center" style="font-size:10px;font-weight:bold;">GSTIN:
 </table>
 <div class="dashed"></div>
 <div class="total-row"><span>Subtotal</span><span>₹${bill.subtotal.toLocaleString('en-IN')}</span></div>
-${bill.gstAmount>0?`<div class="total-row"><span>GST (${bill.gstRate}%)</span><span>₹${bill.gstAmount.toLocaleString('en-IN')}</span></div>`:''}
+${bill.discountAmount>0?`<div class="total-row" style="color:#2e7d32;"><span>Discount</span><span>−₹${bill.discountAmount.toLocaleString('en-IN')}</span></div>`:''}
+${(bill.sgstAmount>0)?`<div class="total-row"><span>SGST (${bill.sgstRate}%)</span><span>₹${bill.sgstAmount.toLocaleString('en-IN')}</span></div>`:''}
+${(bill.cgstAmount>0)?`<div class="total-row"><span>CGST (${bill.cgstRate}%)</span><span>₹${bill.cgstAmount.toLocaleString('en-IN')}</span></div>`:''}
+${(!bill.sgstAmount&&!bill.cgstAmount&&bill.gstAmount>0)?`<div class="total-row"><span>GST (${bill.gstRate}%)</span><span>₹${bill.gstAmount.toLocaleString('en-IN')}</span></div>`:''}
 <div class="total-row grand"><span>GRAND TOTAL</span><span>₹${bill.grandTotal.toLocaleString('en-IN')}</span></div>
 <div class="dashed"></div>
-<div class="total-row"><span>${pmIcon} ${esc(bill.paymentMode)} — PAID ✔</span></div>
+<div class="total-row"><span>Amount Paid</span><span>₹${bill.grandTotal.toLocaleString('en-IN')}</span></div>
+<div class="total-row"><span>Balance</span><span>₹0 — Nil</span></div>
+<div class="total-row" style="margin-top:4px;"><span>${pmIcon} ${esc(bill.paymentMode)} — PAID ✔</span></div>
 ${shop?.upiId?`<div class="center" style="font-size:10px;margin-top:4px;">📱 UPI: ${esc(shop.upiId)}</div>`:''}
 <div class="dashed"></div>
-<div class="footer">${esc(shop?.billFooter||'Thank you for shopping with us!')}</div>
+<div class="footer">${esc(shop?.billFooter||'Thank you for visiting again')}</div>
 <div class="footer" style="font-style:normal;font-weight:bold;margin-top:2px;">— ${esc(shop?.name||'')}</div>
 </body></html>`);
   win.document.close();
@@ -5645,6 +5637,7 @@ function attachListeners() {
   /* Cart bill delivery buttons (shown after payment mode selected) */
   on('#cart-whatsapp-btn','click', () => confirmAndDeliver('whatsapp'));
   on('#cart-print-btn',   'click', () => confirmAndDeliver('print'));
+  on('#cart-both-btn',    'click', () => confirmAndDeliver('both'));
 
   /* Checkout (legacy modal — still wired up as fallback) */
   on('#checkout-btn','click', ()=>{
@@ -5662,22 +5655,31 @@ function attachListeners() {
   /* Save Billing Settings (Admin Billing page) */
   on('#save-billing-settings-btn','click', ()=>{
     const existing = DB.getShop() || {};
+    const sgstRateVal = +(document.getElementById('bs-sgst-rate')?.value||0);
+    const cgstRateVal = +(document.getElementById('bs-cgst-rate')?.value||0);
+    const gstRateVal  = +(document.getElementById('bs-gst-rate')?.value||0);
     const updated = {
       ...existing,
-      name:     document.getElementById('bs-name')?.value.trim()    || existing.name,
-      phone:    document.getElementById('bs-phone')?.value.trim()   || existing.phone,
-      email:    document.getElementById('bs-email')?.value.trim()   || '',
-      gst:      (document.getElementById('bs-gst')?.value.trim()||'').toUpperCase(),
-      address:  document.getElementById('bs-address')?.value.trim() || existing.address,
-      gstRate:  +(document.getElementById('bs-gst-rate')?.value||0),
+      name:       document.getElementById('bs-name')?.value.trim()        || existing.name,
+      phone:      document.getElementById('bs-phone')?.value.trim()       || existing.phone,
+      address:    document.getElementById('bs-address')?.value.trim()     || existing.address,
+      email:      document.getElementById('bs-email')?.value.trim()       || '',
+      gst:        (document.getElementById('bs-gst')?.value.trim()||'').toUpperCase(),
+      gstRate:    gstRateVal,
+      sgstRate:   sgstRateVal,
+      cgstRate:   cgstRateVal,
+      upiId:      document.getElementById('bs-upi-id')?.value.trim()      || '',
+      billFooter: document.getElementById('bs-bill-footer')?.value.trim() || 'Thank you for visiting again',
     };
-    if (!updated.name) { showToast('Shop name is required','error'); return; }
+    if (!updated.name)    { showToast('Shop name is required','error'); return; }
+    if (!updated.phone)   { showToast('Phone number is required','error'); return; }
+    if (!updated.address) { showToast('Shop address is required','error'); return; }
     DB.setShop(updated, DB.getShopId());
     const shopId = DB.getShopId();
     if (firebaseReady && shopId) {
       db.collection('shops').doc(shopId).update({ shopInfo: updated }).catch(console.error);
     }
-    showToast('✅ Billing settings saved! GST rate applied to all new invoices.','success');
+    showToast('✅ Billing settings saved! Invoice will update dynamically.','success');
     render();
   });
 
@@ -5941,25 +5943,12 @@ function attachListeners() {
     </tr>`).join('');
   });
 
-  /* Employee pack time (delegated) */
+  /* Employee pack time (delegated — packing time UI removed, kept for compat) */
   onAll('.pack-time-btn','click', e=>{
-    const ordId=e.currentTarget.dataset.orderId;
-    const time=+e.currentTarget.dataset.time;
-    const session=DB.getSession();
-    DB.updateOrder(ordId,{status:'accepted',estimatedTime:time,employeeId:session?.id,employeeName:session?.name});
-    // Record attendance
-    const ord=DB.getOrders().find(o=>o.id===ordId);
-    if(ord && session?.id){
-      const now=new Date();
-      DB.addAttendance({
-        id:uid(), orderId:ordId,
-        employeeId:session.id, employeeName:session.name||'',
-        customerId:ord.customerId||'', customerName:ord.customerName||'',
-        date:now.toISOString().slice(0,10), time:now.toTimeString().slice(0,5),
-        ts:Date.now()
-      });
-    }
-    showToast(`✅ Order accepted — ${time} min packing time set`,'success');
+    const ordId = e.currentTarget.dataset.orderId;
+    const session = DB.getSession();
+    DB.updateOrder(ordId, {status:'accepted', employeeId:session?.id, employeeName:session?.name});
+    showToast('✅ Order accepted!','success');
     render();
   });
 
@@ -5985,24 +5974,12 @@ function attachListeners() {
 
   /* Coupon section removed */
 
-  /* Employee accept order (new emp-accept-btn) */
+  /* Employee accept order */
   onAll('.emp-accept-btn','click',e=>{
-    const oid=e.currentTarget.dataset.oid, time=+e.currentTarget.dataset.time;
-    const session=DB.getSession();
-    DB.updateOrder(oid,{status:'accepted',estimatedTime:time,employeeId:session?.id,employeeName:session?.name,acceptedAt:Date.now()});
-    // Record attendance
-    const ord=DB.getOrders().find(o=>o.id===oid);
-    if(ord && session?.id){
-      const now=new Date();
-      DB.addAttendance({
-        id:uid(), orderId:oid,
-        employeeId:session.id, employeeName:session.name||'',
-        customerId:ord.customerId||'', customerName:ord.customerName||'',
-        date:now.toISOString().slice(0,10), time:now.toTimeString().slice(0,5),
-        ts:Date.now()
-      });
-    }
-    showToast(`✅ Order accepted — ${time} min packing time set`,'success');
+    const oid = e.currentTarget.dataset.oid;
+    const session = DB.getSession();
+    DB.updateOrder(oid, {status:'accepted', employeeId:session?.id, employeeName:session?.name, acceptedAt:Date.now()});
+    showToast('✅ Order accepted!','success');
     render();
   });
 

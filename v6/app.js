@@ -2089,17 +2089,10 @@ function renderEmpOrderCard(o) {
     </div>
     ${isPending ? `
     <div class="emp-order-actions">
-      <div style="font-size:0.8rem;color:var(--text-medium);margin-bottom:8px;">Set packing time:</div>
-      <div class="pack-time-btns">
-        <button class="pack-time-btn" data-order-id="${o.id}" data-time="5">5 min</button>
-        <button class="pack-time-btn" data-order-id="${o.id}" data-time="10">10 min</button>
-        <button class="pack-time-btn" data-order-id="${o.id}" data-time="15">15 min</button>
-        <button class="pack-time-btn" data-order-id="${o.id}" data-time="20">20 min</button>
-        <button class="pack-time-btn" data-order-id="${o.id}" data-time="30">30 min</button>
-      </div>
+      <button class="emp-accept-btn btn btn-gold btn-sm" data-oid="${esc(o.id)}" data-time="0">✔ Accept Order</button>
     </div>` : `
     <div class="emp-order-accepted">
-      ✅ Packing time: ${o.estimatedTime} min · By: ${esc(o.employeeName||'—')}
+      ✅ Accepted · By: ${esc(o.employeeName||'—')}
       <button class="btn btn-sm btn-gold" data-mark-ready="${o.id}" style="margin-left:8px;">Mark Ready</button>
     </div>`}
   </div>`;

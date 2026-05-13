@@ -833,7 +833,7 @@ function renderLogin(role) {
               <div style="text-align:right;margin-top:-8px;">
                 ${role !== 'super-admin' ? `<button type="button" class="btn-forgot-link" id="forgot-password-link">Forgot Password?</button>` : ''}
               </div>
-              <button type="submit" class="btn btn-gold btn-block btn-lg" id="login-submit-btn">Sign In</button>
+              <button type="button" class="btn btn-gold btn-block btn-lg" id="login-submit-btn">Sign In</button>
             </div>
           </form>
           ${role === 'customer' ? `<div class="divider">or</div>
@@ -4582,16 +4582,18 @@ function attachListeners() {
   on('#sa-link','click', ()=>{state.loginRole='super-admin';navigate('login');});
 
   /* Login */
-  on('#login-form','submit', async e=>{
-    e.preventDefault();
-    const fd=new FormData(e.target), btn=document.getElementById('login-submit-btn');
-    const username=fd.get('username')?.trim(), password=fd.get('password')?.trim();
-    const mobile=fd.get('mobile')?.trim()||'';
+  on('#login-submit-btn','click', async ()=>{
+    const form=document.getElementById('login-form');
+    if(!form) return;
+    const btn=document.getElementById('login-submit-btn');
+    const username=(form.querySelector('[name="username"]')?.value||'').trim();
+    const password=(form.querySelector('[name="password"]')?.value||'').trim();
+    const mobile=(form.querySelector('[name="mobile"]')?.value||'').trim();
+    const attendedBy=(form.querySelector('[name="attendedBy"]')?.value||'').trim();
     if(!username){ showToast('Please enter your username','error'); return; }
     if(state.loginRole==='customer'&&!password&&!mobile){ showToast('Please enter your password or mobile number','error'); return; }
     if(state.loginRole!=='customer'&&state.loginRole!=='super-admin'&&!password){ showToast('Please enter your password','error'); return; }
     if(btn){btn.disabled=true;btn.textContent='Signing in…';}
-    const attendedBy = fd.get('attendedBy')?.trim()||'';
     const credential = password || mobile || '';
     const ok=await login(state.loginRole, username, credential, mobile);
     if(btn){btn.disabled=false;btn.textContent='Sign In';}

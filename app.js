@@ -2920,9 +2920,9 @@ function renderCartSidebar() {
       <div style="margin:12px 0 4px;">
         <div style="font-size:0.78rem;font-weight:600;color:var(--text-medium);margin-bottom:8px;">Payment Mode <span style="color:red;">*</span></div>
         <div class="pay-mode-select">
-          ${['Cash','GPay','PhonePe'].map(pm=>`<label class="pay-mode-btn${state.paymentMode===pm?' selected':''}">
+          ${['Cash','UPI','GPay','PhonePe','Card'].map(pm=>`<label class="pay-mode-btn${state.paymentMode===pm?' selected':''}">
             <input type="radio" name="cartPayMode" value="${pm}" ${state.paymentMode===pm?'checked':''} style="display:none;"/>
-            ${pm==='Cash'?'💵':'📱'} ${pm}
+            ${pm==='Cash'?'💵':pm==='Card'?'💳':'📱'} ${pm}
           </label>`).join('')}
         </div>
       </div>
@@ -2943,6 +2943,7 @@ function generateBillNo() {
 
 function renderAdminBilling() {
   const bills = DB.getBills().slice().reverse();
+  const shop = DB.getShop() || {};
   const statusColor = {
     'order-placed':'#4caf50','processing':'#1976d2',
     'payment-pending':'#f59e0b','payment-completed':'#059669',
@@ -2960,6 +2961,46 @@ function renderAdminBilling() {
         <div class="dash-page-subtitle">${bills.length} bill${bills.length!==1?'s':''} generated</div>
       </div>
       <button class="btn btn-gold" id="new-bill-btn">🧾 &nbsp; Generate New Bill</button>
+    </div>
+
+    <!-- ⚙️ BILLING SETTINGS PANEL -->
+    <div class="card" style="margin-bottom:24px;border-left:4px solid var(--gold-light);">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+        <div>
+          <div style="font-size:0.7rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;">⚙️ Billing Settings</div>
+          <div style="font-size:0.75rem;color:var(--text-light);margin-top:2px;">These values are auto-applied to all invoices &amp; customer bills</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Shop Name <span class="required">*</span></label>
+          <input type="text" class="form-control form-control-sm" id="bs-name" value="${esc(shop.name||'')}"/>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Phone <span class="required">*</span></label>
+          <input type="tel" class="form-control form-control-sm" id="bs-phone" value="${esc(shop.phone||'')}" maxlength="10"/>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Email <span class="optional-tag">(Optional)</span></label>
+          <input type="email" class="form-control form-control-sm" id="bs-email" value="${esc(shop.email||'')}" placeholder="shop@email.com"/>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">GST Number</label>
+          <input type="text" class="form-control form-control-sm" id="bs-gst" value="${esc(shop.gst||'')}" maxlength="15" style="text-transform:uppercase;" placeholder="15-char GSTIN"/>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">GST Rate (%) <span style="color:var(--gold-dark);">*</span></label>
+          <input type="number" class="form-control form-control-sm" id="bs-gst-rate" value="${shop.gstRate||0}" min="0" max="28" placeholder="e.g. 18"/>
+          <small class="form-hint">Auto-applied to all checkout invoices</small>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:12px;margin-bottom:0;">
+        <label class="form-label">Shop Address <span class="required">*</span></label>
+        <textarea class="form-control form-control-sm" id="bs-address" style="min-height:48px;resize:vertical;">${esc(shop.address||'')}</textarea>
+      </div>
+      <div style="margin-top:12px;text-align:right;">
+        <button class="btn btn-gold btn-sm" id="save-billing-settings-btn">💾 &nbsp; Save Settings</button>
+      </div>
     </div>
     ${bills.length===0?`<div class="empty-state"><div class="empty-state-icon">🧾</div>
       <div class="empty-state-title">No bills yet</div>
@@ -3077,7 +3118,7 @@ function renderBillingModal() {
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
               <span style="font-size:0.9rem;color:var(--text-medium);">GST (%)</span>
-              <input type="number" class="form-control form-control-sm" id="bill-gst-rate" min="0" max="28" placeholder="0" value="0" style="width:90px;text-align:right;"/>
+              <input type="number" class="form-control form-control-sm" id="bill-gst-rate" min="0" max="28" placeholder="0" value="${DB.getShop()?.gstRate||0}" style="width:90px;text-align:right;"/>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <span style="font-size:0.9rem;color:var(--text-medium);">GST Amount</span>
@@ -3439,6 +3480,175 @@ function calcBillingTotals() {
 }
 
 /* ═══════════════════════════════════════════════════
+   17c. ORDER → GST INVOICE HELPERS
+═══════════════════════════════════════════════════ */
+/* Convert a cart order into a bill-like object applying shop GST rate */
+function orderToInvoiceBill(order, shop) {
+  const gstRate = +(shop?.gstRate || 0);
+  const items   = order.items || [];
+  const sub     = items.reduce((s,i) => s + i.qty * i.price, 0);
+  const gstAmt  = Math.round(sub * gstRate / 100);
+  const grand   = sub + gstAmt;
+  return {
+    id: order.id,
+    billNo: '#' + order.id.slice(-8).toUpperCase(),
+    date: order.date,
+    customerName: order.customerName || order.guestName || 'Guest',
+    customerPhone: order.customerPhone || '',
+    items,
+    subtotal: sub,
+    discountType: 'amount', discountValue: 0, discountAmount: 0,
+    taxableAmount: sub,
+    gstRate, gstAmount: gstAmt,
+    grandTotal: grand,
+    paymentMode: order.paymentMode || 'Cash',
+    amountPaid: grand, balance: 0,
+  };
+}
+
+/* Well-formatted WhatsApp text invoice for cart orders */
+function buildOrderWhatsAppText(order, shop, cust) {
+  const bill = orderToInvoiceBill(order, shop);
+  const items = bill.items;
+  let m  = `🧾 *${shop?.name||'Zara Aura'} — GST Invoice*\n`;
+  if (shop?.address) m += `📍 ${shop.address}\n`;
+  if (shop?.phone)   m += `📞 ${shop.phone}\n`;
+  if (shop?.email)   m += `✉ ${shop.email}\n`;
+  if (shop?.gst)     m += `GSTIN: ${shop.gst}\n`;
+  m += `\n*Bill No:* ${bill.billNo}\n`;
+  m += `*Date:* ${new Date(bill.date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}\n`;
+  m += `*Customer:* ${cust?.name||bill.customerName}\n\n`;
+  m += `*Items Purchased:*\n`;
+  items.forEach((it,i) => {
+    m += `${i+1}. ${it.name}${it.size?' ('+it.size+')':''} × ${it.qty} = ₹${(it.qty*it.price).toLocaleString('en-IN')}\n`;
+  });
+  m += `\nSubtotal: ₹${bill.subtotal.toLocaleString('en-IN')}\n`;
+  if (bill.gstAmount > 0) m += `GST (${bill.gstRate}%): ₹${bill.gstAmount.toLocaleString('en-IN')}\n`;
+  m += `\n*💰 Grand Total: ₹${bill.grandTotal.toLocaleString('en-IN')}*\n`;
+  m += `*Payment: ${bill.paymentMode}*\n`;
+  if (shop?.upiId) m += `📱 UPI: ${shop.upiId}\n`;
+  m += `\n${shop?.billFooter||'Thank you for shopping with us! 🛍✨'}\n`;
+  if (shop?.name) m += `— ${shop.name}`;
+  return m;
+}
+
+/* Thermal print for cart orders */
+window._printOrderBill = function(orderId) {
+  const order = DB.getOrders().find(o => o.id === orderId);
+  const shop  = DB.getShop();
+  const cust  = DB.getCustomers().find(c => c.id === order?.customerId);
+  if (!order) { showToast('Order not found','error'); return; }
+  const bill = orderToInvoiceBill(order, shop);
+  const pmIcon = bill.paymentMode==='Cash'?'💵':bill.paymentMode==='Card'?'💳':'📱';
+  const win = window.open('','_blank','width=420,height=720');
+  if (!win) { showToast('Please allow popups to print','warning'); return; }
+  win.document.write(`<!DOCTYPE html><html><head><title>Invoice ${bill.billNo}</title>
+<meta charset="UTF-8"/>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:monospace;font-size:12px;padding:10px;max-width:380px;margin:0 auto;}
+  .shop-name{font-size:16px;font-weight:bold;text-align:center;margin-bottom:3px;}
+  .center{text-align:center;}.right{text-align:right;font-size:11px;}
+  .dashed{border-top:1px dashed #000;margin:6px 0;}
+  table{width:100%;border-collapse:collapse;}
+  th,td{padding:2px 4px;font-size:11px;}
+  th{text-align:left;font-weight:600;}
+  .total-row{display:flex;justify-content:space-between;padding:2px 0;font-size:12px;}
+  .grand{font-size:14px;font-weight:bold;border-top:1px solid #000;padding-top:4px;margin-top:4px;}
+  .footer{text-align:center;margin-top:8px;font-size:11px;font-style:italic;}
+  @media print{@page{margin:2mm 5mm;}body{padding:0;}}
+</style>
+</head><body>
+<div class="shop-name">${esc(shop?.name||'Zara Aura')}</div>
+${shop?.address?`<div class="center" style="font-size:10px;">${esc(shop.address)}</div>`:''}
+${shop?.phone?`<div class="center" style="font-size:10px;">📞 ${esc(shop.phone)}</div>`:''}
+${shop?.email?`<div class="center" style="font-size:10px;">✉ ${esc(shop.email)}</div>`:''}
+${shop?.gst?`<div class="center" style="font-size:10px;font-weight:bold;">GSTIN: ${esc(shop.gst)}</div>`:''}
+<div class="dashed"></div>
+<div class="center" style="font-weight:bold;font-size:12px;letter-spacing:1px;">GST TAX INVOICE</div>
+<div class="dashed"></div>
+<div style="display:flex;justify-content:space-between;font-size:10px;">
+  <span>Bill: ${esc(bill.billNo)}</span>
+  <span>${new Date(bill.date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</span>
+</div>
+<div style="font-size:10px;">Customer: ${esc(cust?.name||bill.customerName)}</div>
+<div class="dashed"></div>
+<table>
+  <thead><tr><th>Item</th><th style="text-align:center;">Qty</th><th class="right">Rate</th><th class="right">Amt</th></tr></thead>
+  <tbody>${bill.items.map(it=>`<tr>
+    <td>${esc(it.name)}${it.size?' ('+esc(it.size)+')':''}</td>
+    <td style="text-align:center;">${it.qty}</td>
+    <td class="right">₹${it.price.toLocaleString('en-IN')}</td>
+    <td class="right">₹${(it.qty*it.price).toLocaleString('en-IN')}</td>
+  </tr>`).join('')}</tbody>
+</table>
+<div class="dashed"></div>
+<div class="total-row"><span>Subtotal</span><span>₹${bill.subtotal.toLocaleString('en-IN')}</span></div>
+${bill.gstAmount>0?`<div class="total-row"><span>GST (${bill.gstRate}%)</span><span>₹${bill.gstAmount.toLocaleString('en-IN')}</span></div>`:''}
+<div class="total-row grand"><span>GRAND TOTAL</span><span>₹${bill.grandTotal.toLocaleString('en-IN')}</span></div>
+<div class="dashed"></div>
+<div class="total-row"><span>${pmIcon} ${esc(bill.paymentMode)} — PAID ✔</span></div>
+${shop?.upiId?`<div class="center" style="font-size:10px;margin-top:4px;">📱 UPI: ${esc(shop.upiId)}</div>`:''}
+<div class="dashed"></div>
+<div class="footer">${esc(shop?.billFooter||'Thank you for shopping with us!')}</div>
+<div class="footer" style="font-style:normal;font-weight:bold;margin-top:2px;">— ${esc(shop?.name||'')}</div>
+</body></html>`);
+  win.document.close();
+  win.onload = () => { win.focus(); win.print(); };
+};
+
+/* Parallel delivery: print AND/OR WhatsApp */
+async function executeOrderDelivery(orderId, pref) {
+  const order = DB.getOrders().find(o => o.id === orderId);
+  const shop  = DB.getShop();
+  const cust  = DB.getCustomers().find(c => c.id === order?.customerId);
+  const statusEl = document.getElementById('delivery-status-box');
+  if (statusEl) statusEl.innerHTML = `<div style="padding:10px;text-align:center;color:var(--text-medium);font-size:0.85rem;">⏳ Processing…</div>`;
+
+  const doWhatsApp = pref === 'whatsapp' || pref === 'both';
+  const doPrint    = pref === 'print'    || pref === 'both';
+  const results    = { wa: null, print: null };
+
+  const [waRes, printRes] = await Promise.all([
+    new Promise(res => {
+      if (!doWhatsApp) return res(null);
+      const phone = (cust?.whatsapp || order?.customerPhone || '').replace(/\D/g,'');
+      if (!phone) { showToast('No WhatsApp number — add phone to customer profile','warning'); return res(false); }
+      const msg = buildOrderWhatsAppText(order, shop, cust);
+      try {
+        const a = document.createElement('a');
+        a.href = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
+        a.target = '_blank'; a.rel = 'noopener';
+        document.body.appendChild(a); a.click(); setTimeout(()=>a.remove(),300);
+        res(true);
+      } catch(e) { res(false); }
+    }),
+    new Promise(res => {
+      if (!doPrint) return res(null);
+      try { window._printOrderBill(orderId); res(true); }
+      catch(e) { res(false); }
+    }),
+  ]);
+
+  results.wa = waRes; results.print = printRes;
+
+  const lines = [
+    '✔ Payment Successful',
+    '✔ Invoice Generated',
+    ...(doWhatsApp ? [results.wa===true?'✔ WhatsApp Sent Successfully':'⚠ WhatsApp could not be opened (check phone number)'] : []),
+    ...(doPrint    ? [results.print===true?'✔ Bill Printed Successfully':'⚠ Print popup blocked — please allow popups'] : []),
+    '✔ Order Completed',
+  ];
+
+  if (statusEl) {
+    statusEl.innerHTML = `<div style="padding:14px;background:#e8f5e9;border-radius:8px;border:1px solid #a5d6a7;">
+      <div style="font-weight:700;color:#2e7d32;font-size:0.95rem;margin-bottom:8px;">✦ All Done!</div>
+      <div style="font-size:0.84rem;color:#2e7d32;line-height:2.1;">${lines.join('<br/>')}</div>
+    </div>`;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
    18. BILL & WHATSAPP
 ═══════════════════════════════════════════════════ */
 function renderBillHTML(order, shop, cust) {
@@ -3499,8 +3709,33 @@ function renderOrderSuccess(orderId) {
             Payment: ${order.paymentMode==='GPay'?'📱 GPay':order.paymentMode==='PhonePe'?'💜 PhonePe':'💵 Cash'}
           </div>
         </div>
-        ${renderBillHTML(order,shop,cust)}
-        <div style="margin-top:20px;display:flex;flex-direction:column;gap:10px;">
+        <!-- GST Invoice -->
+        <div style="margin-top:16px;border:1px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden;">
+          ${renderGSTInvoice(orderToInvoiceBill(order, shop), shop)}
+        </div>
+
+        <!-- 📬 Delivery Preference -->
+        <div style="margin-top:16px;background:var(--cream-2);border-radius:var(--radius-md);padding:16px;border:1px solid var(--border-light);">
+          <div style="font-weight:700;font-size:0.9rem;margin-bottom:12px;font-family:var(--font-serif);color:var(--gold-dark);">📬 How would you like to receive your invoice?</div>
+          <div class="payment-mode-options" style="margin-bottom:14px;">
+            <label class="payment-mode-opt selected">
+              <input type="radio" name="deliveryPref" value="whatsapp" checked/>
+              <span class="pm-icon">📱</span><span>WhatsApp</span>
+            </label>
+            <label class="payment-mode-opt">
+              <input type="radio" name="deliveryPref" value="print"/>
+              <span class="pm-icon">🖨️</span><span>Print</span>
+            </label>
+            <label class="payment-mode-opt">
+              <input type="radio" name="deliveryPref" value="both"/>
+              <span class="pm-icon">📲</span><span>Both</span>
+            </label>
+          </div>
+          <button class="btn btn-gold btn-block btn-lg" id="send-invoice-btn" data-order-id="${esc(order.id)}">📤 &nbsp; Send Invoice</button>
+          <div id="delivery-status-box" style="margin-top:12px;"></div>
+        </div>
+
+        <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px;">
           <button class="btn btn-gold btn-lg btn-block" id="go-feedback-btn" data-feedback-url="${esc(feedbackUrl)}">⭐ &nbsp; Share Your Feedback</button>
           <button class="btn btn-ghost btn-block" id="close-success-btn">Continue Shopping</button>
         </div>
@@ -3762,18 +3997,11 @@ function renderCheckoutModal() {
         <div class="payment-mode-section">
           <div class="payment-mode-title">💳 Select Payment Method</div>
           <div class="payment-mode-options">
-            <label class="payment-mode-opt${state.selectedPaymentMode==='Cash'?' selected':''}">
-              <input type="radio" name="payMode" value="Cash" ${state.selectedPaymentMode==='Cash'||!state.selectedPaymentMode?'checked':''}/>
-              <span class="pm-icon">💵</span><span>Cash</span>
-            </label>
-            <label class="payment-mode-opt${state.selectedPaymentMode==='GPay'?' selected':''}">
-              <input type="radio" name="payMode" value="GPay" ${state.selectedPaymentMode==='GPay'?'checked':''}/>
-              <span class="pm-icon">📱</span><span>GPay</span>
-            </label>
-            <label class="payment-mode-opt${state.selectedPaymentMode==='PhonePe'?' selected':''}">
-              <input type="radio" name="payMode" value="PhonePe" ${state.selectedPaymentMode==='PhonePe'?'checked':''}/>
-              <span class="pm-icon">💜</span><span>PhonePe</span>
-            </label>
+            ${[['Cash','💵'],['UPI','📱'],['GPay','📱'],['PhonePe','💜'],['Card','💳']].map(([pm,ic])=>`
+            <label class="payment-mode-opt${(state.selectedPaymentMode||state.paymentMode||'Cash')===pm?' selected':''}">
+              <input type="radio" name="payMode" value="${pm}" ${(state.selectedPaymentMode||state.paymentMode||'Cash')===pm?'checked':''}/>
+              <span class="pm-icon">${ic}</span><span>${pm}</span>
+            </label>`).join('')}
           </div>
         </div>
       </div>
@@ -3810,17 +4038,24 @@ function confirmOrder() {
     status:'pending', date:Date.now()
   };
   DB.addOrder(order);
-  state.cart=[]; state.paymentMode=''; state.cartOpen=false;
+  state.cart=[]; state.paymentMode=''; state.selectedPaymentMode='Cash'; state.cartOpen=false;
   document.getElementById('checkout-overlay')?.remove();
   document.body.insertAdjacentHTML('beforeend', renderOrderSuccess(order.id));
+  // Close success overlay
   document.getElementById('close-success-btn')?.addEventListener('click',()=>{document.getElementById('success-overlay')?.remove();render();});
-  const cust=DB.getCustomers().find(c=>c.id===session?.id);
-  const shop=DB.getShop();
-  if(cust?.whatsapp){
-    const waMsg=buildWhatsAppBill(order,shop,cust);
-    const a=document.createElement('a'); a.href=`https://wa.me/91${cust.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(waMsg)}`; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); setTimeout(()=>a.remove(),300);
-  }
-  showToast('✅ Order sent to counter!','success');
+  // Delivery preference radio — highlight selected
+  document.querySelectorAll('input[name="deliveryPref"]').forEach(r=>{
+    r.addEventListener('change',()=>{
+      document.querySelectorAll('.payment-mode-opt').forEach(l=>l.classList.toggle('selected',l.querySelector('input[name="deliveryPref"]')?.checked));
+    });
+  });
+  // Send Invoice button
+  document.getElementById('send-invoice-btn')?.addEventListener('click', e=>{
+    const oid = e.currentTarget.dataset.orderId;
+    const pref = document.querySelector('input[name="deliveryPref"]:checked')?.value || 'whatsapp';
+    executeOrderDelivery(oid, pref);
+  });
+  showToast('✅ Order placed! Select delivery method below.','success');
 }
 
 /* ═══════════════════════════════════════════════════
@@ -5273,6 +5508,28 @@ function attachListeners() {
   onAll('[data-view-order]','click', e=>{state.viewingOrderId=e.currentTarget.dataset.viewOrder;state.modalOpen='order-bill';render();});
 
   /* ── Billing ── */
+  /* Save Billing Settings (Admin Billing page) */
+  on('#save-billing-settings-btn','click', ()=>{
+    const existing = DB.getShop() || {};
+    const updated = {
+      ...existing,
+      name:     document.getElementById('bs-name')?.value.trim()    || existing.name,
+      phone:    document.getElementById('bs-phone')?.value.trim()   || existing.phone,
+      email:    document.getElementById('bs-email')?.value.trim()   || '',
+      gst:      (document.getElementById('bs-gst')?.value.trim()||'').toUpperCase(),
+      address:  document.getElementById('bs-address')?.value.trim() || existing.address,
+      gstRate:  +(document.getElementById('bs-gst-rate')?.value||0),
+    };
+    if (!updated.name) { showToast('Shop name is required','error'); return; }
+    DB.setShop(updated, DB.getShopId());
+    const shopId = DB.getShopId();
+    if (firebaseReady && shopId) {
+      db.collection('shops').doc(shopId).update({ shopInfo: updated }).catch(console.error);
+    }
+    showToast('✅ Billing settings saved! GST rate applied to all new invoices.','success');
+    render();
+  });
+
   /* Edit Shop Details */
   on('#edit-shop-btn','click', ()=>{ state.modalOpen='edit-shop'; render(); });
   on('#save-shop-details-btn','click', ()=>{
@@ -5562,9 +5819,10 @@ function attachListeners() {
     render();
   });
 
-  /* Payment mode in checkout (delegated) */
+  /* Payment mode in checkout (delegated) — sync BOTH state vars */
   onAll('input[name="payMode"]','change', e=>{
-    state.selectedPaymentMode=e.target.value;
+    state.selectedPaymentMode = e.target.value;
+    state.paymentMode = e.target.value;
     document.querySelectorAll('.payment-mode-opt').forEach(l=>l.classList.toggle('selected',l.querySelector('input')?.value===e.target.value));
   });
 

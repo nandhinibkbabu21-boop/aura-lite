@@ -6048,4 +6048,12 @@ async function init() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', function() {
+  Promise.resolve().then(init).catch(function(err) {
+    console.error('App init failed:', err);
+    try { navigate('landing'); } catch(e) {
+      const app = document.getElementById('app');
+      if (app) app.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#faf8f4;font-family:Georgia,serif;color:#c8a97e;text-align:center;"><div><div style="font-size:2rem;font-weight:600;letter-spacing:2px;">ZARA Aura</div><div style="font-size:0.8rem;color:#9e8c76;margin-top:10px;">Please refresh the page (Ctrl+Shift+R)</div></div></div>';
+    }
+  });
+});

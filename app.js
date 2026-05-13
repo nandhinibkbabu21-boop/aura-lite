@@ -671,16 +671,21 @@ async function login(role, username, password, mobile) {
     const custs = DB.getCustomers();
     const cust = custs.find(c => c.username === username);
     if (!cust) {
-      if (custs.length === 0) { showToast('No customers registered yet. Please register first.', 'error'); return false; }
-      showToast('Username not found. Check your username and try again.', 'error'); return false;
+      if (custs.length === 0) {
+        showToast('No account found. Please click "New Customer" to register first.', 'error');
+      } else {
+        showToast('Username not found. Check your username or register as New Customer.', 'error');
+      }
+      return false;
     }
     // Verify credential: password match OR mobile match
     const mobileVal = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
     const pwdOk  = password && cust.password && cust.password === password;
     const mobOk  = mobileVal && cust.whatsapp && cust.whatsapp === mobileVal;
-    const noCredSet = !cust.password && !cust.whatsapp; // account has no credentials set → allow any
+    const noCredSet = !cust.password && !cust.whatsapp;
     if (!pwdOk && !mobOk && !noCredSet) {
-      showToast('Incorrect password or mobile number.', 'error'); return false;
+      showToast('Wrong password or mobile. Try again or use Forgot Password.', 'error');
+      return false;
     }
     DB.setSession({ role:'customer', name:cust.name, username:cust.username, id:cust.id });
     recordDeviceLogin(DB.getShopId(), { role:'customer', name:cust.name });

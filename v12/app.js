@@ -490,7 +490,12 @@ function render() {
     'customer':               renderCustomerShop,
     'super-admin':            renderSuperAdminDash,
   };
-  app.innerHTML = (views[state.route] || renderLanding)();
+  try {
+    app.innerHTML = (views[state.route] || renderLanding)();
+  } catch(renderErr) {
+    console.error('Render error on route', state.route, renderErr);
+    try { app.innerHTML = renderLanding(); } catch(_) {}
+  }
 
   if (state.cartOpen && state.route === 'customer')
     document.body.insertAdjacentHTML('beforeend', renderCartSidebar());
@@ -626,7 +631,7 @@ async function login(role, username, password, mobile) {
         DB.setSession({ role, name:u.name, username, id:u.id, shopId:resolvedShopId||undefined });
         recordDeviceLogin(resolvedShopId, { role, name:u.name });
         Sync.start(resolvedShopId);
-        if (role==='admin') repairOrphanedCustomers(resolvedShopId);
+        if (role==='admin') { repairOrphanedCustomers(resolvedShopId); syncLocalCustomersToFirebase(resolvedShopId); }
         return true;
       }
       // Not found in Firebase — fall through to local check
@@ -672,7 +677,7 @@ async function login(role, username, password, mobile) {
         showToast('Shop synced to cloud ☁️', 'success');
       }
       DB.setSession({ role:'admin', name:shop.ownerName, username, shopId: shopId||undefined });
-      if (shopId) { state.shopId = shopId; Sync.start(shopId); recordDeviceLogin(shopId, { role:'admin', name:shop.ownerName }); repairOrphanedCustomers(shopId); }
+      if (shopId) { state.shopId = shopId; Sync.start(shopId); recordDeviceLogin(shopId, { role:'admin', name:shop.ownerName }); repairOrphanedCustomers(shopId); syncLocalCustomersToFirebase(shopId); }
       return true;
     }
     showToast('Invalid admin credentials', 'error'); return false;
@@ -3901,6 +3906,22 @@ async function loadSuperAdminShops() {
     console.error('SA shops:', e);
     container.innerHTML = `<div class="alert alert-danger">✕ &nbsp; Failed to load shops: ${e.message}</div>`;
   }
+}
+
+/* Push ALL local customers to Firebase — covers customers registered before Firebase was set up */
+function syncLocalCustomersToFirebase(shopId) {
+  if (!firebaseReady || !shopId) return;
+  DB.getCustomers().forEach(c => {
+    if (!c.username || !c.id) return;
+    db.collection('shops').doc(shopId).collection('customers').doc(c.id).set(c, {merge:true}).catch(()=>{});
+    db.collection('users').doc(c.username).set({
+      role:'customer', id:c.id, name:c.name, username:c.username,
+      password:c.password||'', whatsapp:c.whatsapp||'', shopId
+    }, {merge:true}).catch(()=>{});
+    db.collection('customerIndex').doc(c.username).set({
+      shopId, id:c.id, name:c.name, whatsapp:c.whatsapp||''
+    }, {merge:true}).catch(()=>{});
+  });
 }
 
 async function repairOrphanedCustomers(shopId) {

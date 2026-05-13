@@ -667,21 +667,24 @@ async function login(role, username, password, mobile) {
     showToast('Invalid employee credentials', 'error'); return false;
   }
   if (role === 'customer') {
-    // Match by username OR name OR mobile — no password required
+    // username + (password OR mobile) required
     const custs = DB.getCustomers();
-    const q = username.toLowerCase();
-    const cust = custs.find(c =>
-      (c.username && c.username.toLowerCase() === q) ||
-      (c.name     && c.name.toLowerCase()     === q) ||
-      (c.whatsapp && c.whatsapp               === username)
-    );
-    if (cust) {
-      DB.setSession({ role:'customer', name:cust.name, username:cust.username||cust.name, id:cust.id });
-      recordDeviceLogin(DB.getShopId(), { role:'customer', name:cust.name });
-      return true;
+    const cust = custs.find(c => c.username === username);
+    if (!cust) {
+      if (custs.length === 0) { showToast('No customers registered yet. Please register first.', 'error'); return false; }
+      showToast('Username not found. Check your username and try again.', 'error'); return false;
     }
-    if (custs.length === 0) { showToast('No customers registered yet. Please register first.', 'error'); return false; }
-    showToast('Customer not found. Try your full name or mobile number.', 'error'); return false;
+    // Verify credential: password match OR mobile match
+    const mobileVal = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
+    const pwdOk  = password && cust.password && cust.password === password;
+    const mobOk  = mobileVal && cust.whatsapp && cust.whatsapp === mobileVal;
+    const noCredSet = !cust.password && !cust.whatsapp; // account has no credentials set → allow any
+    if (!pwdOk && !mobOk && !noCredSet) {
+      showToast('Incorrect password or mobile number.', 'error'); return false;
+    }
+    DB.setSession({ role:'customer', name:cust.name, username:cust.username, id:cust.id });
+    recordDeviceLogin(DB.getShopId(), { role:'customer', name:cust.name });
+    return true;
   }
   return false;
 }
@@ -747,16 +750,13 @@ function renderCustomerLoginChoose() {
           </div>
           <div class="login-role-badge">🛍️ &nbsp; Customer</div>
           <h2 style="font-family:var(--font-serif);margin-bottom:6px;">Welcome</h2>
-          <p class="text-muted" style="margin-bottom:28px;">How would you like to continue?</p>
+          <p class="text-muted" style="margin-bottom:28px;">Are you an existing customer or new here?</p>
           <div style="display:flex;flex-direction:column;gap:14px;">
-            <button id="cust-guest-btn" class="btn btn-gold btn-lg btn-block" style="display:flex;align-items:center;justify-content:center;gap:10px;font-size:1rem;">
-              🛍️ &nbsp; Browse the Shop
-            </button>
-            <button id="cust-existing-btn" class="btn btn-outline btn-lg btn-block" style="display:flex;align-items:center;justify-content:center;gap:10px;font-size:1rem;">
-              👤 &nbsp; My Account (Existing Customer)
+            <button id="cust-existing-btn" class="btn btn-gold btn-lg btn-block" style="display:flex;align-items:center;justify-content:center;gap:10px;font-size:1rem;">
+              👤 &nbsp; Existing Customer
             </button>
             <button id="cust-new-btn" class="btn btn-outline btn-lg btn-block" style="display:flex;align-items:center;justify-content:center;gap:10px;font-size:1rem;">
-              ✦ &nbsp; Register New Account
+              ✦ &nbsp; New Customer
             </button>
           </div>
           <div style="text-align:center;margin-top:20px;">
@@ -783,35 +783,39 @@ function renderLogin(role) {
             <div class="landing-logo" style="font-size:2.4rem;"><span class="gold-text">ZARA</span><span class="landing-logo-lite" style="font-size:0.68rem;">Aura</span></div>
           </div>
           <div class="login-role-badge">${icons[role]||'🔐'} &nbsp; ${labels[role]||'User'} Login</div>
-          <h2 style="font-family:var(--font-serif);margin-bottom:6px;">${role==='customer'?'Find My Account':'Welcome Back'}</h2>
-          <p class="text-muted" style="margin-bottom:24px;">${role==='customer'?'Enter your name, username, or mobile number':'Sign in to access your dashboard'}</p>
+          <h2 style="font-family:var(--font-serif);margin-bottom:6px;">Welcome Back</h2>
+          <p class="text-muted" style="margin-bottom:24px;">Sign in to access your account</p>
           <form id="login-form" novalidate>
             <div style="display:flex;flex-direction:column;gap:16px;">
               <div class="form-group">
-                <label class="form-label">${role==='customer'?'Your Name / Username / Mobile':'Username'} <span class="required">*</span></label>
+                <label class="form-label">Username <span class="required">*</span></label>
                 <input type="text" class="form-control" name="username" id="login-identifier"
-                  placeholder="${role==='customer'?'e.g. Riya, riya_2025, or 9876543210':'Enter your username'}" autocomplete="${role==='customer'?'name':'username'}"/>
-                ${role==='customer'?`<small class="form-hint">You can type your name, your username, or your 10-digit mobile number</small>`:''}
+                  placeholder="Enter your username" autocomplete="username"/>
               </div>
-              ${role!=='customer'?`
               <div class="form-group">
-                <label class="form-label">Password <span class="required">*</span></label>
+                <label class="form-label">Password <span class="${role==='customer'?'optional-tag':'required'}">${role==='customer'?'(Enter password OR mobile)':'*'}</span></label>
                 <div class="password-input-wrap">
                   <input type="password" class="form-control" name="password" id="login-password"
                     placeholder="Enter your password" autocomplete="current-password"/>
                   <button type="button" class="password-toggle-btn" data-target="login-password">👁</button>
                 </div>
-              </div>`:''}
+              </div>
               ${role==='customer'?`
+              <div class="form-group">
+                <label class="form-label">Mobile Number <span class="optional-tag">(Enter mobile OR password)</span></label>
+                <input type="tel" class="form-control" name="mobile" id="login-mobile"
+                  placeholder="10-digit mobile number" maxlength="10" autocomplete="tel"/>
+                <small class="form-hint" style="color:#c62828;font-weight:500;">⚠ At least one of password or mobile is required</small>
+              </div>
               <div class="form-group">
                 <label class="form-label">Employee Attended By <span class="optional-tag">(Optional)</span></label>
                 <input type="text" class="form-control" name="attendedBy" id="login-attended-by"
                   placeholder="Employee name who assisted you" autocomplete="off"/>
               </div>`:''}
               <div style="text-align:right;margin-top:-8px;">
-                ${role !== 'super-admin' && role !== 'customer' ? `<button type="button" class="btn-forgot-link" id="forgot-password-link">Forgot Password?</button>` : ''}
+                ${role !== 'super-admin' ? `<button type="button" class="btn-forgot-link" id="forgot-password-link">Forgot Password?</button>` : ''}
               </div>
-              <button type="submit" class="btn btn-gold btn-block btn-lg" id="login-submit-btn">${role==='customer'?'🛍️ &nbsp; Enter Shop':'Sign In'}</button>
+              <button type="submit" class="btn btn-gold btn-block btn-lg" id="login-submit-btn">Sign In</button>
             </div>
           </form>
           ${role === 'customer' ? `<div class="divider">or</div>
@@ -4537,12 +4541,6 @@ function attachListeners() {
   });
 
   /* Customer login choose screen */
-  on('#cust-guest-btn','click', ()=>{
-    // Guest: set a temporary guest session and go straight to the shop
-    const shop = DB.getShop();
-    DB.setSession({ role:'customer', name:'Guest', username:'guest', id:'guest', isGuest:true });
-    navigate('customer');
-  });
   on('#cust-existing-btn','click', ()=>{ state.loginRole='customer'; navigate('login'); });
   on('#cust-new-btn','click', ()=>navigate('register-customer'));
   on('#setup-shop-link','click', ()=>navigate('register-shop'));
@@ -4552,36 +4550,20 @@ function attachListeners() {
   on('#login-form','submit', async e=>{
     e.preventDefault();
     const fd=new FormData(e.target), btn=document.getElementById('login-submit-btn');
-    const usernameRaw=fd.get('username')?.trim(), password=fd.get('password')?.trim();
+    const username=fd.get('username')?.trim(), password=fd.get('password')?.trim();
     const mobile=fd.get('mobile')?.trim()||'';
-    if(!usernameRaw){ showToast('Please enter your name, username or mobile','error'); return; }
+    if(!username){ showToast('Please enter your username','error'); return; }
+    if(state.loginRole==='customer'&&!password&&!mobile){ showToast('Please enter your password or mobile number','error'); return; }
     if(state.loginRole!=='customer'&&state.loginRole!=='super-admin'&&!password){ showToast('Please enter your password','error'); return; }
     if(btn){btn.disabled=true;btn.textContent='Signing in…';}
     const attendedBy = fd.get('attendedBy')?.trim()||'';
-
-    // For customers: the identifier can be name, username, or phone — normalise it
-    let resolvedUsername = usernameRaw;
-    if (state.loginRole === 'customer') {
-      // Try to find matching customer by name, username, or mobile in local list
-      const custs = DB.getCustomers();
-      const q = usernameRaw.toLowerCase();
-      const match = custs.find(c =>
-        (c.username && c.username.toLowerCase() === q) ||
-        (c.name    && c.name.toLowerCase()     === q) ||
-        (c.whatsapp && c.whatsapp === usernameRaw)
-      );
-      if (match) {
-        resolvedUsername = match.username || match.name;
-      }
-      // If 10-digit number entered, use as-is (Firebase phone search handles it)
-    }
-
-    const ok=await login(state.loginRole, resolvedUsername, password||'', mobile);
-    if(btn){btn.disabled=false;btn.textContent=state.loginRole==='customer'?'🛍️ Enter Shop':'Sign In';}
+    const credential = password || mobile || '';
+    const ok=await login(state.loginRole, username, credential, mobile);
+    if(btn){btn.disabled=false;btn.textContent='Sign In';}
     if(ok){
       if(state.loginRole==='customer' && attendedBy){
         const session=DB.getSession();
-        if(session?.id && session.id!=='guest') DB.updateCustomer(session.id,{attendedBy, attendedDate:new Date().toISOString().slice(0,10)});
+        if(session?.id) DB.updateCustomer(session.id,{attendedBy, attendedDate:new Date().toISOString().slice(0,10)});
       }
       if(state.loginRole==='admin') navigate('admin');
       else if(state.loginRole==='employee') navigate('employee');

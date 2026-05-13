@@ -536,15 +536,18 @@ async function login(role, username, password, mobile) {
       if (userDoc.exists) {
         const u = userDoc.data();
         if (role === 'customer') {
-          // Customer: password & mobile are optional — only validate if something was entered
+          // Customer: must provide password OR mobile — username alone not enough
+          if (!password && !mobile) { showToast('Please enter your password or mobile number', 'error'); return false; }
           if (password) {
             const mobileVal = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
             const pwdOk  = u.password && u.password === password;
             const mobOk  = mobileVal && u.whatsapp && u.whatsapp === mobileVal;
             const mob2Ok = u.whatsapp && u.whatsapp === password;
             if (!pwdOk && !mobOk && !mob2Ok) { showToast('Incorrect credentials', 'error'); return false; }
+          } else if (mobile) {
+            // Only mobile provided (no password field)
+            if (!u.whatsapp || u.whatsapp !== mobile) { showToast('Mobile number does not match our records', 'error'); return false; }
           }
-          // else: username only → allow login
         } else {
           if (u.password && u.password !== password) { showToast('Incorrect password', 'error'); return false; }
         }
@@ -616,18 +619,18 @@ async function login(role, username, password, mobile) {
     showToast('Invalid employee credentials', 'error'); return false;
   }
   if (role === 'customer') {
-    // Support: username only, username+password, username+mobile
+    // Support: username+password OR username+mobile (username alone is NOT allowed)
     const cust = DB.getCustomers().find(c => {
       if (c.username !== username) return false;
-      // Username only → always allow
-      if (!password && !mobile) return true;
-      // Customer has no password set → allow
-      if (!c.password) return true;
+      // Must have password OR mobile — username alone not enough
+      if (!password && !mobile) return false;
       // Username + password match
-      if (password && c.password === password) return true;
+      if (password && c.password && c.password === password) return true;
       // Username + mobile match (use mobile param or password field if it looks like phone)
       const mobileVal = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
       if (mobileVal && c.whatsapp === mobileVal) return true;
+      // Customer has no password AND no whatsapp set → allow if any credential provided (new account)
+      if (!c.password && !c.whatsapp && (password || mobile)) return true;
       return false;
     });
     if (cust) { DB.setSession({ role:'customer', name:cust.name, username:cust.username, id:cust.id }); recordDeviceLogin(DB.getShopId(), { role:'customer', name:cust.name }); return true; }
@@ -741,20 +744,20 @@ function renderLogin(role) {
                 ${role==='customer'?`<small class="form-hint">Your unique username (mandatory)</small>`:''}
               </div>
               <div class="form-group">
-                <label class="form-label">Password <span class="optional-tag">${role==='customer'?'(Optional)':'*'}</span></label>
+                <label class="form-label">Password <span class="${role==='customer'?'optional-tag':'required'}">${role==='customer'?'(Enter password OR mobile)':'*'}</span></label>
                 <div class="password-input-wrap">
                   <input type="password" class="form-control" name="password" id="login-password"
-                    placeholder="${role==='customer'?'Enter password (if set)':'Enter your password'}" autocomplete="current-password"/>
+                    placeholder="${role==='customer'?'Enter your password':'Enter your password'}" autocomplete="current-password"/>
                   <button type="button" class="password-toggle-btn" data-target="login-password">👁</button>
                 </div>
-                ${role==='customer'?`<small class="form-hint">Leave blank if you don't have a password</small>`:''}
+                ${role==='customer'?`<small class="form-hint">You must provide either password or mobile number</small>`:''}
               </div>
               ${role==='customer'?`
               <div class="form-group">
-                <label class="form-label">Mobile Number <span class="optional-tag">(Optional)</span></label>
+                <label class="form-label">Mobile Number <span class="optional-tag">(Enter mobile OR password)</span></label>
                 <input type="tel" class="form-control" name="mobile" id="login-mobile"
                   placeholder="10-digit mobile number" maxlength="10" autocomplete="tel"/>
-                <small class="form-hint">Or use mobile number instead of password</small>
+                <small class="form-hint" style="color:#c62828;font-weight:600;">⚠ At least one of password or mobile is required</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Employee Attended By <span class="optional-tag">(Optional)</span></label>
@@ -2973,8 +2976,8 @@ function renderBillingModal() {
         <div class="card" style="margin-bottom:8px;padding:18px;">
           <div style="font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:14px;">Payment Details <span style="color:#c62828;">*</span> Required</div>
           <div class="pay-mode-select" style="margin-bottom:14px;flex-wrap:wrap;">
-            ${['Cash','UPI','Card','Online'].map(pm=>`<label class="pay-mode-btn" id="bill-pay-${pm.toLowerCase()}">
-              <input type="radio" name="billPayMode" value="${pm}" style="display:none;"/>${pm==='Cash'?'💵':pm==='UPI'?'📱':pm==='Card'?'💳':'🌐'} ${pm}
+            ${['Cash','GPay / UPI / PhonePe','Card'].map(pm=>`<label class="pay-mode-btn" id="bill-pay-${pm.replace(/[^a-z0-9]/gi,'-').toLowerCase()}">
+              <input type="radio" name="billPayMode" value="${pm}" style="display:none;"/>${pm==='Cash'?'💵':pm==='Card'?'💳':'📱'} ${pm}
             </label>`).join('')}
           </div>
           <div class="grid-2" style="gap:14px;">
@@ -3038,7 +3041,7 @@ function renderGSTInvoice(bill, shop) {
   const grand   = bill.grandTotal     || (taxable + gstAmt);
   const amtPaid = bill.amountPaid     || 0;
   const balance = bill.balance        || 0;
-  const pmIcon  = bill.paymentMode==='Cash'?'💵':bill.paymentMode==='UPI'?'📱':bill.paymentMode==='Card'?'💳':'🌐';
+  const pmIcon  = bill.paymentMode==='Cash'?'💵':bill.paymentMode==='Card'?'💳':'📱';
 
   return `<div class="gst-invoice">
     <!-- ── SHOP HEADER ── -->
@@ -4054,6 +4057,7 @@ function attachListeners() {
     const username=fd.get('username')?.trim(), password=fd.get('password')?.trim();
     const mobile=fd.get('mobile')?.trim();
     if(!username){ showToast('Please enter your username','error'); return; }
+    if(state.loginRole==='customer'&&!password&&!mobile){ showToast('Please enter your password or mobile number','error'); return; }
     if(state.loginRole!=='customer'&&state.loginRole!=='super-admin'&&!password){ showToast('Please enter your password','error'); return; }
     if(btn){btn.disabled=true;btn.textContent='Signing in…';}
     // For customer: pass mobile as the credential if no password given
@@ -5253,10 +5257,14 @@ function attachListeners() {
     DB.addBill(bill);
     showToast(`✅ Invoice ${bill.billNo} generated!`, 'success');
 
-    // Show the full invoice on screen — user manually triggers Print / WhatsApp
+    // Show full invoice on screen first, then auto-print + auto-WhatsApp
     state.modalOpen = 'view-bill';
     state.currentBillId = bill.id;
     render();
+
+    // Auto-print after invoice is visible (800ms), then auto-WhatsApp (1600ms)
+    setTimeout(() => { window._printBill(bill.id); }, 800);
+    setTimeout(() => { sendWhatsAppBill(bill.id); }, 1600);
   });
 
   /* WhatsApp bill from view modal */

@@ -533,21 +533,48 @@ async function login(role, username, password, mobile) {
           }
         }
       }
+      // Customer: if no users/{username} doc, try shop's customers sub-collection by username
+      if (!userDoc.exists && role === 'customer') {
+        const shopId = _ls(KEYS.shopId) || state.shopId;
+        if (shopId) {
+          try {
+            const custSnap = await db.collection('shops').doc(shopId).collection('customers')
+              .where('username', '==', username).limit(1).get();
+            if (!custSnap.empty) {
+              const c = custSnap.docs[0].data();
+              const mobileVal = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
+              const pwdOk  = !c.password || !password || c.password === password;
+              const mobOk  = !mobileVal || !c.whatsapp || c.whatsapp === mobileVal;
+              if (pwdOk && mobOk) {
+                _ls(KEYS.shopId, shopId); state.shopId = shopId;
+                DB.setSession({ role:'customer', name:c.name, username:c.username||username, id:c.id, shopId });
+                // Write users/{username} for future fast logins
+                db.collection('users').doc(c.username||username).set({
+                  role:'customer', id:c.id, name:c.name, username:c.username||username,
+                  password:c.password||'', whatsapp:c.whatsapp||'', shopId
+                }).catch(()=>{});
+                Sync.start(shopId); recordDeviceLogin(shopId, { role:'customer', name:c.name });
+                return true;
+              } else { showToast('Incorrect credentials', 'error'); return false; }
+            }
+          } catch(_) {}
+        }
+      }
       if (userDoc.exists) {
         const u = userDoc.data();
         if (role === 'customer') {
-          // Customer: must provide password OR mobile — username alone not enough
-          if (!password && !mobile) { showToast('Please enter your password or mobile number', 'error'); return false; }
+          // Customer: password and mobile are optional — username alone is enough
           if (password) {
             const mobileVal = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
-            const pwdOk  = u.password && u.password === password;
-            const mobOk  = mobileVal && u.whatsapp && u.whatsapp === mobileVal;
+            const pwdOk  = !u.password || u.password === password;
+            const mobOk  = mobileVal && u.whatsapp ? u.whatsapp === mobileVal : true;
             const mob2Ok = u.whatsapp && u.whatsapp === password;
             if (!pwdOk && !mobOk && !mob2Ok) { showToast('Incorrect credentials', 'error'); return false; }
           } else if (mobile) {
-            // Only mobile provided (no password field)
-            if (!u.whatsapp || u.whatsapp !== mobile) { showToast('Mobile number does not match our records', 'error'); return false; }
+            // Only mobile provided — must match if customer has a mobile set
+            if (u.whatsapp && u.whatsapp !== mobile) { showToast('Mobile number does not match our records', 'error'); return false; }
           }
+          // No password/mobile → username-only login (allowed)
         } else {
           if (u.password && u.password !== password) { showToast('Incorrect password', 'error'); return false; }
         }
@@ -587,8 +614,22 @@ async function login(role, username, password, mobile) {
   }
 
   /* Local fallback */
-  const shop = DB.getShop();
-  if (!shop) { showToast('No shop found. Please set up your shop first.', 'error'); return false; }
+  let shop = DB.getShop();
+  // If no shop locally and Firebase ready, try to pull shop from any known shopId
+  if (!shop && firebaseReady) {
+    const shopId = _ls(KEYS.shopId) || state.shopId;
+    if (shopId) {
+      try {
+        const shopSnap = await db.collection('shops').doc(shopId).get();
+        if (shopSnap.exists) {
+          const sd = shopSnap.data();
+          if (sd.shopInfo) { _ls(KEYS.shop, sd.shopInfo); shop = sd.shopInfo; }
+          if (sd.categories) _ls(KEYS.categories, sd.categories);
+        }
+      } catch(_) {}
+    }
+  }
+  if (!shop) { showToast('No shop found. Please open on the shop\'s device or set up your shop first.', 'error'); return false; }
   if (role === 'admin') {
     if (shop.adminUsername === username && shop.adminPassword === password) {
       // Auto-sync old localStorage shop to Firebase if not already there
@@ -619,22 +660,32 @@ async function login(role, username, password, mobile) {
     showToast('Invalid employee credentials', 'error'); return false;
   }
   if (role === 'customer') {
-    // Support: username+password OR username+mobile (username alone is NOT allowed)
-    const cust = DB.getCustomers().find(c => {
+    // Support: username only, OR username+password, OR username+mobile
+    const custs = DB.getCustomers();
+    const cust = custs.find(c => {
       if (c.username !== username) return false;
-      // Must have password OR mobile — username alone not enough
-      if (!password && !mobile) return false;
-      // Username + password match
-      if (password && c.password && c.password === password) return true;
-      // Username + mobile match (use mobile param or password field if it looks like phone)
-      const mobileVal = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
-      if (mobileVal && c.whatsapp === mobileVal) return true;
-      // Customer has no password AND no whatsapp set → allow if any credential provided (new account)
-      if (!c.password && !c.whatsapp && (password || mobile)) return true;
+      // Username-only login: allowed if no credentials provided, or customer has none set
+      if (!password && !mobile) return true;
+      // Username + password: verify if customer has a password set
+      if (password) {
+        if (c.password && c.password === password) return true;
+        const mobileVal = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
+        if (mobileVal && c.whatsapp === mobileVal) return true;
+        // If customer has no password set, any entry is fine (username is the key)
+        if (!c.password) return true;
+        return false;
+      }
+      // Mobile only: verify if customer has a mobile set
+      if (mobile) {
+        if (c.whatsapp && c.whatsapp === mobile) return true;
+        if (!c.whatsapp) return true; // no mobile stored → username is enough
+        return false;
+      }
       return false;
     });
     if (cust) { DB.setSession({ role:'customer', name:cust.name, username:cust.username, id:cust.id }); recordDeviceLogin(DB.getShopId(), { role:'customer', name:cust.name }); return true; }
-    showToast('Invalid customer credentials', 'error'); return false;
+    if (custs.length === 0) { showToast('No customers registered yet. Please register first.', 'error'); return false; }
+    showToast('Customer not found. Check your username.', 'error'); return false;
   }
   return false;
 }
@@ -744,20 +795,20 @@ function renderLogin(role) {
                 ${role==='customer'?`<small class="form-hint">Your unique username (mandatory)</small>`:''}
               </div>
               <div class="form-group">
-                <label class="form-label">Password <span class="${role==='customer'?'optional-tag':'required'}">${role==='customer'?'(Enter password OR mobile)':'*'}</span></label>
+                <label class="form-label">Password <span class="${role==='customer'?'optional-tag':'required'}">${role==='customer'?'(Optional)':'*'}</span></label>
                 <div class="password-input-wrap">
                   <input type="password" class="form-control" name="password" id="login-password"
-                    placeholder="${role==='customer'?'Enter your password':'Enter your password'}" autocomplete="current-password"/>
+                    placeholder="${role==='customer'?'Enter your password (if set)':'Enter your password'}" autocomplete="current-password"/>
                   <button type="button" class="password-toggle-btn" data-target="login-password">👁</button>
                 </div>
-                ${role==='customer'?`<small class="form-hint">You must provide either password or mobile number</small>`:''}
+                ${role==='customer'?`<small class="form-hint">Leave blank if you did not set a password</small>`:''}
               </div>
               ${role==='customer'?`
               <div class="form-group">
-                <label class="form-label">Mobile Number <span class="optional-tag">(Enter mobile OR password)</span></label>
+                <label class="form-label">Mobile Number <span class="optional-tag">(Optional)</span></label>
                 <input type="tel" class="form-control" name="mobile" id="login-mobile"
                   placeholder="10-digit mobile number" maxlength="10" autocomplete="tel"/>
-                <small class="form-hint" style="color:#c62828;font-weight:600;">⚠ At least one of password or mobile is required</small>
+                <small class="form-hint">Enter your registered mobile number (optional)</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Employee Attended By <span class="optional-tag">(Optional)</span></label>
@@ -4506,7 +4557,6 @@ function attachListeners() {
     const username=fd.get('username')?.trim(), password=fd.get('password')?.trim();
     const mobile=fd.get('mobile')?.trim();
     if(!username){ showToast('Please enter your username','error'); return; }
-    if(state.loginRole==='customer'&&!password&&!mobile){ showToast('Please enter your password or mobile number','error'); return; }
     if(state.loginRole!=='customer'&&state.loginRole!=='super-admin'&&!password){ showToast('Please enter your password','error'); return; }
     if(btn){btn.disabled=true;btn.textContent='Signing in…';}
     // For customer: pass mobile as the credential if no password given
@@ -4796,7 +4846,16 @@ function attachListeners() {
     DB.addCustomer(cust);
     const custShopId = DB.getShopId();
     DB.setSession({role:'customer',name:cust.name,username:cust.username,id:cust.id,shopId:custShopId||undefined});
-    if(firebaseReady && custShopId){ state.shopId = custShopId; Sync.start(custShopId); }
+    if(firebaseReady && custShopId){
+      state.shopId = custShopId;
+      // Write to both shop customers sub-collection AND users/{username} for cross-device login
+      db.collection('shops').doc(custShopId).collection('customers').doc(cust.id).set(cust).catch(console.error);
+      db.collection('users').doc(cust.username).set({
+        role:'customer', id:cust.id, name:cust.name, username:cust.username,
+        password:cust.password||'', whatsapp:cust.whatsapp||'', shopId:custShopId
+      }).catch(console.error);
+      Sync.start(custShopId);
+    }
     showToast(`Welcome, ${cust.name}!`,'success'); navigate('customer');
   });
 

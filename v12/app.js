@@ -755,17 +755,14 @@ function renderCustomerLoginChoose() {
           </div>
           <div class="login-role-badge">🛍️ &nbsp; Customer</div>
           <h2 style="font-family:var(--font-serif);margin-bottom:6px;">Welcome</h2>
-          <p class="text-muted" style="margin-bottom:28px;">Are you an existing customer or visiting for the first time?</p>
+          <p class="text-muted" style="margin-bottom:28px;">Are you an existing customer or new here?</p>
           <div style="display:flex;flex-direction:column;gap:14px;">
             <button id="cust-existing-btn" class="btn btn-gold btn-lg btn-block" style="display:flex;align-items:center;justify-content:center;gap:10px;font-size:1rem;">
-              👤 &nbsp; Already Registered
+              👤 &nbsp; Existing Customer
             </button>
             <button id="cust-new-btn" class="btn btn-outline btn-lg btn-block" style="display:flex;align-items:center;justify-content:center;gap:10px;font-size:1rem;">
-              ✦ &nbsp; New Customer — Register Here
+              ✦ &nbsp; New Customer
             </button>
-          </div>
-          <div style="margin-top:16px;padding:10px 14px;background:#fdf6ec;border-radius:8px;font-size:0.78rem;color:#9e8c76;text-align:center;">
-            First time? Click <strong>New Customer</strong> to create your account
           </div>
           <div style="text-align:center;margin-top:20px;">
             <button class="btn btn-ghost btn-sm" id="back-to-landing">← Back</button>

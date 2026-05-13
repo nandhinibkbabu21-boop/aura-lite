@@ -3641,50 +3641,22 @@ async function generateInvoiceImage(order, shop) {
   }
 }
 
-/* ── Share invoice as IMAGE via WhatsApp (Web Share API on mobile, download on desktop) ── */
+/* ── Share invoice via WhatsApp directly (always opens WhatsApp, never generic share sheet) ── */
 async function shareInvoiceWhatsApp(order, shop) {
   const cust  = DB.getCustomers().find(c => c.id === order?.customerId);
   const phone = (cust?.whatsapp || cust?.phone || order?.customerPhone || '').replace(/\D/g,'');
 
+  if (!phone) return false;
+
+  // Always send via WhatsApp directly — open wa.me link so WhatsApp opens every time
   try {
-    const canvas   = await generateInvoiceImage(order, shop);
-    const blob     = await new Promise(res => canvas.toBlob(res, 'image/png', 0.95));
-    const fileName = `invoice-${(order.id||'').slice(-6).toUpperCase()}.png`;
-    const file     = new File([blob], fileName, {type: 'image/png'});
-
-    // Mobile: native share sheet → user picks WhatsApp → image sent as attachment
-    if (navigator.share && navigator.canShare && navigator.canShare({files: [file]})) {
-      await navigator.share({ files: [file], title: `Invoice — ${shop?.name || 'Zara Aura'}` });
-      return true;
-    }
-
-    // Desktop fallback: auto-download image + open WhatsApp
-    const url = URL.createObjectURL(blob);
+    const msg = buildOrderWhatsAppText(order, shop, cust);
     const a   = document.createElement('a');
-    a.href = url; a.download = fileName;
-    document.body.appendChild(a); a.click();
-    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
-
-    if (phone) {
-      const note = `Hi! Your invoice from ${shop?.name || 'our store'} is downloaded — please attach it here.`;
-      setTimeout(() => {
-        const wa = document.createElement('a');
-        wa.href = `https://wa.me/91${phone}?text=${encodeURIComponent(note)}`;
-        wa.target = '_blank'; wa.rel = 'noopener';
-        document.body.appendChild(wa); wa.click(); setTimeout(() => wa.remove(), 300);
-      }, 900);
-    }
+    a.href    = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
+    a.target  = '_blank'; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 300);
     return true;
   } catch(e) {
-    // Fallback: formatted text message if image generation fails
-    if (phone) {
-      const msg = buildOrderWhatsAppText(order, shop, cust);
-      const a   = document.createElement('a');
-      a.href = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
-      a.target = '_blank'; a.rel = 'noopener';
-      document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 300);
-      return true;
-    }
     return false;
   }
 }

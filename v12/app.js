@@ -513,204 +513,181 @@ async function loginSuperAdmin(username, password) {
   showToast('Invalid Super Admin credentials', 'error'); return false;
 }
 
+/* All Firebase auth logic — returns true (ok), false (bad creds), or null (not found/timeout) */
+async function _loginViaFirebase(role, username, password, mobile) {
+  try {
+    let userDoc = await db.collection('users').doc(username).get();
+
+    // Phone-number-as-username shortcut
+    if (!userDoc.exists && role === 'customer' && /^[0-9]{10}$/.test(username)) {
+      const shopId = _ls(KEYS.shopId) || state.shopId;
+      if (shopId) {
+        const snap = await db.collection('shops').doc(shopId).collection('customers')
+          .where('whatsapp','==',username).limit(1).get();
+        if (!snap.empty) {
+          const cd = snap.docs[0].data();
+          userDoc = await db.collection('users').doc(cd.username||'').get().catch(()=>({exists:false}));
+          if (!userDoc.exists) {
+            if (!cd.password || cd.password === password) {
+              _ls(KEYS.shopId, shopId); state.shopId = shopId;
+              DB.setSession({ role:'customer', name:cd.name, username:cd.username||username, id:cd.id, shopId });
+              Sync.start(shopId); return true;
+            } else { showToast('Incorrect password','error'); return false; }
+          }
+        }
+      }
+    }
+
+    // Sub-collection search (customer with no users/ doc)
+    if (!userDoc.exists && role === 'customer') {
+      const shopId = _ls(KEYS.shopId) || state.shopId;
+      if (shopId) {
+        try {
+          let cs = await db.collection('shops').doc(shopId).collection('customers').where('username','==',username).limit(1).get();
+          if (cs.empty) cs = await db.collection('shops').doc(shopId).collection('customers').where('name','==',username).limit(1).get();
+          if (cs.empty && /^[0-9]{10}$/.test(username)) cs = await db.collection('shops').doc(shopId).collection('customers').where('whatsapp','==',username).limit(1).get();
+          if (!cs.empty) {
+            const c = cs.docs[0].data();
+            _ls(KEYS.shopId, shopId); state.shopId = shopId;
+            const uname = c.username||c.name||username;
+            DB.setSession({ role:'customer', name:c.name, username:uname, id:c.id, shopId });
+            db.collection('users').doc(uname).set({ role:'customer', id:c.id, name:c.name, username:uname, password:c.password||'', whatsapp:c.whatsapp||'', shopId }).catch(()=>{});
+            db.collection('customerIndex').doc(uname).set({ shopId, id:c.id, name:c.name, whatsapp:c.whatsapp||'' }).catch(()=>{});
+            Sync.start(shopId); recordDeviceLogin(shopId,{role:'customer',name:c.name}); return true;
+          }
+        } catch(_) {}
+      }
+      // customerIndex fallback — works on any fresh device
+      try {
+        const idxDoc = await db.collection('customerIndex').doc(username).get();
+        if (idxDoc.exists) {
+          const idx = idxDoc.data();
+          if (idx.shopId) {
+            _ls(KEYS.shopId, idx.shopId); state.shopId = idx.shopId;
+            const cs2 = await db.collection('shops').doc(idx.shopId).collection('customers').doc(idx.id).get();
+            if (cs2.exists) {
+              const c = cs2.data();
+              const mv = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
+              const pwdOk = password && c.password ? c.password===password : false;
+              const mobOk = mv && c.whatsapp ? c.whatsapp===mv : false;
+              const noCred = !c.password && !c.whatsapp;
+              if (!noCred && !pwdOk && !mobOk) { showToast('Wrong password or mobile. Try again.','error'); return false; }
+              DB.setSession({ role:'customer', name:c.name, username:c.username||username, id:c.id, shopId:idx.shopId });
+              db.collection('users').doc(c.username||username).set({ role:'customer', id:c.id, name:c.name, username:c.username||username, password:c.password||'', whatsapp:c.whatsapp||'', shopId:idx.shopId }).catch(()=>{});
+              Sync.start(idx.shopId); recordDeviceLogin(idx.shopId,{role:'customer',name:c.name}); return true;
+            }
+          }
+        }
+      } catch(_) {}
+    }
+
+    // Standard users/ doc path
+    if (userDoc.exists) {
+      const u = userDoc.data();
+      if (role === 'customer') {
+        const mv = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
+        const pwdOk = password && u.password ? u.password===password : false;
+        const mobOk = mv && u.whatsapp ? u.whatsapp===mv : false;
+        const noCred = !u.password && !u.whatsapp;
+        if (!noCred && !pwdOk && !mobOk) { showToast('Wrong password or mobile number. Try again.','error'); return false; }
+      } else {
+        if (u.password && u.password !== password) { showToast('Incorrect password','error'); return false; }
+      }
+      if (u.role !== role) { showToast(`This is a ${u.role} account`,'error'); return false; }
+      const sid = u.shopId || _ls(KEYS.shopId) || state.shopId;
+      if (sid) {
+        const ss = await db.collection('shops').doc(sid).get();
+        if (ss.exists) { const sd=ss.data(); if(sd.shopInfo) _ls(KEYS.shop,sd.shopInfo); if(sd.categories) _ls(KEYS.categories,sd.categories); }
+        _ls(KEYS.shopId, sid); state.shopId = sid;
+        if (!u.shopId) db.collection('users').doc(username).update({shopId:sid}).catch(()=>{});
+        if (role==='customer') {
+          const cr = db.collection('shops').doc(sid).collection('customers').doc(u.id);
+          const cs = await cr.get().catch(()=>null);
+          if (cs && !cs.exists) cr.set({id:u.id,name:u.name,username,password:u.password,whatsapp:u.whatsapp||'',gender:u.gender||'',size:u.size||''}).catch(()=>{});
+        }
+      }
+      DB.setSession({ role, name:u.name, username, id:u.id, shopId:sid||undefined });
+      recordDeviceLogin(sid,{role,name:u.name}); Sync.start(sid);
+      if (role==='admin') { repairOrphanedCustomers(sid); syncLocalCustomersToFirebase(sid); }
+      return true;
+    }
+
+    return null; // not found in Firebase — fall through to local
+  } catch(e) {
+    console.error('Firebase login error:', e);
+    return null; // fall through to local on any Firebase error
+  }
+}
+
 async function login(role, username, password, mobile) {
   if (role === 'super-admin') return loginSuperAdmin(username, password);
 
   if (firebaseReady) {
-    try {
-      let userDoc = await db.collection('users').doc(username).get();
-      if (!userDoc.exists && role === 'customer' && /^[0-9]{10}$/.test(username)) {
-        const shopId = _ls(KEYS.shopId) || state.shopId;
-        if (shopId) {
-          const custSnap = await db.collection('shops').doc(shopId).collection('customers')
-            .where('whatsapp', '==', username).limit(1).get();
-          if (!custSnap.empty) {
-            const cd = custSnap.docs[0].data();
-            userDoc = await db.collection('users').doc(cd.username || '').get().catch(()=>({exists:false}));
-            if (!userDoc.exists) {
-              // Directly use customer doc
-              const c = cd;
-              if (!c.password || c.password === password) {
-                const resolvedShopId = shopId;
-                _ls(KEYS.shopId, resolvedShopId); state.shopId = resolvedShopId;
-                DB.setSession({ role:'customer', name:c.name, username:c.username||username, id:c.id, shopId:resolvedShopId });
-                Sync.start(resolvedShopId);
-                return true;
-              } else { showToast('Incorrect password', 'error'); return false; }
-            }
-          }
-        }
-      }
-      // Customer: if no users/{username} doc, try shop's customers sub-collection by username OR name OR phone
-      if (!userDoc.exists && role === 'customer') {
-        const shopId = _ls(KEYS.shopId) || state.shopId;
-        if (shopId) {
-          try {
-            let custSnap = await db.collection('shops').doc(shopId).collection('customers')
-              .where('username', '==', username).limit(1).get();
-            if (custSnap.empty) {
-              custSnap = await db.collection('shops').doc(shopId).collection('customers')
-                .where('name', '==', username).limit(1).get();
-            }
-            if (custSnap.empty && /^[0-9]{10}$/.test(username)) {
-              custSnap = await db.collection('shops').doc(shopId).collection('customers')
-                .where('whatsapp', '==', username).limit(1).get();
-            }
-            if (!custSnap.empty) {
-              const c = custSnap.docs[0].data();
-              _ls(KEYS.shopId, shopId); state.shopId = shopId;
-              DB.setSession({ role:'customer', name:c.name, username:c.username||c.name||username, id:c.id, shopId });
-              const uname = c.username || c.name || username;
-              db.collection('users').doc(uname).set({ role:'customer', id:c.id, name:c.name, username:uname, password:c.password||'', whatsapp:c.whatsapp||'', shopId }).catch(()=>{});
-              db.collection('customerIndex').doc(uname).set({ shopId, id:c.id, name:c.name, whatsapp:c.whatsapp||'' }).catch(()=>{});
-              Sync.start(shopId); recordDeviceLogin(shopId, { role:'customer', name:c.name });
-              return true;
-            }
-          } catch(_) {}
-        }
-        // customerIndex fallback: look up which shop this customer belongs to (works on fresh devices)
-        try {
-          const idxDoc = await db.collection('customerIndex').doc(username).get();
-          if (idxDoc.exists) {
-            const idx = idxDoc.data();
-            const resolvedShopId = idx.shopId;
-            if (resolvedShopId) {
-              _ls(KEYS.shopId, resolvedShopId); state.shopId = resolvedShopId;
-              const custRef = db.collection('shops').doc(resolvedShopId).collection('customers').doc(idx.id);
-              const custSnap2 = await custRef.get();
-              if (custSnap2.exists) {
-                const c = custSnap2.data();
-                const mobileVal2 = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
-                const pwdOk2  = password && c.password ? c.password === password : false;
-                const mobOk2  = mobileVal2 && c.whatsapp ? c.whatsapp === mobileVal2 : false;
-                const noCredSet2 = !c.password && !c.whatsapp;
-                if (!noCredSet2 && !pwdOk2 && !mobOk2) { showToast('Wrong password or mobile. Try again.', 'error'); return false; }
-                DB.setSession({ role:'customer', name:c.name, username:c.username||username, id:c.id, shopId:resolvedShopId });
-                db.collection('users').doc(c.username||username).set({ role:'customer', id:c.id, name:c.name, username:c.username||username, password:c.password||'', whatsapp:c.whatsapp||'', shopId:resolvedShopId }).catch(()=>{});
-                Sync.start(resolvedShopId); recordDeviceLogin(resolvedShopId, { role:'customer', name:c.name });
-                return true;
-              }
-            }
-          }
-        } catch(_) {}
-      }
-      if (userDoc.exists) {
-        const u = userDoc.data();
-        if (role === 'customer') {
-          // Credential check: password OR mobile must match (if credentials are set)
-          const mobileVal = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
-          const pwdOk  = password && u.password ? u.password === password : false;
-          const mobOk  = mobileVal && u.whatsapp ? u.whatsapp === mobileVal : false;
-          const noCredSet = !u.password && !u.whatsapp;
-          if (!noCredSet && !pwdOk && !mobOk) { showToast('Wrong password or mobile number. Try again.', 'error'); return false; }
-        } else {
-          if (u.password && u.password !== password) { showToast('Incorrect password', 'error'); return false; }
-        }
-        if (u.role !== role) { showToast(`This is a ${u.role} account`, 'error'); return false; }
-        // Use shopId from user doc, or fall back to the device's stored shopId
-        const resolvedShopId = u.shopId || _ls(KEYS.shopId) || state.shopId;
-        if (resolvedShopId) {
-          const shopSnap = await db.collection('shops').doc(resolvedShopId).get();
-          if (shopSnap.exists) {
-            const sd = shopSnap.data();
-            if (sd.shopInfo)   _ls(KEYS.shop, sd.shopInfo);
-            if (sd.categories) _ls(KEYS.categories, sd.categories);
-          }
-          _ls(KEYS.shopId, resolvedShopId); state.shopId = resolvedShopId;
-          // If user doc had null shopId, fix it in Firebase now
-          if (!u.shopId) db.collection('users').doc(username).update({ shopId: resolvedShopId }).catch(()=>{});
-          // If customer not in shop's customers sub-collection, add them
-          if (role === 'customer') {
-            const custRef = db.collection('shops').doc(resolvedShopId).collection('customers').doc(u.id);
-            const custSnap = await custRef.get().catch(()=>null);
-            if (custSnap && !custSnap.exists) {
-              custRef.set({ id:u.id, name:u.name, username, password:u.password, whatsapp:u.whatsapp||'', gender:u.gender||'', size:u.size||'' }).catch(()=>{});
-            }
-          }
-        }
-        DB.setSession({ role, name:u.name, username, id:u.id, shopId:resolvedShopId||undefined });
-        recordDeviceLogin(resolvedShopId, { role, name:u.name });
-        Sync.start(resolvedShopId);
-        if (role==='admin') { repairOrphanedCustomers(resolvedShopId); syncLocalCustomersToFirebase(resolvedShopId); }
-        return true;
-      }
-      // Not found in Firebase — fall through to local check
-    } catch (e) {
-      console.error('login error:', e);
-      showToast('Connection error – trying offline…', 'warning');
-    }
+    // Hard 7-second timeout — prevents infinite "Signing in…" freeze
+    const fbResult = await Promise.race([
+      _loginViaFirebase(role, username, password, mobile),
+      new Promise(resolve => setTimeout(() => resolve(null), 7000))
+    ]).catch(() => null);
+
+    if (fbResult === true || fbResult === false) return fbResult;
+    // null = not found in Firebase OR timed out → fall through to local
   }
 
-  /* Local fallback */
+  /* ── Local fallback ── */
   let shop = DB.getShop();
-  // If no shop locally and Firebase ready, try to pull shop from any known shopId
   if (!shop && firebaseReady) {
     const shopId = _ls(KEYS.shopId) || state.shopId;
     if (shopId) {
       try {
-        const shopSnap = await db.collection('shops').doc(shopId).get();
-        if (shopSnap.exists) {
-          const sd = shopSnap.data();
-          if (sd.shopInfo) { _ls(KEYS.shop, sd.shopInfo); shop = sd.shopInfo; }
-          if (sd.categories) _ls(KEYS.categories, sd.categories);
-        }
+        const ss = await Promise.race([
+          db.collection('shops').doc(shopId).get(),
+          new Promise((_,r) => setTimeout(() => r(new Error('t')), 5000))
+        ]);
+        if (ss.exists) { const sd=ss.data(); if(sd.shopInfo){_ls(KEYS.shop,sd.shopInfo);shop=sd.shopInfo;} if(sd.categories)_ls(KEYS.categories,sd.categories); }
       } catch(_) {}
     }
   }
-  if (!shop) { showToast('No shop found. Please open on the shop\'s device or set up your shop first.', 'error'); return false; }
+  if (!shop) { showToast('No shop found. Please open on the shop\'s device or set up your shop first.','error'); return false; }
+
   if (role === 'admin') {
-    if (shop.adminUsername === username && shop.adminPassword === password) {
-      // Auto-sync old localStorage shop to Firebase if not already there
+    if (shop.adminUsername===username && shop.adminPassword===password) {
       let shopId = DB.getShopId();
       if (firebaseReady && !shopId) {
-        shopId = uid();
-        _ls(KEYS.shopId, shopId);
-        state.shopId = shopId;
+        shopId = uid(); _ls(KEYS.shopId, shopId); state.shopId = shopId;
         const cats = DB.getCategories();
-        db.collection('shops').doc(shopId).set({ shopInfo: shop, categories: cats, createdAt: Date.now() }).catch(console.error);
-        db.collection('users').doc(username).set({ role:'admin', shopId, name:shop.ownerName, id:shopId, password }).catch(console.error);
-        // Sync existing employees, customers, products, orders
-        DB.getEmployees().forEach(e => db.collection('shops').doc(shopId).collection('employees').doc(e.id).set(e).catch(console.error));
-        DB.getCustomers().forEach(c => db.collection('shops').doc(shopId).collection('customers').doc(c.id).set(c).catch(console.error));
-        DB.getProducts().forEach(p => db.collection('shops').doc(shopId).collection('products').doc(p.id).set(p).catch(console.error));
-        DB.getOrders().forEach(o => db.collection('shops').doc(shopId).collection('orders').doc(o.id).set(o).catch(console.error));
-        showToast('Shop synced to cloud ☁️', 'success');
+        db.collection('shops').doc(shopId).set({shopInfo:shop,categories:cats,createdAt:Date.now()}).catch(console.error);
+        db.collection('users').doc(username).set({role:'admin',shopId,name:shop.ownerName,id:shopId,password}).catch(console.error);
+        DB.getEmployees().forEach(e=>db.collection('shops').doc(shopId).collection('employees').doc(e.id).set(e).catch(console.error));
+        DB.getCustomers().forEach(c=>db.collection('shops').doc(shopId).collection('customers').doc(c.id).set(c).catch(console.error));
+        DB.getProducts().forEach(p=>db.collection('shops').doc(shopId).collection('products').doc(p.id).set(p).catch(console.error));
+        DB.getOrders().forEach(o=>db.collection('shops').doc(shopId).collection('orders').doc(o.id).set(o).catch(console.error));
+        showToast('Shop synced to cloud ☁️','success');
       }
-      DB.setSession({ role:'admin', name:shop.ownerName, username, shopId: shopId||undefined });
-      if (shopId) { state.shopId = shopId; Sync.start(shopId); recordDeviceLogin(shopId, { role:'admin', name:shop.ownerName }); repairOrphanedCustomers(shopId); syncLocalCustomersToFirebase(shopId); }
+      DB.setSession({role:'admin',name:shop.ownerName,username,shopId:shopId||undefined});
+      if (shopId) { state.shopId=shopId; Sync.start(shopId); recordDeviceLogin(shopId,{role:'admin',name:shop.ownerName}); repairOrphanedCustomers(shopId); syncLocalCustomersToFirebase(shopId); }
       return true;
     }
-    showToast('Invalid admin credentials', 'error'); return false;
+    showToast('Invalid admin credentials','error'); return false;
   }
   if (role === 'employee') {
-    const emp = DB.getEmployees().find(e => e.username===username && e.password===password);
-    if (emp) { DB.setSession({ role:'employee', name:emp.name, username, id:emp.id }); recordDeviceLogin(DB.getShopId(), { role:'employee', name:emp.name }); return true; }
-    showToast('Invalid employee credentials', 'error'); return false;
+    const emp = DB.getEmployees().find(e=>e.username===username&&e.password===password);
+    if (emp) { DB.setSession({role:'employee',name:emp.name,username,id:emp.id}); recordDeviceLogin(DB.getShopId(),{role:'employee',name:emp.name}); return true; }
+    showToast('Invalid employee credentials','error'); return false;
   }
   if (role === 'customer') {
-    // username + (password OR mobile) required
     const custs = DB.getCustomers();
-    const cust = custs.find(c => c.username === username);
+    const cust = custs.find(c=>c.username===username);
     if (!cust) {
-      if (custs.length === 0) {
-        showToast('No account found. Please click "New Customer" to register first.', 'error');
-      } else {
-        showToast('Username not found. Check your username or register as New Customer.', 'error');
-      }
+      showToast(custs.length===0 ? 'No account found. Please register as New Customer first.' : 'Username not found. Check your username or register as New Customer.','error');
       return false;
     }
-    // Verify credential: password match OR mobile match
-    const mobileVal = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
-    const pwdOk  = password && cust.password && cust.password === password;
-    const mobOk  = mobileVal && cust.whatsapp && cust.whatsapp === mobileVal;
-    const noCredSet = !cust.password && !cust.whatsapp;
-    if (!pwdOk && !mobOk && !noCredSet) {
-      showToast('Wrong password or mobile. Try again or use Forgot Password.', 'error');
-      return false;
-    }
-    DB.setSession({ role:'customer', name:cust.name, username:cust.username, id:cust.id });
-    recordDeviceLogin(DB.getShopId(), { role:'customer', name:cust.name });
-    return true;
+    const mv = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
+    const pwdOk = password && cust.password && cust.password===password;
+    const mobOk = mv && cust.whatsapp && cust.whatsapp===mv;
+    const noCred = !cust.password && !cust.whatsapp;
+    if (!pwdOk && !mobOk && !noCred) { showToast('Wrong password or mobile. Try again or use Forgot Password.','error'); return false; }
+    DB.setSession({role:'customer',name:cust.name,username:cust.username,id:cust.id,shopId:DB.getShopId()||undefined});
+    recordDeviceLogin(DB.getShopId(),{role:'customer',name:cust.name}); return true;
   }
   return false;
 }

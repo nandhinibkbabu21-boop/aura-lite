@@ -919,48 +919,99 @@ function renderForgotPassword(role) {
 ═══════════════════════════════════════════════════ */
 function renderRegisterShop() {
   return `
-  <div class="register-page">
-    <div class="register-card animate-slideUp" style="max-width:680px;">
-      <div class="register-header">
-        <div class="badge">✦ &nbsp; First Time Setup</div>
+  <div class="register-page" style="padding:20px 12px 40px;">
+    <div class="animate-slideUp" style="max-width:980px;margin:0 auto;">
+      <div style="text-align:center;margin-bottom:24px;">
+        <div class="badge" style="margin-bottom:8px;">✦ &nbsp; First Time Setup</div>
         <h2 style="font-family:var(--font-serif);font-size:2rem;">Set Up Your <span class="gold-text">Boutique</span></h2>
-        <p class="text-muted" style="margin-top:6px;">Tell us about your shop to get started</p>
+        <p class="text-muted" style="margin-top:6px;">Fill in your shop details — they'll appear on bills &amp; customer view automatically</p>
       </div>
-      <form id="shop-register-form">
-        <div style="display:flex;flex-direction:column;gap:18px;">
-          <div class="form-row">
-            <div class="form-group"><label class="form-label">Shop Name <span class="required">*</span></label>
-              <input type="text" class="form-control" name="name" placeholder="e.g. Radiant Collections" required/></div>
-            <div class="form-group"><label class="form-label">Owner Name <span class="required">*</span></label>
-              <input type="text" class="form-control" name="ownerName" placeholder="e.g. Priya Sharma" required/></div>
-          </div>
-          <div class="form-group"><label class="form-label">Shop Address <span class="required">*</span></label>
-            <textarea class="form-control" name="address" placeholder="Full address…" required style="min-height:72px;"></textarea></div>
-          <div class="form-row">
-            <div class="form-group"><label class="form-label">Phone Number <span class="required">*</span></label>
-              <input type="tel" class="form-control" name="phone" placeholder="10-digit number" required maxlength="10" pattern="[0-9]{10}" title="Enter exactly 10 digits"/></div>
-            <div class="form-group"><label class="form-label">GST Number <span class="required">*</span></label>
-              <input type="text" class="form-control" name="gst" placeholder="e.g. 29ABCDE1234F1Z5" maxlength="15" minlength="15" pattern="[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}" title="Enter valid 15-character GST number (e.g. 29ABCDE1234F1Z5)" style="text-transform:uppercase" required/>
-              <small class="form-hint">Format: 2 digits + 5 letters + 4 digits + letter + digit + Z + alphanumeric</small></div>
-          </div>
-          <div style="border-top:1px solid var(--border-light);padding-top:18px;">
-            <h4 style="font-family:var(--font-serif);margin-bottom:12px;">Admin Login Credentials</h4>
-            <div class="form-row">
-              <div class="form-group"><label class="form-label">Admin Username <span class="required">*</span></label>
-                <input type="text" class="form-control" name="adminUsername" placeholder="Choose a username" required autocomplete="new-password"/></div>
-              <div class="form-group"><label class="form-label">Admin Password <span class="required">*</span></label>
-                <div class="password-input-wrap">
-                  <input type="password" class="form-control" name="adminPassword" id="admin-pwd" placeholder="Choose a password" required autocomplete="new-password"/>
-                  <button type="button" class="password-toggle-btn" data-target="admin-pwd">👁</button>
-                </div></div>
+      <div style="display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start;">
+
+        <!-- ── LEFT: FORM ── -->
+        <div class="register-card" style="padding:28px;">
+          <form id="shop-register-form">
+            <div style="display:flex;flex-direction:column;gap:18px;">
+
+              <!-- Shop Details -->
+              <div style="font-size:0.7rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:-6px;">🏪 Shop Details</div>
+              <div class="form-row">
+                <div class="form-group"><label class="form-label">Shop Name <span class="required">*</span></label>
+                  <input type="text" class="form-control" name="name" id="reg-name" placeholder="e.g. Radiant Collections" required oninput="updateBillPreview()"/></div>
+                <div class="form-group"><label class="form-label">Owner Name <span class="required">*</span></label>
+                  <input type="text" class="form-control" name="ownerName" placeholder="e.g. Priya Sharma" required/></div>
+              </div>
+              <div class="form-group"><label class="form-label">Shop Address <span class="required">*</span></label>
+                <textarea class="form-control" name="address" id="reg-address" placeholder="Full address with city, state, pincode…" required style="min-height:64px;" oninput="updateBillPreview()"></textarea></div>
+              <div class="form-row">
+                <div class="form-group"><label class="form-label">Phone Number <span class="required">*</span></label>
+                  <input type="tel" class="form-control" name="phone" id="reg-phone" placeholder="10-digit number" required maxlength="10" pattern="[0-9]{10}" oninput="updateBillPreview()"/></div>
+                <div class="form-group"><label class="form-label">GST Number <span class="optional-tag">(Optional)</span></label>
+                  <input type="text" class="form-control" name="gst" id="reg-gst" placeholder="e.g. 29ABCDE1234F1Z5" maxlength="15" style="text-transform:uppercase" oninput="updateBillPreview()"/>
+                  <small class="form-hint">15-character GST number</small></div>
+              </div>
+
+              <!-- Bill Details -->
+              <div style="border-top:1px solid var(--border-light);padding-top:14px;">
+                <div style="font-size:0.7rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:12px;">🧾 Bill / Invoice Details</div>
+                <div class="form-row">
+                  <div class="form-group"><label class="form-label">UPI ID <span class="optional-tag">(Optional)</span></label>
+                    <input type="text" class="form-control" name="upiId" id="reg-upi" placeholder="shop@upi or phone@ybl" oninput="updateBillPreview()"/>
+                    <small class="form-hint">Shown on invoice for payment</small></div>
+                  <div class="form-group"><label class="form-label">Bill Footer Message <span class="optional-tag">(Optional)</span></label>
+                    <input type="text" class="form-control" name="billFooter" id="reg-footer" placeholder="e.g. Thank you! Visit again 🛍" oninput="updateBillPreview()"/>
+                    <small class="form-hint">Printed at bottom of every bill</small></div>
+                </div>
+              </div>
+
+              <!-- Admin Credentials -->
+              <div style="border-top:1px solid var(--border-light);padding-top:14px;">
+                <div style="font-size:0.7rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:12px;">🔐 Admin Login Credentials</div>
+                <div class="form-row">
+                  <div class="form-group"><label class="form-label">Admin Username <span class="required">*</span></label>
+                    <input type="text" class="form-control" name="adminUsername" placeholder="Choose a username" required autocomplete="new-password"/></div>
+                  <div class="form-group"><label class="form-label">Admin Password <span class="required">*</span></label>
+                    <div class="password-input-wrap">
+                      <input type="password" class="form-control" name="adminPassword" id="admin-pwd" placeholder="Choose a password" required autocomplete="new-password"/>
+                      <button type="button" class="password-toggle-btn" data-target="admin-pwd">👁</button>
+                    </div></div>
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-gold btn-block btn-lg" id="shop-register-btn">✦ &nbsp; Launch My Boutique</button>
             </div>
-          </div>
-          <button type="submit" class="btn btn-gold btn-block btn-lg" id="shop-register-btn">✦ &nbsp; Launch My Boutique</button>
+          </form>
+          <div style="text-align:center;margin-top:16px;"><button class="btn btn-ghost btn-sm" id="back-to-landing">← Back</button></div>
         </div>
-      </form>
-      <div style="text-align:center;margin-top:16px;"><button class="btn btn-ghost btn-sm" id="back-to-landing">← Back</button></div>
+
+        <!-- ── RIGHT: LIVE BILL PREVIEW ── -->
+        <div style="position:sticky;top:20px;">
+          <div style="font-size:0.7rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:10px;text-align:center;">📄 Live Bill Preview</div>
+          <div id="bill-setup-preview" style="background:#fff;border:1px solid var(--border-light);border-radius:10px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,0.06);font-size:0.78rem;font-family:monospace;">
+            <div id="prev-shop-name" style="font-size:1rem;font-weight:700;text-align:center;font-family:var(--font-serif);color:#1a1a2e;">Your Shop Name</div>
+            <div id="prev-shop-addr" style="font-size:0.7rem;text-align:center;color:#666;margin-top:3px;line-height:1.4;">Shop Address</div>
+            <div id="prev-shop-phone" style="font-size:0.7rem;text-align:center;color:#666;"></div>
+            <div id="prev-shop-gst" style="font-size:0.68rem;text-align:center;font-weight:700;color:var(--gold-dark);margin-top:3px;"></div>
+            <div style="border-top:1px dashed #bbb;margin:8px 0;text-align:center;font-size:0.6rem;letter-spacing:0.12em;color:#888;font-family:monospace;">── GST TAX INVOICE ──</div>
+            <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#888;margin-bottom:6px;">
+              <span>Bill No: BILL-00001</span><span>Date: ${new Date().toLocaleDateString('en-IN')}</span>
+            </div>
+            <div style="border-top:1px dashed #bbb;margin:8px 0;font-size:0.65rem;color:#aaa;">[Items table will appear here]</div>
+            <div style="display:flex;justify-content:space-between;font-size:0.75rem;font-weight:700;border-top:1px dashed #bbb;padding-top:6px;margin-top:4px;">
+              <span>Grand Total</span><span>₹ — —</span>
+            </div>
+            <div id="prev-upi" style="font-size:0.65rem;color:#555;margin-top:6px;text-align:center;"></div>
+            <div style="border-top:1px dashed #bbb;margin:8px 0;"></div>
+            <div id="prev-footer" style="font-size:0.68rem;text-align:center;color:#888;font-style:italic;">Thank you for shopping with us! ✦</div>
+            <div id="prev-shop-footer-name" style="font-size:0.65rem;text-align:center;color:#bbb;margin-top:2px;"></div>
+          </div>
+          <div style="margin-top:8px;font-size:0.68rem;color:var(--text-light);text-align:center;">Updates as you type ↑</div>
+        </div>
+
+      </div>
     </div>
   </div>`;
+
 }
 
 /* ═══════════════════════════════════════════════════
@@ -1174,6 +1225,23 @@ function renderAdminOverview() {
       ${oos.slice(0,3).map(p=>`<div class="alert alert-danger">❌ &nbsp; <strong>${esc(p.name)}</strong> is out of stock${p._detail?' ('+esc(p._detail)+')':''}</div>`).join('')}
       ${low.slice(0,5).map(p=>`<div class="alert alert-warning">⚠ &nbsp; <strong>${esc(p.name)}</strong> – low stock${p._detail?' ('+esc(p._detail)+')':' (only '+p.quantity+' left)'}</div>`).join('')}
     </div>`:''}
+    <!-- Shop & Bill Details Card -->
+    ${(()=>{const s=DB.getShop();return `<div class="card" style="margin-bottom:24px;border-left:4px solid var(--gold-light);">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+        <h4 style="font-family:var(--font-serif);margin:0;">🏪 Shop &amp; Bill Details</h4>
+        <button class="btn btn-outline btn-sm" id="edit-shop-btn">✏️ Edit Details</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;font-size:0.85rem;">
+        <div><span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-light);">Shop Name</span><div style="font-weight:700;">${esc(s?.name||'—')}</div></div>
+        <div><span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-light);">Address</span><div>${esc(s?.address||'—')}</div></div>
+        <div><span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-light);">Phone</span><div>📞 ${esc(s?.phone||'—')}</div></div>
+        <div><span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-light);">GST Number</span><div style="font-family:monospace;">${esc(s?.gst||'—')}</div></div>
+        <div><span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-light);">UPI ID</span><div>📱 ${esc(s?.upiId||'—')}</div></div>
+        <div><span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-light);">Bill Footer</span><div style="font-style:italic;">${esc(s?.billFooter||'—')}</div></div>
+      </div>
+      <div style="margin-top:10px;font-size:0.75rem;color:var(--text-light);">✦ Changes here automatically appear on bills &amp; customer view</div>
+    </div>`;})()}
+    ${state.modalOpen==='edit-shop'?renderEditShopModal():''}
     <div class="grid-2">
       <div class="card"><h4 style="font-family:var(--font-serif);margin-bottom:14px;">Recent Products</h4>
         ${prods.length===0?`<p class="text-muted">No products yet.</p>`:
@@ -1199,6 +1267,55 @@ function renderAdminOverview() {
     </div>
   </div>`;
 }
+function renderEditShopModal() {
+  const s = DB.getShop() || {};
+  return `<div class="modal-overlay" id="edit-shop-overlay">
+    <div class="modal animate-slideUp" style="max-width:600px;width:95vw;">
+      <div class="modal-header" style="background:var(--gold-lighter);border-bottom:2px solid var(--gold-light);">
+        <div class="modal-title" style="font-family:var(--font-serif);color:var(--gold-dark);">✏️ Edit Shop &amp; Bill Details</div>
+        <button class="modal-close" data-close-modal="edit-shop">✕</button>
+      </div>
+      <div class="modal-body" style="padding:24px;">
+        <form id="edit-shop-form">
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <div style="font-size:0.7rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;">🏪 Shop Details</div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">Shop Name <span class="required">*</span></label>
+                <input type="text" class="form-control" name="name" value="${esc(s.name||'')}" required/></div>
+              <div class="form-group"><label class="form-label">Owner Name</label>
+                <input type="text" class="form-control" name="ownerName" value="${esc(s.ownerName||'')}"/></div>
+            </div>
+            <div class="form-group"><label class="form-label">Shop Address</label>
+              <textarea class="form-control" name="address" style="min-height:60px;">${esc(s.address||'')}</textarea></div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">Phone Number</label>
+                <input type="tel" class="form-control" name="phone" value="${esc(s.phone||'')}" maxlength="10"/></div>
+              <div class="form-group"><label class="form-label">GST Number</label>
+                <input type="text" class="form-control" name="gst" value="${esc(s.gst||'')}" maxlength="15" style="text-transform:uppercase"/></div>
+            </div>
+            <div style="border-top:1px solid var(--border-light);padding-top:14px;font-size:0.7rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;">🧾 Bill / Invoice Details</div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">UPI ID</label>
+                <input type="text" class="form-control" name="upiId" value="${esc(s.upiId||'')}" placeholder="shop@upi"/>
+                <small class="form-hint">Shown on invoice for easy payment</small></div>
+              <div class="form-group"><label class="form-label">Bill Footer Message</label>
+                <input type="text" class="form-control" name="billFooter" value="${esc(s.billFooter||'')}" placeholder="Thank you for shopping!"/>
+                <small class="form-hint">Printed at bottom of every bill</small></div>
+            </div>
+            <div style="background:var(--cream-2);border-radius:8px;padding:10px 14px;font-size:0.78rem;color:var(--text-medium);">
+              ✦ After saving, changes automatically appear on all bills and the customer shop view
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer" style="justify-content:flex-end;gap:10px;">
+        <button class="btn btn-ghost" data-close-modal="edit-shop">Cancel</button>
+        <button class="btn btn-gold" id="save-shop-details-btn">💾 Save Changes</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function statCard(icon,label,value,sub){
   return `<div class="stat-card"><div class="stat-icon">${icon}</div><div class="stat-info">
     <div class="stat-value">${value}</div><div class="stat-label">${label}</div>
@@ -2505,6 +2622,7 @@ function renderCustomerShop() {
       ${cust?`<div class="shop-hero-greeting">✦ &nbsp; Welcome back, ${esc(cust.name)} &nbsp; ✦</div>`:''}
       <div class="shop-hero-name gold-text">${esc(shop?.name||'Zara Aura')}</div>
       <div class="shop-hero-sub">${esc(shop?.address||'Luxury Fashion Boutique')}</div>
+      ${shop?.phone?`<div style="font-size:0.78rem;color:rgba(255,255,255,0.75);margin-top:4px;">📞 ${esc(shop.phone)}</div>`:''}
     </div></div>
     <!-- Category Sections — fully dynamic from products -->
     <div class="category-nav-bar">
@@ -3133,9 +3251,15 @@ function renderGSTInvoice(bill, shop) {
           </div>`}
     </div>
 
+    ${shop?.upiId?`<div class="invoice-payment-block" style="border-top:none;padding-top:0;">
+      <div class="invoice-total-line">
+        <span style="color:#666;">UPI / PhonePe / GPay</span>
+        <span style="font-weight:600;">📱 ${esc(shop.upiId)}</span>
+      </div>
+    </div>`:''}
     <div class="invoice-dashed-line"></div>
-    <div class="invoice-footer-msg">Thank you for shopping with us! ✦</div>
-    <div class="invoice-footer-shop">${esc(shop?.name||'')}${shop?.phone?' · Tel: '+esc(shop.phone):''}</div>
+    <div class="invoice-footer-msg">${esc(shop?.billFooter||'Thank you for shopping with us! ✦')}</div>
+    <div class="invoice-footer-shop">${esc(shop?.name||'')}${shop?.phone?' · 📞 '+esc(shop.phone):''}</div>
   </div>`;
 }
 
@@ -3154,8 +3278,9 @@ function buildWhatsAppGSTBill(bill, shop) {
   if (bill.discountAmount > 0) m += `Discount: −₹${bill.discountAmount.toLocaleString('en-IN')}\n`;
   if (bill.gstAmount > 0) m += `GST (${bill.gstRate}%): ₹${bill.gstAmount.toLocaleString('en-IN')}\n`;
   m += `\n*💰 Grand Total: ₹${Number(bill.grandTotal||0).toLocaleString('en-IN')}*\n`;
-  m += `*Payment: ${bill.paymentMode||'—'}*\n\n`;
-  m += `Thank you for shopping with us! 🛍✨\n`;
+  m += `*Payment: ${bill.paymentMode||'—'}*\n`;
+  if (shop?.upiId) m += `📱 UPI: ${shop.upiId}\n`;
+  m += `\n${shop?.billFooter||'Thank you for shopping with us! 🛍✨'}\n`;
   if (shop?.name) m += `— ${shop.name}`;
   return m;
 }
@@ -4028,6 +4153,25 @@ function postRender() {
   }
 }
 
+/* ── Live Bill Preview (shop registration form) ── */
+function updateBillPreview() {
+  const f = id => document.getElementById(id)?.value || '';
+  const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  const name    = f('reg-name')    || 'Your Shop Name';
+  const address = f('reg-address') || 'Shop address will appear here';
+  const phone   = f('reg-phone');
+  const gst     = f('reg-gst');
+  const upi     = f('reg-upi');
+  const footer  = f('reg-footer')  || 'Thank you for shopping with us! ✦';
+  set('prev-shop-name', esc(name));
+  set('prev-shop-addr', esc(address));
+  set('prev-shop-phone', phone ? '📞 ' + esc(phone) : '');
+  set('prev-shop-gst', gst ? 'GSTIN: ' + esc(gst.toUpperCase()) : '');
+  set('prev-upi', upi ? '📱 UPI: ' + esc(upi) : '');
+  set('prev-footer', esc(footer));
+  set('prev-shop-footer-name', name ? '— ' + esc(name) : '');
+}
+
 /* ═══════════════════════════════════════════════════
    23. EVENT LISTENERS
 ═══════════════════════════════════════════════════ */
@@ -4293,8 +4437,14 @@ function attachListeners() {
   on('#shop-register-form','submit', async e=>{
     e.preventDefault();
     const fd=new FormData(e.target), btn=document.getElementById('shop-register-btn');
-    const shop={name:fd.get('name'),ownerName:fd.get('ownerName'),address:fd.get('address'),phone:fd.get('phone'),gst:fd.get('gst'),
-      adminUsername:fd.get('adminUsername'),adminPassword:fd.get('adminPassword'),createdAt:Date.now()};
+    const shop={
+      name:fd.get('name'), ownerName:fd.get('ownerName'), address:fd.get('address'),
+      phone:fd.get('phone'), gst:fd.get('gst')||'',
+      upiId:fd.get('upiId')||'',
+      billFooter:fd.get('billFooter')||'Thank you for shopping with us! ✦',
+      adminUsername:fd.get('adminUsername'), adminPassword:fd.get('adminPassword'),
+      createdAt:Date.now()
+    };
     if(!shop.name||!shop.ownerName||!shop.address||!shop.phone||!shop.adminUsername||!shop.adminPassword){showToast('Fill all required fields','error');return;}
     if(!/^[0-9]{10}$/.test(shop.phone)){showToast('Phone number must be exactly 10 digits','error');return;}
     if(shop.gst && !/^[A-Z0-9]{15}$/.test(shop.gst.toUpperCase())){showToast('GST number must be exactly 15 alphanumeric characters','error');return;}
@@ -4911,7 +5061,7 @@ function attachListeners() {
 
   /* Close modals */
   onAll('[data-close-modal]','click', ()=>{state.modalOpen=null;state.editingId=null;render();});
-  ['product-modal-overlay','emp-modal-overlay','stock-modal-overlay','order-bill-overlay','product-detail-overlay','salary-modal-overlay','billing-modal-overlay','view-bill-overlay'].forEach(id=>{
+  ['product-modal-overlay','emp-modal-overlay','stock-modal-overlay','order-bill-overlay','product-detail-overlay','salary-modal-overlay','billing-modal-overlay','view-bill-overlay','edit-shop-overlay'].forEach(id=>{
     on(`#${id}`,'click', e=>{if(e.target.id===id){state.modalOpen=null;state.currentBillId=null;render();}});
   });
 
@@ -5123,6 +5273,33 @@ function attachListeners() {
   onAll('[data-view-order]','click', e=>{state.viewingOrderId=e.currentTarget.dataset.viewOrder;state.modalOpen='order-bill';render();});
 
   /* ── Billing ── */
+  /* Edit Shop Details */
+  on('#edit-shop-btn','click', ()=>{ state.modalOpen='edit-shop'; render(); });
+  on('#save-shop-details-btn','click', ()=>{
+    const fd = new FormData(document.getElementById('edit-shop-form'));
+    const existing = DB.getShop() || {};
+    const updated = {
+      ...existing,
+      name:       fd.get('name')?.trim()       || existing.name,
+      ownerName:  fd.get('ownerName')?.trim()  || existing.ownerName,
+      address:    fd.get('address')?.trim()    || existing.address,
+      phone:      fd.get('phone')?.trim()      || existing.phone,
+      gst:        (fd.get('gst')?.trim()||'').toUpperCase() || existing.gst,
+      upiId:      fd.get('upiId')?.trim()      || '',
+      billFooter: fd.get('billFooter')?.trim() || 'Thank you for shopping with us! ✦',
+    };
+    if (!updated.name) { showToast('Shop name is required','error'); return; }
+    DB.setShop(updated, DB.getShopId());
+    // Sync to Firebase
+    const shopId = DB.getShopId();
+    if (firebaseReady && shopId) {
+      db.collection('shops').doc(shopId).update({ shopInfo: updated }).catch(console.error);
+    }
+    state.modalOpen = null;
+    showToast('✅ Shop details updated! Changes appear on bills & customer view.', 'success');
+    render();
+  });
+
   on('#new-bill-btn','click', ()=>{ state.modalOpen='billing'; render(); });
 
   /* View bill */

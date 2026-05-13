@@ -533,21 +533,55 @@ async function login(role, username, password, mobile) {
           }
         }
       }
+      // Customer: if no users/{username} doc, try shop's customers sub-collection by username OR name OR phone
+      if (!userDoc.exists && role === 'customer') {
+        const shopId = _ls(KEYS.shopId) || state.shopId;
+        if (shopId) {
+          try {
+            // Try by username first
+            let custSnap = await db.collection('shops').doc(shopId).collection('customers')
+              .where('username', '==', username).limit(1).get();
+            // Try by name if not found
+            if (custSnap.empty) {
+              custSnap = await db.collection('shops').doc(shopId).collection('customers')
+                .where('name', '==', username).limit(1).get();
+            }
+            // Try by phone if looks like a number
+            if (custSnap.empty && /^[0-9]{10}$/.test(username)) {
+              custSnap = await db.collection('shops').doc(shopId).collection('customers')
+                .where('whatsapp', '==', username).limit(1).get();
+            }
+            if (!custSnap.empty) {
+              const c = custSnap.docs[0].data();
+              _ls(KEYS.shopId, shopId); state.shopId = shopId;
+              DB.setSession({ role:'customer', name:c.name, username:c.username||c.name||username, id:c.id, shopId });
+              // Write users/{username} for future fast logins
+              const uname = c.username || c.name || username;
+              db.collection('users').doc(uname).set({
+                role:'customer', id:c.id, name:c.name, username:uname,
+                password:c.password||'', whatsapp:c.whatsapp||'', shopId
+              }).catch(()=>{});
+              Sync.start(shopId); recordDeviceLogin(shopId, { role:'customer', name:c.name });
+              return true;
+            }
+          } catch(_) {}
+        }
+      }
       if (userDoc.exists) {
         const u = userDoc.data();
         if (role === 'customer') {
-          // Customer: must provide password OR mobile — username alone not enough
-          if (!password && !mobile) { showToast('Please enter your password or mobile number', 'error'); return false; }
+          // Customer: password and mobile are optional — username alone is enough
           if (password) {
             const mobileVal = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
-            const pwdOk  = u.password && u.password === password;
-            const mobOk  = mobileVal && u.whatsapp && u.whatsapp === mobileVal;
+            const pwdOk  = !u.password || u.password === password;
+            const mobOk  = mobileVal && u.whatsapp ? u.whatsapp === mobileVal : true;
             const mob2Ok = u.whatsapp && u.whatsapp === password;
             if (!pwdOk && !mobOk && !mob2Ok) { showToast('Incorrect credentials', 'error'); return false; }
           } else if (mobile) {
-            // Only mobile provided (no password field)
-            if (!u.whatsapp || u.whatsapp !== mobile) { showToast('Mobile number does not match our records', 'error'); return false; }
+            // Only mobile provided — must match if customer has a mobile set
+            if (u.whatsapp && u.whatsapp !== mobile) { showToast('Mobile number does not match our records', 'error'); return false; }
           }
+          // No password/mobile → username-only login (allowed)
         } else {
           if (u.password && u.password !== password) { showToast('Incorrect password', 'error'); return false; }
         }
@@ -587,8 +621,22 @@ async function login(role, username, password, mobile) {
   }
 
   /* Local fallback */
-  const shop = DB.getShop();
-  if (!shop) { showToast('No shop found. Please set up your shop first.', 'error'); return false; }
+  let shop = DB.getShop();
+  // If no shop locally and Firebase ready, try to pull shop from any known shopId
+  if (!shop && firebaseReady) {
+    const shopId = _ls(KEYS.shopId) || state.shopId;
+    if (shopId) {
+      try {
+        const shopSnap = await db.collection('shops').doc(shopId).get();
+        if (shopSnap.exists) {
+          const sd = shopSnap.data();
+          if (sd.shopInfo) { _ls(KEYS.shop, sd.shopInfo); shop = sd.shopInfo; }
+          if (sd.categories) _ls(KEYS.categories, sd.categories);
+        }
+      } catch(_) {}
+    }
+  }
+  if (!shop) { showToast('No shop found. Please open on the shop\'s device or set up your shop first.', 'error'); return false; }
   if (role === 'admin') {
     if (shop.adminUsername === username && shop.adminPassword === password) {
       // Auto-sync old localStorage shop to Firebase if not already there
@@ -619,22 +667,24 @@ async function login(role, username, password, mobile) {
     showToast('Invalid employee credentials', 'error'); return false;
   }
   if (role === 'customer') {
-    // Support: username+password OR username+mobile (username alone is NOT allowed)
-    const cust = DB.getCustomers().find(c => {
-      if (c.username !== username) return false;
-      // Must have password OR mobile — username alone not enough
-      if (!password && !mobile) return false;
-      // Username + password match
-      if (password && c.password && c.password === password) return true;
-      // Username + mobile match (use mobile param or password field if it looks like phone)
-      const mobileVal = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
-      if (mobileVal && c.whatsapp === mobileVal) return true;
-      // Customer has no password AND no whatsapp set → allow if any credential provided (new account)
-      if (!c.password && !c.whatsapp && (password || mobile)) return true;
-      return false;
-    });
-    if (cust) { DB.setSession({ role:'customer', name:cust.name, username:cust.username, id:cust.id }); recordDeviceLogin(DB.getShopId(), { role:'customer', name:cust.name }); return true; }
-    showToast('Invalid customer credentials', 'error'); return false;
+    // username + (password OR mobile) required
+    const custs = DB.getCustomers();
+    const cust = custs.find(c => c.username === username);
+    if (!cust) {
+      if (custs.length === 0) { showToast('No customers registered yet. Please register first.', 'error'); return false; }
+      showToast('Username not found. Check your username and try again.', 'error'); return false;
+    }
+    // Verify credential: password match OR mobile match
+    const mobileVal = mobile || (/^[0-9]{10}$/.test(password) ? password : '');
+    const pwdOk  = password && cust.password && cust.password === password;
+    const mobOk  = mobileVal && cust.whatsapp && cust.whatsapp === mobileVal;
+    const noCredSet = !cust.password && !cust.whatsapp; // account has no credentials set → allow any
+    if (!pwdOk && !mobOk && !noCredSet) {
+      showToast('Incorrect password or mobile number.', 'error'); return false;
+    }
+    DB.setSession({ role:'customer', name:cust.name, username:cust.username, id:cust.id });
+    recordDeviceLogin(DB.getShopId(), { role:'customer', name:cust.name });
+    return true;
   }
   return false;
 }
@@ -734,36 +784,33 @@ function renderLogin(role) {
           </div>
           <div class="login-role-badge">${icons[role]||'🔐'} &nbsp; ${labels[role]||'User'} Login</div>
           <h2 style="font-family:var(--font-serif);margin-bottom:6px;">Welcome Back</h2>
-          <p class="text-muted" style="margin-bottom:24px;">Sign in to access your dashboard</p>
+          <p class="text-muted" style="margin-bottom:24px;">Sign in to access your account</p>
           <form id="login-form" novalidate>
             <div style="display:flex;flex-direction:column;gap:16px;">
               <div class="form-group">
                 <label class="form-label">Username <span class="required">*</span></label>
                 <input type="text" class="form-control" name="username" id="login-identifier"
                   placeholder="Enter your username" autocomplete="username"/>
-                ${role==='customer'?`<small class="form-hint">Your unique username (mandatory)</small>`:''}
               </div>
               <div class="form-group">
                 <label class="form-label">Password <span class="${role==='customer'?'optional-tag':'required'}">${role==='customer'?'(Enter password OR mobile)':'*'}</span></label>
                 <div class="password-input-wrap">
                   <input type="password" class="form-control" name="password" id="login-password"
-                    placeholder="${role==='customer'?'Enter your password':'Enter your password'}" autocomplete="current-password"/>
+                    placeholder="Enter your password" autocomplete="current-password"/>
                   <button type="button" class="password-toggle-btn" data-target="login-password">👁</button>
                 </div>
-                ${role==='customer'?`<small class="form-hint">You must provide either password or mobile number</small>`:''}
               </div>
               ${role==='customer'?`
               <div class="form-group">
                 <label class="form-label">Mobile Number <span class="optional-tag">(Enter mobile OR password)</span></label>
                 <input type="tel" class="form-control" name="mobile" id="login-mobile"
                   placeholder="10-digit mobile number" maxlength="10" autocomplete="tel"/>
-                <small class="form-hint" style="color:#c62828;font-weight:600;">⚠ At least one of password or mobile is required</small>
+                <small class="form-hint" style="color:#c62828;font-weight:500;">⚠ At least one of password or mobile is required</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Employee Attended By <span class="optional-tag">(Optional)</span></label>
                 <input type="text" class="form-control" name="attendedBy" id="login-attended-by"
                   placeholder="Employee name who assisted you" autocomplete="off"/>
-                <small class="form-hint">Enter the name of the employee who helped you</small>
               </div>`:''}
               <div style="text-align:right;margin-top:-8px;">
                 ${role !== 'super-admin' ? `<button type="button" class="btn-forgot-link" id="forgot-password-link">Forgot Password?</button>` : ''}
@@ -1128,7 +1175,7 @@ function renderSidebar(role) {
        ['billing','🧾','Billing'],
        ['analytics','📊','Analytics'],['sms','📣','Send Offers'],['feedback','⭐','Feedback']]
     : role === 'employee'
-    ? [['orders','🔔','Orders'],['products','✦','Products'],['categories','◻','Categories'],['stock','📦','Stock'],['salary','💰','My Salary']]
+    ? [['products','✦','Products'],['categories','◻','Categories'],['stock','📦','Stock'],['salary','💰','My Salary']]
     : [['products','✦','Products'],['stock','◻','Stock'],['feedback','⭐','My Feedback']];
   const session = DB.getSession();
   return `
@@ -1886,19 +1933,16 @@ function renderAdminOrders() {
     <div class="dash-page-title">Orders</div><div class="dash-page-subtitle">${ords.length} order${ords.length!==1?'s':''} total</div>
     ${ords.length===0?`<div class="empty-state"><div class="empty-state-icon">◊</div><div class="empty-state-title">No orders yet</div></div>`:
     `<div class="table-wrap"><table>
-      <thead><tr><th>Order ID</th><th>Customer</th><th>Date</th><th>Items</th><th>Payment</th><th>Status</th><th>Handled By</th><th>Total</th><th>Action</th></tr></thead>
+      <thead><tr><th>Order ID</th><th>Customer</th><th>Date</th><th>Items</th><th>Payment</th><th>Handled By</th><th>Total</th><th>Action</th></tr></thead>
       <tbody>${ords.map(o=>{
         const c=custs.find(x=>x.id===o.customerId);
         const custName=o.customerName||c?.name||'Guest';
-        const stat=o.status||'pending';
-        const color=statusColors[stat]||'#6b7280';
         return `<tr>
           <td><code style="font-size:0.75rem;background:var(--cream-2);padding:2px 8px;border-radius:4px;">#${o.id.slice(-6).toUpperCase()}</code></td>
           <td class="td-name">${esc(custName)}</td>
           <td style="font-size:0.82rem;color:var(--text-light);">${fmtDate(o.date)}</td>
           <td>${(o.items||[]).length} item${(o.items||[]).length!==1?'s':''}</td>
           <td>${pmIcon[o.paymentMode]||'💵'} ${esc(o.paymentMode||'Cash')}</td>
-          <td><span style="padding:2px 8px;border-radius:12px;font-size:0.72rem;font-weight:600;background:${color}20;color:${color};text-transform:capitalize;">${stat}</span></td>
           <td style="font-size:0.8rem;color:var(--text-medium);">${esc(o.employeeName||'—')}</td>
           <td style="font-family:var(--font-serif);font-weight:700;color:var(--gold-dark);">${fmt(o.total)}</td>
           <td><button class="btn btn-outline btn-sm" data-view-order="${esc(o.id)}">View Bill</button></td>
@@ -2134,32 +2178,17 @@ function renderEmployeeDash() {
   }).length;
   const myTotalHandled=new Set(myOrders.filter(o=>o.customerId).map(o=>o.customerId)).size;
 
-  const mainView = state.subRoute==='orders'    ? renderEmpOrderNotifications()
-                 : state.subRoute==='stock'     ? renderEmpStock()
+  const mainView = state.subRoute==='stock'     ? renderEmpStock()
                  : state.subRoute==='salary'    ? renderEmpSalary()
                  : state.subRoute==='categories'? renderEmpCategories()
                  : renderEmpProducts();
   return `<div>${renderAppHeader({ shopName:shop?.name, userName:session?.name })}
-    ${pendingOrders.length?`<div class="emp-notif-bar">
-      🔔 <strong>${pendingOrders.length} new order${pendingOrders.length!==1?'s':''}</strong> waiting to be packed —
-      <button class="btn btn-sm btn-gold" id="emp-view-orders-btn" style="margin-left:8px;">View Orders</button>
-    </div>`:''}
-    <!-- Employee live stats bar -->
+    <!-- Employee stats bar — orders attended today only -->
     <div style="background:var(--white);border-bottom:1px solid var(--border-light);padding:10px 20px;display:flex;gap:20px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:8px;font-size:0.82rem;">
-        <span style="font-size:1.1rem;">👥</span>
-        <span style="color:var(--text-medium);">Customers Added Today:</span>
-        <strong style="color:var(--gold-dark);">${customersAddedToday}</strong>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;font-size:0.82rem;">
         <span style="font-size:1.1rem;">✅</span>
-        <span style="color:var(--text-medium);">Orders Completed Today:</span>
+        <span style="color:var(--text-medium);">Orders Attended Today:</span>
         <strong style="color:var(--gold-dark);">${myTodayCompleted}</strong>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;font-size:0.82rem;">
-        <span style="font-size:1.1rem;">🛍️</span>
-        <span style="color:var(--text-medium);">Total Customers Served:</span>
-        <strong style="color:var(--gold-dark);">${myTotalHandled}</strong>
       </div>
     </div>
     <div class="dash-layout">${renderSidebar('employee')}
@@ -2423,9 +2452,7 @@ function renderCustomerOrderHistory() {
     </div></div>
     <div style="padding:16px;max-width:700px;margin:0 auto;display:flex;flex-direction:column;gap:16px;">
       ${myOrders.map(o=>{
-        const st = o.status||'pending';
-        const col = statusColor[st]||'#888';
-        return `<div class="card" style="padding:18px;border-left:4px solid ${col};">
+        return `<div class="card" style="padding:18px;border-left:4px solid var(--gold-light);">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
             <div>
               <div style="font-weight:700;font-size:1rem;">#${o.id.slice(-6).toUpperCase()}</div>
@@ -2433,29 +2460,14 @@ function renderCustomerOrderHistory() {
             </div>
             <div style="text-align:right;">
               <div style="font-weight:700;color:var(--gold-dark);">${fmt(o.total)}</div>
-              <span style="display:inline-block;background:${col}20;color:${col};font-size:0.75rem;font-weight:700;padding:2px 10px;border-radius:12px;border:1px solid ${col}40;">${statusLabel[st]||st}</span>
             </div>
           </div>
           <div style="margin:10px 0;border-top:1px solid var(--border-light);padding-top:10px;font-size:0.85rem;">
             ${(o.items||[]).map(i=>`<div style="padding:3px 0;">• ${esc(i.name)}${i.size?' ('+esc(i.size)+')':''} × ${i.qty} — ${fmt(i.price*i.qty)}</div>`).join('')}
           </div>
           <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:0.8rem;color:var(--text-medium);">
-            <span>${o.paymentMode==='GPay'?'📱 GPay':o.paymentMode==='PhonePe'?'💜 PhonePe':'💵 Cash'}</span>
-            ${o.estimatedTime?`<span>⏱ Packing: ${o.estimatedTime} min</span>`:''}
-            ${o.employeeName?`<span>👤 By: ${esc(o.employeeName)}</span>`:''}
+            <span>${o.paymentMode==='Cash'?'💵 Cash':o.paymentMode==='Card'?'💳 Card':'📱 '+(o.paymentMode||'UPI')}</span>
           </div>
-          ${(st==='accepted'||st==='packing'||st==='processing')?`<div class="order-status-notice" style="margin-top:10px;padding:8px 12px;background:#e3f2fd;border-radius:8px;font-size:0.82rem;color:#1565c0;">
-            ⚙️ Your order is being processed. Estimated time: <strong>${o.estimatedTime||'—'} min</strong>
-          </div>`:''}
-          ${st==='payment-pending'?`<div class="order-status-notice" style="margin-top:10px;padding:8px 12px;background:#fff3e0;border-radius:8px;font-size:0.82rem;color:#e65100;font-weight:600;">
-            💳 Payment is pending. Please complete payment at the counter.
-          </div>`:''}
-          ${st==='payment-completed'?`<div class="order-status-notice" style="margin-top:10px;padding:8px 12px;background:#e8f5e9;border-radius:8px;font-size:0.82rem;color:#2e7d32;font-weight:600;">
-            ✅ Payment received. Your bill is being generated.
-          </div>`:''}
-          ${(st==='bill-generated'||st==='ready')?`<div class="order-status-notice" style="margin-top:10px;padding:8px 12px;background:#e8f5e9;border-radius:8px;font-size:0.82rem;color:#2e7d32;font-weight:600;">
-            🧾 Bill generated! Please collect your order from the counter.
-          </div>`:''}
         </div>`;
       }).join('')}
     </div>`;
@@ -2500,34 +2512,7 @@ function renderCustomerShop() {
   // Non-recommended available products (shown below recs)
   const available = filtered.filter(p=>!recIds.has(p.id));
   const cartCount=state.cart.reduce((s,i)=>s+i.qty,0);
-  // Active order banner
-  const activeOrders = DB.getOrders().filter(o=>o.customerId===session?.id && ['pending','accepted','packing','ready'].includes(o.status||'pending'));
-  const latestActive = activeOrders.sort((a,b)=>b.date-a.date)[0];
-  const activeBanner = latestActive ? (()=>{
-    const st=latestActive.status||'pending';
-    // Only show banner for statuses after "order placed" — never show for pending/order-placed
-    if (st==='pending'||st==='order-placed') return '';
-    const msgs={
-      'accepted':        `⚙️ Processing — Est. time: <strong>${latestActive.estimatedTime||'—'} min</strong>`,
-      'processing':      `⚙️ Processing — Est. time: <strong>${latestActive.estimatedTime||'—'} min</strong>`,
-      'packing':         `⚙️ Processing — Est. time: <strong>${latestActive.estimatedTime||'—'} min</strong>`,
-      'payment-pending': '💳 Payment Pending — Please complete payment at the counter',
-      'payment-completed':'✅ Payment Completed',
-      'bill-generated':  '🧾 Bill Generated — Please collect your order',
-      'ready':           '✅ Your order is <strong>ready for pickup</strong>!'
-    };
-    const colors={
-      'accepted':'#1565c0','processing':'#1565c0','packing':'#6a1b9a',
-      'payment-pending':'#f59e0b','payment-completed':'#059669',
-      'bill-generated':'#7c3aed','ready':'#2e7d32'
-    };
-    const c=colors[st]||'#555';
-    if (!msgs[st]) return '';
-    return `<div class="active-order-banner" style="background:${c}10;border-bottom:2px solid ${c};padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-      <div style="font-size:0.88rem;color:${c};font-weight:600;">${msgs[st]}</div>
-      <button class="btn btn-sm" style="background:${c};color:#fff;border:none;font-size:0.78rem;" data-cust-nav="orders">View Order</button>
-    </div>`;
-  })() : '';
+  const activeBanner = '';
   return `<div>
     <header class="app-header">
       <div class="app-logo"><span class="gold-text">ZARA</span><span class="app-logo-lite">Aura</span></div>
@@ -2550,7 +2535,7 @@ function renderCustomerShop() {
       ${cust?`<div class="shop-hero-greeting">✦ &nbsp; Welcome back, ${esc(cust.name)} &nbsp; ✦</div>`:''}
       <div class="shop-hero-name gold-text">${esc(shop?.name||'Zara Aura')}</div>
       <div class="shop-hero-sub">${esc(shop?.address||'Luxury Fashion Boutique')}</div>
-      ${shop?.phone?`<div style="font-size:0.78rem;color:rgba(255,255,255,0.75);margin-top:4px;">📞 ${esc(shop.phone)}</div>`:''}
+      ${shop?.phone?`<div style="font-size:0.78rem;color:#000;margin-top:4px;">📞 ${esc(shop.phone)}</div>`:''}
     </div></div>
     <!-- Category Sections — fully dynamic from products -->
     <div class="category-nav-bar">
@@ -4566,18 +4551,16 @@ function attachListeners() {
     e.preventDefault();
     const fd=new FormData(e.target), btn=document.getElementById('login-submit-btn');
     const username=fd.get('username')?.trim(), password=fd.get('password')?.trim();
-    const mobile=fd.get('mobile')?.trim();
+    const mobile=fd.get('mobile')?.trim()||'';
     if(!username){ showToast('Please enter your username','error'); return; }
     if(state.loginRole==='customer'&&!password&&!mobile){ showToast('Please enter your password or mobile number','error'); return; }
     if(state.loginRole!=='customer'&&state.loginRole!=='super-admin'&&!password){ showToast('Please enter your password','error'); return; }
     if(btn){btn.disabled=true;btn.textContent='Signing in…';}
-    // For customer: pass mobile as the credential if no password given
     const attendedBy = fd.get('attendedBy')?.trim()||'';
-    const credential = password || (state.loginRole==='customer'?mobile:'') || '';
+    const credential = password || mobile || '';
     const ok=await login(state.loginRole, username, credential, mobile);
     if(btn){btn.disabled=false;btn.textContent='Sign In';}
     if(ok){
-      // Save attendedBy for customers
       if(state.loginRole==='customer' && attendedBy){
         const session=DB.getSession();
         if(session?.id) DB.updateCustomer(session.id,{attendedBy, attendedDate:new Date().toISOString().slice(0,10)});
@@ -4858,7 +4841,16 @@ function attachListeners() {
     DB.addCustomer(cust);
     const custShopId = DB.getShopId();
     DB.setSession({role:'customer',name:cust.name,username:cust.username,id:cust.id,shopId:custShopId||undefined});
-    if(firebaseReady && custShopId){ state.shopId = custShopId; Sync.start(custShopId); }
+    if(firebaseReady && custShopId){
+      state.shopId = custShopId;
+      // Write to both shop customers sub-collection AND users/{username} for cross-device login
+      db.collection('shops').doc(custShopId).collection('customers').doc(cust.id).set(cust).catch(console.error);
+      db.collection('users').doc(cust.username).set({
+        role:'customer', id:cust.id, name:cust.name, username:cust.username,
+        password:cust.password||'', whatsapp:cust.whatsapp||'', shopId:custShopId
+      }).catch(console.error);
+      Sync.start(custShopId);
+    }
     showToast(`Welcome, ${cust.name}!`,'success'); navigate('customer');
   });
 

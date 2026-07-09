@@ -2580,7 +2580,7 @@ function renderCustomerShop() {
           <div class="shop-section-header"><div>
             <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:4px;">✨ Curated For You</div>
             <div class="shop-section-title">Recommended</div></div><div class="shop-section-line"></div></div>
-          <div class="shop-grid">${recs.map(renderShopCard).join('')}</div></div>`:'';
+          <div class="shop-grid" data-ml-reco="1">${recs.map(renderShopCard).join('')}</div></div>`:'';
 
         // Dynamic category tiles from products
         const dynCats=[...new Set(prods.map(p=>p.category).filter(Boolean))];

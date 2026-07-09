@@ -17,6 +17,14 @@
 
   function ready() { return !!ML_URL; }
 
+  // app.js declares `DB` as a top-level const, which lives in the shared
+  // classic-script global scope but is NOT a property of window. Resolve it
+  // safely here so both `DB` and `window.DB` styles work.
+  function _db() {
+    try { if (typeof DB !== 'undefined' && DB) return DB; } catch (e) {}
+    return (typeof window !== 'undefined' && window.DB) ? window.DB : null;
+  }
+
   function _fetch(path, body, ms) {
     var ctrl = new AbortController();
     var t = setTimeout(function () { ctrl.abort(); }, ms || 5000);
@@ -35,10 +43,12 @@
     try {
       var grids = document.querySelectorAll('[data-ml-reco="1"]');
       if (!grids.length) return;
-      var session = (window.DB && DB.getSession && DB.getSession()) || {};
-      var cust = (window.DB && DB.getCustomers ? DB.getCustomers() : [])
+      var db = _db();
+      if (!db) return;
+      var session = (db.getSession && db.getSession()) || {};
+      var cust = (db.getCustomers ? db.getCustomers() : [])
         .find(function (c) { return c.id === session.id; }) || session;
-      var products = (window.DB && DB.getProducts ? DB.getProducts() : [])
+      var products = (db.getProducts ? db.getProducts() : [])
         .filter(function (p) { return +p.quantity > 0; });
       if (!cust || !products.length) return;
 
@@ -73,7 +83,8 @@
       // gather the shop's recent daily revenue to anchor the scale
       var recent = [];
       try {
-        var orders = (window.DB && DB.getOrders ? DB.getOrders() : []);
+        var db = _db();
+        var orders = (db && db.getOrders ? db.getOrders() : []);
         var byDay = {};
         orders.forEach(function (o) {
           var d = new Date(o.date).toISOString().slice(0, 10);
@@ -121,13 +132,15 @@
       if (!anchor) return;                          // only where the marker exists
       if (document.getElementById('ml-stock-card')) return; // already added
 
-      var products = (window.DB && DB.getProducts ? DB.getProducts() : []);
+      var db = _db();
+      if (!db) return;
+      var products = (db.getProducts ? db.getProducts() : []);
       if (!products.length) return;
 
       // estimate each product's recent weekly units sold from real orders
       var soldByProduct = {};
       try {
-        var orders = (window.DB && DB.getOrders ? DB.getOrders() : []);
+        var orders = (db.getOrders ? db.getOrders() : []);
         var cutoff = Date.now() - 28 * 24 * 60 * 60 * 1000; // last 4 weeks
         orders.forEach(function (o) {
           if (new Date(o.date).getTime() < cutoff) return;

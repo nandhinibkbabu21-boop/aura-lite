@@ -16,6 +16,7 @@ import config as C
 import generate_data
 import train_recommender
 import train_forecaster
+import train_stock
 
 
 def _load_state():
@@ -31,7 +32,8 @@ def _save_state(state):
 
 
 def models_exist():
-    return os.path.exists(C.RECO_MODEL) and os.path.exists(C.SALES_MODEL)
+    return (os.path.exists(C.RECO_MODEL) and os.path.exists(C.SALES_MODEL)
+            and os.path.exists(C.STOCK_MODEL))
 
 
 def add_new_records(n):
@@ -54,28 +56,35 @@ def run(force=False):
         print("[pipeline] models already trained; nothing to do.")
         return _current_metrics()
 
-    print("[pipeline] 1/4  generating datasets …")
+    print("[pipeline] 1/5  generating datasets …")
     generate_data.build_recommendation_dataset()
     generate_data.build_sales_dataset()
+    generate_data.build_stock_dataset()
 
-    print("[pipeline] 2/4  training recommender …")
+    print("[pipeline] 2/5  training recommender …")
     reco_m = train_recommender.train()
 
-    print("[pipeline] 3/4  training forecaster …")
+    print("[pipeline] 3/5  training forecaster …")
     sales_m = train_forecaster.train()
 
-    print("[pipeline] 4/4  saving state …")
+    print("[pipeline] 4/5  training stock predictor …")
+    stock_m = train_stock.train()
+
+    print("[pipeline] 5/5  saving state …")
     state["last_trained"] = dt.datetime.now().isoformat(timespec="seconds")
     state["records_since_train"] = 0
     state["runs"] = state.get("runs", 0) + 1
     _save_state(state)
 
-    return {"recommender": reco_m, "forecaster": sales_m, "state": state}
+    return {"recommender": reco_m, "forecaster": sales_m,
+            "stock": stock_m, "state": state}
 
 
 def _current_metrics():
     out = {}
-    for name, path in (("recommender", C.RECO_METRICS), ("forecaster", C.SALES_METRICS)):
+    for name, path in (("recommender", C.RECO_METRICS),
+                       ("forecaster", C.SALES_METRICS),
+                       ("stock", C.STOCK_METRICS)):
         if os.path.exists(path):
             with open(path) as f:
                 out[name] = json.load(f)
@@ -89,9 +98,13 @@ if __name__ == "__main__":
     print("\n════════════ PIPELINE COMPLETE ════════════")
     r = result.get("recommender", {})
     s = result.get("forecaster", {})
+    k = result.get("stock", {})
     if r:
         print(f"RECOMMENDER  acc={r.get('accuracy')}  prec={r.get('precision')}  "
               f"recall={r.get('recall')}  f1={r.get('f1_score')}")
     if s:
         print(f"FORECASTER   [{s.get('algorithm_selected')}]  "
               f"R2={s.get('r2_score')}  MAE={s.get('mae')}  RMSE={s.get('rmse')}")
+    if k:
+        print(f"STOCK PRED   [{k.get('algorithm_selected')}]  "
+              f"R2={k.get('r2_score')}  MAE={k.get('mae')}  RMSE={k.get('rmse')}")

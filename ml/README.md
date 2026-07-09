@@ -1,10 +1,11 @@
 # Zara Aura — Machine Learning Module
 
-This folder adds two ML features to the boutique app **without changing the
+This folder adds three ML features to the boutique app **without changing the
 existing UI**:
 
 1. **Product Recommendation** — ranks products for each customer (classification)
 2. **Sales Forecasting** — predicts future daily/weekly/monthly/yearly revenue (regression)
+3. **Stock Prediction** — predicts next-week demand per product and suggests reorder quantities (regression)
 
 The web app (GitHub Pages) is static and cannot run Python, so the trained
 models live in a tiny Flask server here. The browser calls it and shows results
@@ -21,9 +22,10 @@ back to its current rule-based logic — nothing breaks.
 | `generate_data.py` | Builds a large **realistic synthetic dataset** matching your real fields (gender, skin tone, colour, category, price, order dates). Folds in real data if exported. |
 | `train_recommender.py` | Trains the **Random Forest Classifier** for recommendations. Preprocess → split → train → evaluate (Accuracy/Precision/Recall/F1/Confusion Matrix) → save. |
 | `train_forecaster.py` | Trains a **Random Forest Regressor** (with Linear Regression baseline) for sales. Evaluates R²/MAE/RMSE, keeps the better model. |
-| `predict.py` | Loads the saved models and turns them into live predictions (ranked products, future sales). |
-| `pipeline.py` | **One command runs everything**: generate → preprocess → train → evaluate → save. Also handles auto-retrain threshold. |
-| `server.py` | Flask API the web app calls: `/api/recommend`, `/api/forecast`, `/api/retrain`, `/api/notify-records`, `/health`, `/metrics`. |
+| `train_stock.py` | Trains a **Random Forest Regressor** (with Linear Regression baseline) to predict next-week demand per product. Evaluates R²/MAE/RMSE, keeps the better model. |
+| `predict.py` | Loads the saved models and turns them into live predictions (ranked products, future sales, per-product demand + reorder quantities). |
+| `pipeline.py` | **One command runs everything**: generate → preprocess → train → evaluate → save all three models. Also handles auto-retrain threshold. |
+| `server.py` | Flask API the web app calls: `/api/recommend`, `/api/forecast`, `/api/stock`, `/api/retrain`, `/api/notify-records`, `/health`, `/metrics`. |
 | `requirements.txt` | Python dependencies. |
 | `Procfile`, `render.yaml` | Deployment config for Render.com (free). |
 | `data/` | Generated CSV datasets (created on first run). |
@@ -36,7 +38,7 @@ back to its current rule-based logic — nothing breaks.
 | `ml-client.js` | NEW. Bridge that calls this server and enhances the UI. Dormant until `mlUrl` is set. |
 | `backend-config.js` | Added one field: `mlUrl`. |
 | `index.html` | Added one line: loads `ml-client.js`. |
-| `app.js` | Added a 4-line hook in `postRender()` + two `data-ml-reco` markers. Purely additive. |
+| `app.js` | Added a small hook in `postRender()` + two `data-ml-reco` markers + one `data-ml-stock` anchor on the admin dashboard. Purely additive. |
 
 ---
 

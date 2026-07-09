@@ -198,8 +198,64 @@ def build_sales_dataset():
     return df
 
 
+# ── 3. STOCK / DEMAND DATASET (regression) ───────────────────────
+def _festival_week(d):
+    """1 if any festival date falls within this ISO week."""
+    for off in range(7):
+        day = d + dt.timedelta(days=off)
+        if (day.month, day.day) in C.FESTIVAL_DATES:
+            return 1
+    return 0
+
+
+def build_stock_dataset(n_weeks=104):
+    """
+    Predict how many UNITS of a product will sell NEXT WEEK, so the admin knows
+    what to restock. One row per (product, week). Demand is driven by the SAME
+    signals a shopkeeper uses: category popularity, price point, season/festival,
+    and the product's own recent sales momentum (lag features). This is a
+    regression problem → gives the R² / MAE / RMSE metrics you asked for.
+    """
+    products = _make_products(min(C.N_SYNTHETIC_PRODUCTS, 80))
+    start = dt.date.today() - dt.timedelta(weeks=n_weeks)
+    rows = []
+    for prod in products:
+        cat_pull   = C.CATEGORY_POPULARITY.get(prod["category"], 1.0)
+        price_pull = 1.6 if prod["price"] <= 700 else (1.0 if prod["price"] <= 2000 else 0.6)
+        base       = max(1.0, 6.0 * cat_pull * price_pull)   # baseline weekly units
+        prev1, prev4 = base, base                             # lag seeds
+        hist = [base, base, base, base]
+        for w in range(n_weeks):
+            wk_start = start + dt.timedelta(weeks=w)
+            fest     = _festival_week(wk_start)
+            seasonal = 1.0 + 0.20 * np.sin(2 * np.pi * (wk_start.timetuple().tm_yday) / 365)
+            fest_mult = 2.0 if fest else 1.0
+            noise    = np.random.normal(1.0, 0.15)
+            demand   = max(0.0, base * seasonal * fest_mult * noise)
+            avg_4wk  = float(np.mean(hist[-4:]))
+            rows.append({
+                "prod_category":     prod["category"],
+                "prod_subcategory":  prod["subcategory"],
+                "prod_price":        prod["price"],
+                "month":             wk_start.month,
+                "week_of_year":      wk_start.isocalendar()[1],
+                "is_festival_week":  fest,
+                "units_sold_last_week": round(prev1, 2),
+                "avg_sales_4wk":     round(avg_4wk, 2),
+                "current_stock":     max(0, int(round(avg_4wk * np.random.uniform(0.5, 2.0)))),
+                "units_sold_next_week": round(demand, 2),   # ← TARGET
+            })
+            prev1 = demand
+            hist.append(demand)
+    df = pd.DataFrame(rows)
+    df.to_csv(C.STOCK_DATA, index=False)
+    return df
+
+
 if __name__ == "__main__":
     r = build_recommendation_dataset()
     s = build_sales_dataset()
+    k = build_stock_dataset()
     print(f"[generate_data] recommendation rows: {len(r):,}  ->  {C.RECO_DATA}")
     print(f"[generate_data] sales rows:          {len(s):,}  ->  {C.SALES_DATA}")
+    print(f"[generate_data] stock rows:          {len(k):,}  ->  {C.STOCK_DATA}")

@@ -1,0 +1,27 @@
+{
+  "algorithm_selected": "RandomForestRegressor",
+  "task": "stock_prediction (regression / demand forecasting)",
+  "n_rows": 8320,
+  "n_train": 6656,
+  "n_test": 1664,
+  "selected_metrics": {
+    "r2": 0.8986,
+    "mae": 0.96,
+    "rmse": 1.44
+  },
+  "comparison": {
+    "RandomForestRegressor": {
+      "r2": 0.8986,
+      "mae": 0.96,
+      "rmse": 1.44
+    },
+    "LinearRegression": {
+      "r2": 0.7912,
+      "mae": 1.41,
+      "rmse": 2.06
+    }
+  },
+  "r2_score": 0.8986,
+  "mae": 0.96,
+  "rmse": 1.44
+}

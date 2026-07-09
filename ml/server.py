@@ -11,6 +11,7 @@ Endpoints:
   GET  /metrics           -> latest evaluation metrics for both models
   POST /api/recommend     -> body {customer:{...}, products:[...]} -> ranked products
   POST /api/forecast      -> body {recentDailyRevenue:[...]} -> future sales
+  POST /api/stock         -> body {products:[...]} -> next-week demand + reorder qty
   POST /api/retrain       -> header X-Admin-Secret -> retrain now (manual trigger)
   POST /api/notify-records-> body {count:N} -> auto-retrain when threshold crossed
 """
@@ -67,6 +68,14 @@ def api_forecast():
     return jsonify({"ok": True, "forecast": result})
 
 
+@app.post("/api/stock")
+def api_stock():
+    body = request.get_json(force=True) or {}
+    products = body.get("products") or []
+    result = predict.predict_stock(products)
+    return jsonify({"ok": True, "count": len(result), "items": result})
+
+
 @app.post("/api/retrain")
 def api_retrain():
     if request.headers.get("X-Admin-Secret") != ADMIN_SECRET:
@@ -75,7 +84,8 @@ def api_retrain():
     predict.reload_models()
     return jsonify({"ok": True, "retrained": True,
                     "recommender": result.get("recommender", {}),
-                    "forecaster": result.get("forecaster", {})})
+                    "forecaster": result.get("forecaster", {}),
+                    "stock": result.get("stock", {})})
 
 
 @app.post("/api/notify-records")

@@ -7,6 +7,7 @@
  * When you deploy the ML server and set mlUrl, it:
  *   1. Re-orders the "Recommended for You" cards by the ML model's score.
  *   2. Adds an "AI Sales Forecast" panel to the Analytics page.
+ *   3. Adds an "AI Stock Prediction" panel to the admin dashboard.
  * All calls have short timeouts and swallow errors — if the ML server is slow
  * or down, the app silently keeps its current behaviour. Nothing ever breaks.
  */
@@ -112,6 +113,72 @@
       val + '</div><div class="stat-label">' + label + '</div></div>';
   }
 
+  /* ── 3. STOCK PREDICTION: add a panel to the admin dashboard ── */
+  function enhanceStock() {
+    if (!ready()) return;
+    try {
+      var anchor = document.querySelector('[data-ml-stock="1"]');
+      if (!anchor) return;                          // only where the marker exists
+      if (document.getElementById('ml-stock-card')) return; // already added
+
+      var products = (window.DB && DB.getProducts ? DB.getProducts() : []);
+      if (!products.length) return;
+
+      // estimate each product's recent weekly units sold from real orders
+      var soldByProduct = {};
+      try {
+        var orders = (window.DB && DB.getOrders ? DB.getOrders() : []);
+        var cutoff = Date.now() - 28 * 24 * 60 * 60 * 1000; // last 4 weeks
+        orders.forEach(function (o) {
+          if (new Date(o.date).getTime() < cutoff) return;
+          (o.items || o.products || []).forEach(function (it) {
+            var pid = it.id || it.productId;
+            if (!pid) return;
+            soldByProduct[pid] = (soldByProduct[pid] || 0) + (+it.qty || +it.quantity || 1);
+          });
+        });
+      } catch (e) {}
+
+      var payload = products.map(function (p) {
+        var sold4 = soldByProduct[p.id] || 0;
+        return {
+          id: p.id, name: p.name, category: p.category,
+          subcategory: p.subcategory, price: +p.price || 0,
+          quantity: +p.quantity || 0,
+          recentUnitsSold: Math.round(sold4 / 4),
+          avgSales4wk: Math.round(sold4 / 4)
+        };
+      });
+
+      _fetch('/api/stock', { products: payload }, 6000)
+        .then(function (res) {
+          if (!res || !res.ok || !res.items) return;
+          var need = res.items.filter(function (i) { return i.reorder_qty > 0; }).slice(0, 8);
+          var rowsHtml = (need.length ? need : res.items.slice(0, 6)).map(function (i) {
+            var color = i.urgency === 'critical' ? 'var(--danger,#c0392b)'
+              : i.urgency === 'reorder' ? 'var(--gold-dark)' : 'var(--text-light)';
+            return '<div style="display:flex;justify-content:space-between;align-items:center;' +
+              'padding:8px 0;border-bottom:1px solid var(--border-light);font-size:0.85rem;">' +
+              '<div style="flex:1;"><strong>' + (i.name || '—') + '</strong>' +
+              '<div style="font-size:0.72rem;color:var(--text-light);">in stock: ' + i.current_stock +
+              ' · predicted demand/wk: ' + i.predicted_demand + '</div></div>' +
+              '<div style="text-align:right;color:' + color + ';font-weight:700;">' +
+              (i.reorder_qty > 0 ? 'reorder ' + i.reorder_qty : 'ok') + '</div></div>';
+          }).join('');
+
+          var card = document.createElement('div');
+          card.id = 'ml-stock-card';
+          card.className = 'card';
+          card.style.cssText = 'margin-bottom:24px;border-left:4px solid var(--gold-light);';
+          card.innerHTML =
+            '<h4 style="font-family:var(--font-serif);margin-bottom:4px;">📦 AI Stock Prediction</h4>' +
+            '<div style="font-size:0.75rem;color:var(--text-light);margin-bottom:14px;">' +
+            'Next-week demand &amp; suggested reorders</div>' + rowsHtml;
+          anchor.parentNode.insertBefore(card, anchor);
+        });
+    } catch (e) { /* silent — dashboard unchanged */ }
+  }
+
   /* ── 3. Tell the server new real records arrived (auto-retrain trigger) ── */
   function notifyRecords(count) {
     if (!ready()) return;
@@ -122,6 +189,7 @@
     ready: ready,
     enhanceRecommendations: enhanceRecommendations,
     enhanceForecast: enhanceForecast,
+    enhanceStock: enhanceStock,
     notifyRecords: notifyRecords
   };
 })();

@@ -14,6 +14,7 @@ import config as C
 
 _reco_model = None
 _sales_bundle = None
+_stock_bundle = None
 
 
 def _load_reco():
@@ -30,13 +31,22 @@ def _load_sales():
     return _sales_bundle
 
 
+def _load_stock():
+    global _stock_bundle
+    if _stock_bundle is None and os.path.exists(C.STOCK_MODEL):
+        _stock_bundle = joblib.load(C.STOCK_MODEL)
+    return _stock_bundle
+
+
 def reload_models():
     """Force models to be re-read from disk (called after a retrain)."""
-    global _reco_model, _sales_bundle
+    global _reco_model, _sales_bundle, _stock_bundle
     _reco_model = None
     _sales_bundle = None
+    _stock_bundle = None
     _load_reco()
     _load_sales()
+    _load_stock()
 
 
 # ── RECOMMENDATION ───────────────────────────────────────────────
@@ -139,3 +149,74 @@ def forecast_sales(days_ahead=365, recent_daily_revenue=None):
         "weekly":  [round(float(np.sum(preds[i:i+7])), 2) for i in range(0, min(days_ahead, 84), 7)],
         "monthly": [round(float(np.sum(preds[i:i+30])), 2) for i in range(0, min(days_ahead, 360), 30)],
     }
+
+
+# ── STOCK / DEMAND PREDICTION ────────────────────────────────────
+def predict_stock(products):
+    """
+    products : list of the app's real product dicts. Each may optionally carry
+               `recentUnitsSold` (units sold last week) — if absent it is
+               estimated from the 4-week average or a category baseline.
+    returns  : list of {id, name, predicted_demand, current_stock,
+               reorder_qty, urgency} — how many units are likely to sell next
+               week and how many to reorder. Falls back to [] if model missing.
+    """
+    bundle = _load_stock()
+    if bundle is None or not products:
+        return []
+    model = bundle["model"]
+    cat_f, num_f = bundle["cat_features"], bundle["num_features"]
+
+    today = dt.date.today()
+    month = today.month
+    week_of_year = today.isocalendar()[1]
+    is_fest = int(any((today + dt.timedelta(days=o)).month == month and
+                      ((today + dt.timedelta(days=o)).month, (today + dt.timedelta(days=o)).day) in C.FESTIVAL_DATES
+                      for o in range(7)))
+
+    rows = []
+    for p in products:
+        stock = int(p.get("quantity", 0) or 0)
+        last_week = p.get("recentUnitsSold")
+        avg_4wk = p.get("avgSales4wk")
+        if last_week is None:
+            last_week = avg_4wk if avg_4wk is not None else 4.0
+        if avg_4wk is None:
+            avg_4wk = last_week
+        rows.append({
+            "prod_category":    p.get("category", "Unknown"),
+            "prod_subcategory": p.get("subcategory", "Unknown"),
+            "prod_price":       float(p.get("price", 0) or 0),
+            "month":            month,
+            "week_of_year":     week_of_year,
+            "is_festival_week": is_fest,
+            "units_sold_last_week": float(last_week),
+            "avg_sales_4wk":    float(avg_4wk),
+            "current_stock":    stock,
+        })
+    X = pd.DataFrame(rows)[cat_f + num_f]
+    preds = np.clip(model.predict(X), 0, None)
+
+    out = []
+    for p, demand in zip(products, preds):
+        stock = int(p.get("quantity", 0) or 0)
+        demand = float(round(demand, 1))
+        reorder = int(max(0, round(demand - stock)))
+        if stock <= 0:
+            urgency = "critical"
+        elif stock < demand:
+            urgency = "reorder"
+        elif stock < demand * 2:
+            urgency = "watch"
+        else:
+            urgency = "ok"
+        out.append({
+            "id":               p.get("id"),
+            "name":             p.get("name"),
+            "predicted_demand": demand,
+            "current_stock":    stock,
+            "reorder_qty":      reorder,
+            "urgency":          urgency,
+        })
+    out.sort(key=lambda r: -r["reorder_qty"])
+    return out

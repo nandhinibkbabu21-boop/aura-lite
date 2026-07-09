@@ -16,12 +16,15 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 # ── Dataset files ────────────────────────────────────────────────
 RECO_DATA   = os.path.join(DATA_DIR, "recommendation_dataset.csv")
 SALES_DATA  = os.path.join(DATA_DIR, "sales_dataset.csv")
+STOCK_DATA  = os.path.join(DATA_DIR, "stock_dataset.csv")
 
 # ── Saved model + metric files ───────────────────────────────────
 RECO_MODEL      = os.path.join(MODEL_DIR, "recommender.pkl")
 RECO_METRICS    = os.path.join(MODEL_DIR, "recommender_metrics.json")
 SALES_MODEL     = os.path.join(MODEL_DIR, "forecaster.pkl")
 SALES_METRICS   = os.path.join(MODEL_DIR, "forecaster_metrics.json")
+STOCK_MODEL     = os.path.join(MODEL_DIR, "stock_predictor.pkl")
+STOCK_METRICS   = os.path.join(MODEL_DIR, "stock_predictor_metrics.json")
 STATE_FILE      = os.path.join(MODEL_DIR, "pipeline_state.json")
 
 # ── Synthetic data sizes ─────────────────────────────────────────
@@ -58,6 +61,14 @@ SKIN_TONE_COLORS = {
     "Warm":   ["gold", "orange", "red", "coral", "olive", "burgundy", "mustard"],
     "Dark":   ["red", "royal blue", "magenta", "yellow", "white", "coral"],
     "Deep":   ["magenta", "royal blue", "white", "gold", "yellow"],
+}
+
+# Relative weekly demand pull per category (used to synthesise stock demand)
+CATEGORY_POPULARITY = {
+    "Women":   1.35,
+    "Men":     1.00,
+    "Kids":    0.80,
+    "Newborn": 0.55,
 }
 
 # Indian festival / peak-sale dates (month, day) that spike textile sales

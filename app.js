@@ -1290,6 +1290,7 @@ function renderAdminOverview() {
       ${oos.slice(0,3).map(p=>`<div class="alert alert-danger">❌ &nbsp; <strong>${esc(p.name)}</strong> is out of stock${p._detail?' ('+esc(p._detail)+')':''}</div>`).join('')}
       ${low.slice(0,5).map(p=>`<div class="alert alert-warning">⚠ &nbsp; <strong>${esc(p.name)}</strong> – low stock${p._detail?' ('+esc(p._detail)+')':' (only '+p.quantity+' left)'}</div>`).join('')}
     </div>`:''}
+    <div data-ml-stock="1"></div>
     <!-- Shop & Bill Details Card -->
     ${(()=>{const s=DB.getShop();return `<div class="card" style="margin-bottom:24px;border-left:4px solid var(--gold-light);">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
@@ -4479,6 +4480,7 @@ function postRender() {
   if (window.AuraML && AuraML.ready()) {
     if (state.route === 'customer') setTimeout(() => AuraML.enhanceRecommendations(), 50);
     if (state.route === 'admin' && state.subRoute === 'analytics') setTimeout(() => AuraML.enhanceForecast(), 50);
+    if (state.route === 'admin' && state.subRoute === 'overview') setTimeout(() => AuraML.enhanceStock(), 50);
   }
 
   const chartDefaults = {

@@ -5,9 +5,11 @@
  * backend-config.js. When mlUrl is empty (default), every function below is a
  * no-op, so your existing UI and rule-based logic run exactly as before.
  * When you deploy the ML server and set mlUrl, it:
- *   1. Re-orders the "Recommended for You" cards by the ML model's score.
+ *   1. Re-orders the "Recommended for You" cards by the ML model's score and
+ *      adds a visible "AI Recommended For You" label + per-card confidence %.
  *   2. Adds an "AI Sales Forecast" panel to the Analytics page.
  *   3. Adds an "AI Stock Prediction" panel to the admin dashboard.
+ *   4. Shows a small "AI Engine Active" indicator while the ML server is set.
  * All calls have short timeouts and swallow errors — if the ML server is slow
  * or down, the app silently keeps its current behaviour. Nothing ever breaks.
  */
@@ -55,8 +57,11 @@
       _fetch('/api/recommend', { customer: cust, products: products }, 5000)
         .then(function (res) {
           if (!res || !res.ok || !res.products) return;
-          var order = {};
-          res.products.forEach(function (p, i) { order[p.id] = i; });
+          var order = {}, scores = {};
+          res.products.forEach(function (p, i) {
+            order[p.id] = i;
+            if (p._mlScore != null) scores[p.id] = p._mlScore;
+          });
           grids.forEach(function (grid) {
             var cards = Array.prototype.slice.call(
               grid.querySelectorAll('[data-prod-card]'));
@@ -67,9 +72,47 @@
               return ia - ib;
             });
             cards.forEach(function (c) { grid.appendChild(c); }); // reorder in place
+            _addRecoNote(grid);             // visible "AI Recommended For You" label
+            _addScoreBadges(grid, scores);  // per-card ML confidence badge
           });
         });
     } catch (e) { /* silent — keep rule-based order */ }
+  }
+
+  // Visible, non-intrusive "AI Recommended For You" label above a reco grid.
+  function _addRecoNote(grid) {
+    var prev = grid.previousElementSibling;
+    if (prev && prev.classList && prev.classList.contains('ml-reco-note')) return;
+    var note = document.createElement('div');
+    note.className = 'ml-reco-note';
+    note.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;' +
+      'margin:0 4px 12px;font-size:0.72rem;color:var(--text-light);';
+    note.innerHTML =
+      '<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;' +
+      'background:var(--cream);border:1px solid var(--gold-light);color:var(--gold-dark);' +
+      'font-weight:700;letter-spacing:0.04em;text-transform:uppercase;font-size:0.66rem;">' +
+      '🤖 AI Recommended For You</span>' +
+      '<span>Recommended based on your preferences, previous interactions, and product features.</span>';
+    grid.parentNode.insertBefore(note, grid);
+  }
+
+  // Small ML confidence badge on each recommended card.
+  function _addScoreBadges(grid, scores) {
+    Array.prototype.slice.call(grid.querySelectorAll('[data-prod-card]')).forEach(function (c) {
+      var s = scores[c.getAttribute('data-prod-card')];
+      if (s == null) return;
+      var box = c.querySelector('.shop-card-img') || c;
+      if (box.querySelector('.ml-score-badge')) return;
+      if (window.getComputedStyle(box).position === 'static') box.style.position = 'relative';
+      var b = document.createElement('span');
+      b.className = 'ml-score-badge';
+      b.textContent = 'AI ' + Math.max(0, Math.min(100, Math.round(s))) + '%';
+      b.title = 'ML recommendation confidence';
+      b.style.cssText = 'position:absolute;right:8px;top:8px;z-index:3;' +
+        'background:rgba(0,0,0,0.72);color:#fff;font-size:0.64rem;font-weight:700;' +
+        'letter-spacing:0.03em;padding:3px 7px;border-radius:999px;pointer-events:none;';
+      box.appendChild(b);
+    });
   }
 
   /* ── 2. FORECAST: add an "AI Sales Forecast" panel to Analytics ── */
@@ -104,14 +147,18 @@
           card.style.cssText = 'margin-bottom:24px;border-left:4px solid var(--gold-light);';
           card.innerHTML =
             '<h4 style="font-family:var(--font-serif);margin-bottom:4px;">🔮 AI Sales Forecast</h4>' +
-            '<div style="font-size:0.75rem;color:var(--text-light);margin-bottom:16px;">Predicted by ' +
-            (f.algorithm || 'ML model') + '</div>' +
+            '<div style="font-size:0.72rem;color:var(--text-light);margin-bottom:16px;">' +
+            'Model Used: <strong style="color:var(--gold-dark);">Random Forest Regression</strong> ' +
+            '<span style="opacity:0.7;">(' + (f.algorithm || 'RandomForestRegressor') + ')</span></div>' +
             '<div class="grid-4">' +
             _stat('Tomorrow', inr(f.next_day)) +
             _stat('Next 7 Days', inr(f.next_7_days)) +
             _stat('Next 30 Days', inr(f.next_30_days)) +
             _stat('Next 1 Year', inr(f.next_365_days)) +
-            '</div>';
+            '</div>' +
+            '<div style="font-size:0.68rem;color:var(--text-light);margin-top:12px;line-height:1.5;">' +
+            'Trained on your historical daily sales (seasonality, weekends, festivals &amp; trend). ' +
+            'Live prediction from the ML server.</div>';
           // insert directly ABOVE the revenue chart's card (additive, no UI edits)
           var host = canvas.closest('.card') || canvas.parentNode;
           host.parentNode.insertBefore(card, host);
@@ -167,16 +214,20 @@
         .then(function (res) {
           if (!res || !res.ok || !res.items) return;
           var need = res.items.filter(function (i) { return i.reorder_qty > 0; }).slice(0, 8);
+          var statusMap = { critical: 'Critical', reorder: 'Low Stock', watch: 'Watch', ok: 'Normal' };
           var rowsHtml = (need.length ? need : res.items.slice(0, 6)).map(function (i) {
             var color = i.urgency === 'critical' ? 'var(--danger,#c0392b)'
-              : i.urgency === 'reorder' ? 'var(--gold-dark)' : 'var(--text-light)';
-            return '<div style="display:flex;justify-content:space-between;align-items:center;' +
+              : i.urgency === 'reorder' ? 'var(--gold-dark)'
+              : i.urgency === 'watch' ? '#b8860b' : '#2e7d32';
+            var status = statusMap[i.urgency] || 'Normal';
+            return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;' +
               'padding:8px 0;border-bottom:1px solid var(--border-light);font-size:0.85rem;">' +
               '<div style="flex:1;"><strong>' + (i.name || '—') + '</strong>' +
               '<div style="font-size:0.72rem;color:var(--text-light);">in stock: ' + i.current_stock +
-              ' · predicted demand/wk: ' + i.predicted_demand + '</div></div>' +
-              '<div style="text-align:right;color:' + color + ';font-weight:700;">' +
-              (i.reorder_qty > 0 ? 'reorder ' + i.reorder_qty : 'ok') + '</div></div>';
+              ' · predicted demand/wk: ' + i.predicted_demand +
+              (i.reorder_qty > 0 ? ' · reorder: ' + i.reorder_qty : '') + '</div></div>' +
+              '<span style="color:' + color + ';font-weight:700;font-size:0.7rem;white-space:nowrap;' +
+              'border:1px solid ' + color + ';border-radius:999px;padding:2px 9px;">' + status + '</span></div>';
           }).join('');
 
           var card = document.createElement('div');
@@ -185,17 +236,58 @@
           card.style.cssText = 'margin-bottom:24px;border-left:4px solid var(--gold-light);';
           card.innerHTML =
             '<h4 style="font-family:var(--font-serif);margin-bottom:4px;">📦 AI Stock Prediction</h4>' +
-            '<div style="font-size:0.75rem;color:var(--text-light);margin-bottom:14px;">' +
-            'Next-week demand &amp; suggested reorders</div>' + rowsHtml;
+            '<div style="font-size:0.72rem;color:var(--text-light);margin-bottom:14px;">' +
+            'Model Used: <strong style="color:var(--gold-dark);">Random Forest Regression</strong> · ' +
+            'Next-week demand &amp; suggested reorders</div>' + rowsHtml +
+            '<div style="font-size:0.68rem;color:var(--text-light);margin-top:12px;line-height:1.5;">' +
+            'Demand predicted from category, price, season &amp; recent sales. ' +
+            'Reorder quantity = predicted demand − current stock.</div>';
           anchor.parentNode.insertBefore(card, anchor);
         });
     } catch (e) { /* silent — dashboard unchanged */ }
   }
 
-  /* ── 3. Tell the server new real records arrived (auto-retrain trigger) ── */
+  /* ── 4. Global "AI Engine Active" indicator (only when ML is connected) ── */
+  function showEngineBadge() {
+    if (!ready()) return;
+    if (document.getElementById('ml-engine-badge')) return;
+    if (!document.body) return;
+    var b = document.createElement('div');
+    b.id = 'ml-engine-badge';
+    b.title = 'Machine Learning services connected';
+    b.style.cssText = 'position:fixed;left:14px;bottom:14px;z-index:9998;' +
+      'display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;' +
+      'background:rgba(255,255,255,0.92);border:1px solid var(--gold-light,#e6d3a3);' +
+      'box-shadow:0 2px 10px rgba(0,0,0,0.08);font-size:0.68rem;font-weight:700;' +
+      'letter-spacing:0.04em;text-transform:uppercase;color:var(--gold-dark,#a67c00);' +
+      'font-family:var(--font-sans,inherit);backdrop-filter:blur(4px);';
+    b.innerHTML =
+      '<span style="width:8px;height:8px;border-radius:50%;background:#2e7d32;' +
+      'box-shadow:0 0 0 0 rgba(46,125,50,0.6);animation:mlPulse 1.8s infinite;"></span>' +
+      '<span>AI Engine Active</span>';
+    if (!document.getElementById('ml-engine-style')) {
+      var st = document.createElement('style');
+      st.id = 'ml-engine-style';
+      st.textContent = '@keyframes mlPulse{0%{box-shadow:0 0 0 0 rgba(46,125,50,0.5)}' +
+        '70%{box-shadow:0 0 0 7px rgba(46,125,50,0)}100%{box-shadow:0 0 0 0 rgba(46,125,50,0)}}';
+      document.head.appendChild(st);
+    }
+    document.body.appendChild(b);
+  }
+
+  /* ── Tell the server new real records arrived (auto-retrain trigger) ── */
   function notifyRecords(count) {
     if (!ready()) return;
     _fetch('/api/notify-records', { count: count || 1 }, 3000);
+  }
+
+  // Show the connected-engine badge once the DOM is ready.
+  if (ready()) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', showEngineBadge);
+    } else {
+      showEngineBadge();
+    }
   }
 
   window.AuraML = {
@@ -203,6 +295,7 @@
     enhanceRecommendations: enhanceRecommendations,
     enhanceForecast: enhanceForecast,
     enhanceStock: enhanceStock,
+    showEngineBadge: showEngineBadge,
     notifyRecords: notifyRecords
   };
 })();

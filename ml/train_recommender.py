@@ -84,7 +84,7 @@ def train():
     }
 
     # 6. SAVE model + metrics
-    joblib.dump(model, C.RECO_MODEL)
+    joblib.dump(model, C.RECO_MODEL, compress=3)
     with open(C.RECO_METRICS, "w") as f:
         json.dump(metrics, f, indent=2)
     return metrics

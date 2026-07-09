@@ -82,7 +82,7 @@ def train():
 
     # 6. SAVE
     joblib.dump({"model": best, "features": FEATURES, "algorithm": best_name},
-                C.SALES_MODEL)
+                C.SALES_MODEL, compress=3)
     with open(C.SALES_METRICS, "w") as f:
         json.dump(metrics, f, indent=2)
     return metrics

@@ -98,7 +98,7 @@ def train():
     joblib.dump({"model": best,
                  "cat_features": CAT_FEATURES,
                  "num_features": NUM_FEATURES,
-                 "algorithm": best_name}, C.STOCK_MODEL)
+                 "algorithm": best_name}, C.STOCK_MODEL, compress=3)
     with open(C.STOCK_METRICS, "w") as f:
         json.dump(metrics, f, indent=2)
     return metrics

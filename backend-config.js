@@ -11,6 +11,6 @@
 var backendConfig = {
   url:         '',   // e.g. 'https://aura-lite-backend.onrender.com'
   adminSecret: '',   // must match ADMIN_SECRET in your backend .env
-  mlUrl:       '',   // e.g. 'https://aura-lite-ml.onrender.com' — Python ML server.
+  mlUrl:       'https://aura-lite-ml.onrender.com',   // Python ML server (deployed on Render).
                      // Leave '' to keep the app fully rule-based (no ML calls).
 };

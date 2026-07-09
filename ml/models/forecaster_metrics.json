@@ -1,0 +1,27 @@
+{
+  "algorithm_selected": "RandomForestRegressor",
+  "task": "sales_forecasting (regression)",
+  "n_rows": 730,
+  "n_train": 584,
+  "n_test": 146,
+  "selected_metrics": {
+    "r2": 0.8157,
+    "mae": 503.72,
+    "rmse": 641.53
+  },
+  "comparison": {
+    "RandomForestRegressor": {
+      "r2": 0.8157,
+      "mae": 503.72,
+      "rmse": 641.53
+    },
+    "LinearRegression": {
+      "r2": 0.7695,
+      "mae": 556.05,
+      "rmse": 717.48
+    }
+  },
+  "r2_score": 0.8157,
+  "mae": 503.72,
+  "rmse": 641.53
+}

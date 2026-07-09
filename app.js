@@ -2645,7 +2645,7 @@ function renderCustomerShop() {
           <div class="shop-section-header"><div>
             <div style="font-size:0.7rem;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:4px;">✨ Recommended for You</div>
             <div class="shop-section-title">${esc(af)} — Best Picks</div></div><div class="shop-section-line"></div></div>
-          <div class="shop-grid">${recs.map(renderShopCard).join('')}</div></div>`:''}
+          <div class="shop-grid" data-ml-reco="1">${recs.map(renderShopCard).join('')}</div></div>`:''}
         <div class="shop-section">
           <div class="shop-section-header"><div>
             <div style="font-size:0.7rem;text-transform:uppercase;color:var(--text-light);font-weight:600;margin-bottom:4px;">All Products</div>
@@ -2668,7 +2668,7 @@ function renderCustomerShop() {
         </div>
         ${recs.length?`<div style="margin-bottom:8px;">
           <div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;padding:0 4px 10px;">✨ Recommended for You</div>
-          <div class="shop-grid">${recs.map(renderShopCard).join('')}</div>
+          <div class="shop-grid" data-ml-reco="1">${recs.map(renderShopCard).join('')}</div>
         </div>`:''}
         ${available.length>0?`<div>
           ${recs.length?`<div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-light);font-weight:600;padding:0 4px 10px;">All Products</div>`:''}
@@ -4473,6 +4473,12 @@ function postRender() {
   // Auto-load SMS logs when on sms tab
   if (state.route === 'admin' && state.subRoute === 'sms') {
     setTimeout(() => loadSmsLogs(), 200);
+  }
+
+  // ── ML enhancements (dormant unless backendConfig.mlUrl is set) ──
+  if (window.AuraML && AuraML.ready()) {
+    if (state.route === 'customer') setTimeout(() => AuraML.enhanceRecommendations(), 50);
+    if (state.route === 'admin' && state.subRoute === 'analytics') setTimeout(() => AuraML.enhanceForecast(), 50);
   }
 
   const chartDefaults = {

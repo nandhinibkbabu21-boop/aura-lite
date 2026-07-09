@@ -1,0 +1,18 @@
+# One-click deploy config for Render.com (free tier works).
+# 1. Push this repo to GitHub.
+# 2. On render.com -> New -> Blueprint -> pick this repo.
+# 3. Set ADMIN_SECRET to a private value, then Deploy.
+# 4. Copy the resulting URL into backend-config.js (mlUrl).
+services:
+  - type: web
+    name: aura-lite-ml
+    runtime: python
+    rootDir: ml
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn server:app --bind 0.0.0.0:$PORT --timeout 120
+    envVars:
+      - key: ADMIN_SECRET
+        sync: false
+      - key: RETRAIN_THRESHOLD
+        value: "100"

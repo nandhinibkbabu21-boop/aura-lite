@@ -1,0 +1,127 @@
+/**
+ * ml-client.js — thin bridge from the boutique app to the Python ML server.
+ *
+ * DESIGN PRINCIPLE: 100% additive and DORMANT until you set `mlUrl` in
+ * backend-config.js. When mlUrl is empty (default), every function below is a
+ * no-op, so your existing UI and rule-based logic run exactly as before.
+ * When you deploy the ML server and set mlUrl, it:
+ *   1. Re-orders the "Recommended for You" cards by the ML model's score.
+ *   2. Adds an "AI Sales Forecast" panel to the Analytics page.
+ * All calls have short timeouts and swallow errors — if the ML server is slow
+ * or down, the app silently keeps its current behaviour. Nothing ever breaks.
+ */
+(function () {
+  var ML_URL = (typeof backendConfig !== 'undefined' && backendConfig.mlUrl)
+    ? String(backendConfig.mlUrl).replace(/\/$/, '') : '';
+
+  function ready() { return !!ML_URL; }
+
+  function _fetch(path, body, ms) {
+    var ctrl = new AbortController();
+    var t = setTimeout(function () { ctrl.abort(); }, ms || 5000);
+    return fetch(ML_URL + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+      signal: ctrl.signal
+    }).then(function (r) { clearTimeout(t); return r.ok ? r.json() : null; })
+      .catch(function () { clearTimeout(t); return null; });
+  }
+
+  /* ── 1. RECOMMENDATION: reorder existing cards by ML score ── */
+  function enhanceRecommendations() {
+    if (!ready()) return;
+    try {
+      var grids = document.querySelectorAll('[data-ml-reco="1"]');
+      if (!grids.length) return;
+      var session = (window.DB && DB.getSession && DB.getSession()) || {};
+      var cust = (window.DB && DB.getCustomers ? DB.getCustomers() : [])
+        .find(function (c) { return c.id === session.id; }) || session;
+      var products = (window.DB && DB.getProducts ? DB.getProducts() : [])
+        .filter(function (p) { return +p.quantity > 0; });
+      if (!cust || !products.length) return;
+
+      _fetch('/api/recommend', { customer: cust, products: products }, 5000)
+        .then(function (res) {
+          if (!res || !res.ok || !res.products) return;
+          var order = {};
+          res.products.forEach(function (p, i) { order[p.id] = i; });
+          grids.forEach(function (grid) {
+            var cards = Array.prototype.slice.call(
+              grid.querySelectorAll('[data-prod-card]'));
+            cards.sort(function (a, b) {
+              var ia = order[a.getAttribute('data-prod-card')];
+              var ib = order[b.getAttribute('data-prod-card')];
+              if (ia == null) ia = 9999; if (ib == null) ib = 9999;
+              return ia - ib;
+            });
+            cards.forEach(function (c) { grid.appendChild(c); }); // reorder in place
+          });
+        });
+    } catch (e) { /* silent — keep rule-based order */ }
+  }
+
+  /* ── 2. FORECAST: add an "AI Sales Forecast" panel to Analytics ── */
+  function enhanceForecast() {
+    if (!ready()) return;
+    try {
+      var canvas = document.getElementById('chart-revenue');
+      if (!canvas) return;                     // only on analytics page
+      if (document.getElementById('ml-forecast-card')) return; // already added
+
+      // gather the shop's recent daily revenue to anchor the scale
+      var recent = [];
+      try {
+        var orders = (window.DB && DB.getOrders ? DB.getOrders() : []);
+        var byDay = {};
+        orders.forEach(function (o) {
+          var d = new Date(o.date).toISOString().slice(0, 10);
+          byDay[d] = (byDay[d] || 0) + (+o.total || 0);
+        });
+        recent = Object.keys(byDay).sort().slice(-30).map(function (k) { return byDay[k]; });
+      } catch (e) {}
+
+      _fetch('/api/forecast', { recentDailyRevenue: recent, daysAhead: 365 }, 6000)
+        .then(function (res) {
+          if (!res || !res.ok || !res.forecast) return;
+          var f = res.forecast;
+          var inr = function (n) { return '₹' + Number(Math.round(n)).toLocaleString('en-IN'); };
+          var card = document.createElement('div');
+          card.id = 'ml-forecast-card';
+          card.className = 'card';
+          card.style.cssText = 'margin-bottom:24px;border-left:4px solid var(--gold-light);';
+          card.innerHTML =
+            '<h4 style="font-family:var(--font-serif);margin-bottom:4px;">🔮 AI Sales Forecast</h4>' +
+            '<div style="font-size:0.75rem;color:var(--text-light);margin-bottom:16px;">Predicted by ' +
+            (f.algorithm || 'ML model') + '</div>' +
+            '<div class="grid-4">' +
+            _stat('Tomorrow', inr(f.next_day)) +
+            _stat('Next 7 Days', inr(f.next_7_days)) +
+            _stat('Next 30 Days', inr(f.next_30_days)) +
+            _stat('Next 1 Year', inr(f.next_365_days)) +
+            '</div>';
+          // insert directly ABOVE the revenue chart's card (additive, no UI edits)
+          var host = canvas.closest('.card') || canvas.parentNode;
+          host.parentNode.insertBefore(card, host);
+        });
+    } catch (e) { /* silent */ }
+  }
+
+  function _stat(label, val) {
+    return '<div class="stat-card"><div class="stat-value" style="color:var(--gold-dark)">' +
+      val + '</div><div class="stat-label">' + label + '</div></div>';
+  }
+
+  /* ── 3. Tell the server new real records arrived (auto-retrain trigger) ── */
+  function notifyRecords(count) {
+    if (!ready()) return;
+    _fetch('/api/notify-records', { count: count || 1 }, 3000);
+  }
+
+  window.AuraML = {
+    ready: ready,
+    enhanceRecommendations: enhanceRecommendations,
+    enhanceForecast: enhanceForecast,
+    notifyRecords: notifyRecords
+  };
+})();

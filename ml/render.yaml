@@ -12,6 +12,10 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn server:app --bind 0.0.0.0:$PORT --timeout 120
     envVars:
+      # Pin Python: numpy 2.0.2 / scipy 1.13.1 have no wheels for Python 3.13
+      # (Render's current default), and the models were built on this runtime.
+      - key: PYTHON_VERSION
+        value: "3.11.9"
       - key: ADMIN_SECRET
         sync: false
       - key: RETRAIN_THRESHOLD

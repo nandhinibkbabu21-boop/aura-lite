@@ -2708,9 +2708,14 @@ function renderCustomerShop() {
   const asf = state.activeSubFilter || 'all';
   let filtered=prods.filter(p=>(af==='all'||p.category===af)&&(asf==='all'||p.subcategory===asf));
   if(q) filtered=filtered.filter(p=>p.name.toLowerCase().includes(q)||p.category.toLowerCase().includes(q)||(p.color||'').toLowerCase().includes(q));
-  // Recommendations: based on subcategory context when filtering
+  // Recommendations use ONLY the optional preferences entered this session
+  // (via the post-login form) — never the saved profile, and never persisted.
+  // If the customer entered nothing, no recommendations are generated.
   const recPool = af==='all' ? prods : prods.filter(p=>p.category===af&&(asf==='all'||p.subcategory===asf));
-  const recs = cust ? getRecommendations(recPool, cust, asf!=='all'?asf:null).slice(0,6) : [];
+  const rp = state.recPrefs;
+  const hasRecPrefs = !!(rp && ['gender','size','skinTone','preferredColor','occasion'].some(k=>(rp[k]||'').toString().trim()));
+  const recs = hasRecPrefs ? getRecommendations(recPool, rp, asf!=='all'?asf:null).slice(0,6) : [];
+  const recMsg = hasRecPrefs ? `<div style="font-size:0.72rem;color:var(--text-medium);margin-top:4px;">Recommendations are generated based on your current preferences.</div>` : '';
   const recIds = new Set(recs.map(p=>p.id));
   // Non-recommended available products (shown below recs)
   const available = filtered.filter(p=>!recIds.has(p.id));
@@ -2762,7 +2767,7 @@ function renderCustomerShop() {
         const recSection=recs.length?`<div class="shop-section" style="background:var(--cream);border-bottom:1px solid var(--border-light);">
           <div class="shop-section-header"><div>
             <div style="font-size:0.7rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:4px;">✨ Curated For You</div>
-            <div class="shop-section-title">Recommended</div></div><div class="shop-section-line"></div></div>
+            <div class="shop-section-title">Recommended</div>${recMsg}</div><div class="shop-section-line"></div></div>
           <div class="shop-grid" data-ml-reco="1">${recs.map(renderShopCard).join('')}</div></div>`:'';
 
         // Dynamic category tiles from products
@@ -2828,7 +2833,7 @@ function renderCustomerShop() {
         ${recs.length?`<div class="shop-section" style="background:var(--cream);">
           <div class="shop-section-header"><div>
             <div style="font-size:0.7rem;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:4px;">✨ Recommended for You</div>
-            <div class="shop-section-title">${esc(af)} — Best Picks</div></div><div class="shop-section-line"></div></div>
+            <div class="shop-section-title">${esc(af)} — Best Picks</div>${recMsg}</div><div class="shop-section-line"></div></div>
           <div class="shop-grid" data-ml-reco="1">${recs.map(renderShopCard).join('')}</div></div>`:''}
         <div class="shop-section">
           <div class="shop-section-header"><div>
@@ -2851,7 +2856,8 @@ function renderCustomerShop() {
           <span style="font-size:0.82rem;color:var(--text-light);">${available.length+recs.length} item${available.length+recs.length!==1?'s':''}</span>
         </div>
         ${recs.length?`<div style="margin-bottom:8px;">
-          <div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;padding:0 4px 10px;">✨ Recommended for You</div>
+          <div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;padding:0 4px 4px;">✨ Recommended for You</div>
+          ${recMsg?`<div style="padding:0 4px 8px;">${recMsg}</div>`:''}
           <div class="shop-grid" data-ml-reco="1">${recs.map(renderShopCard).join('')}</div>
         </div>`:''}
         ${available.length>0?`<div>
@@ -2863,10 +2869,56 @@ function renderCustomerShop() {
     })()}
     ${state.modalOpen==='product-detail'?renderProductDetailModal(state.viewingProductId):''}
     ${state.modalOpen==='cust-profile'?renderCustomerProfileModal():''}
+    ${state.recFormPending?renderRecPrefsModal():''}
     <!-- Floating Feedback Button -->
     <div class="feedback-float-btn" id="float-feedback-btn" title="Share your experience">
       <span class="feedback-float-icon">⭐</span>
       <span class="feedback-float-label">Rate Us</span>
+    </div>
+  </div>`;
+}
+/* Optional post-login recommendation form (existing customers).
+   Session-only: values are NOT saved to the profile and are used solely to
+   generate recommendations for the current shopping session. */
+function renderRecPrefsModal() {
+  const opt = (list) => list.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('');
+  return `<div class="modal-overlay" id="rec-prefs-overlay">
+    <div class="modal animate-slideUp" style="max-width:520px;width:95vw;">
+      <div class="modal-header" style="background:var(--gold-lighter);border-bottom:2px solid var(--gold-light);">
+        <div class="modal-title" style="font-family:var(--font-serif);color:var(--gold-dark);">✨ Personalise Today's Picks</div>
+        <button class="modal-close" id="rec-prefs-skip">✕</button>
+      </div>
+      <div class="modal-body" style="padding:24px;">
+        <div style="font-size:0.85rem;color:var(--text-medium);margin-bottom:16px;line-height:1.5;">
+          Tell us what you're shopping for <strong>today</strong> and we'll suggest matching pieces.
+          Every field is <strong>optional</strong> — leave them blank to just browse. These are used only
+          for this visit and won't change your saved profile.
+        </div>
+        <form id="rec-prefs-form">
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">Gender <span class="optional-tag">(Optional)</span></label>
+                <select class="form-control" name="gender"><option value="">Select</option>${opt(['Female','Male','Other'])}</select></div>
+              <div class="form-group"><label class="form-label">Clothing Size <span class="optional-tag">(Optional)</span></label>
+                <select class="form-control" name="size"><option value="">Select</option>${opt(['XS','S','M','L','XL','XXL','3XL'])}</select></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">Skin Tone <span class="optional-tag">(Optional)</span></label>
+                <select class="form-control" name="skinTone"><option value="">Select</option>${opt(['Fair','Wheatish','Medium','Dusky','Dark'])}</select></div>
+              <div class="form-group"><label class="form-label">Favourite Color <span class="optional-tag">(Optional)</span></label>
+                <input type="text" class="form-control" name="preferredColor" placeholder="e.g. Red"/></div>
+            </div>
+            <div class="form-group"><label class="form-label">Occasion <span class="optional-tag">(Optional)</span></label>
+              <input type="text" class="form-control" name="occasion" placeholder="e.g. Wedding, Birthday, Kids Birthday" list="rec-occasion-list"/>
+              <datalist id="rec-occasion-list">${['Casual','Formal','Wedding','Festival','Party','Birthday','Kids Birthday','Sports'].map(o=>`<option value="${o}"></option>`).join('')}</datalist>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer" style="justify-content:flex-end;gap:10px;">
+        <button class="btn btn-ghost" id="rec-prefs-skip-btn">Skip &amp; Just Browse</button>
+        <button class="btn btn-gold" id="rec-prefs-submit">✨ Show My Recommendations</button>
+      </div>
     </div>
   </div>`;
 }
@@ -4199,12 +4251,14 @@ async function deleteShop(shopId) {
 ═══════════════════════════════════════════════════ */
 /* Skin tone → ideal color families */
 const SKIN_TONE_COLORS = {
-  'Fair':   ['white','cream','pastel','pink','lavender','light blue','peach','mint','rose','ivory','powder'],
-  'Light':  ['white','cream','pastel','blue','green','pink','yellow','coral','peach','sky'],
-  'Medium': ['earthy','orange','coral','rust','olive','teal','mustard','brown','camel','terracotta'],
-  'Warm':   ['gold','orange','red','coral','olive','burgundy','mustard','terracotta','camel'],
-  'Dark':   ['bright','red','cobalt','royal blue','magenta','yellow','white','orange','electric','hot pink'],
-  'Deep':   ['bold','bright','jewel','magenta','fuchsia','cobalt','royal','electric','white','gold'],
+  'Fair':    ['white','cream','pastel','pink','lavender','light blue','peach','mint','rose','ivory','powder'],
+  'Light':   ['white','cream','pastel','blue','green','pink','yellow','coral','peach','sky'],
+  'Medium':  ['earthy','orange','coral','rust','olive','teal','mustard','brown','camel','terracotta'],
+  'Wheatish':['teal','coral','olive','mustard','burgundy','rust','cream','peach','gold','maroon','green'],
+  'Warm':    ['gold','orange','red','coral','olive','burgundy','mustard','terracotta','camel'],
+  'Dusky':   ['red','cobalt','royal blue','magenta','emerald','white','gold','yellow','fuchsia','wine','green'],
+  'Dark':    ['bright','red','cobalt','royal blue','magenta','yellow','white','orange','electric','hot pink'],
+  'Deep':    ['bold','bright','jewel','magenta','fuchsia','cobalt','royal','electric','white','gold'],
 };
 function getRecommendations(products, cust, filterSubcat) {
   if (!cust) return [];
@@ -4726,10 +4780,15 @@ function postRender() {
   }
 
   // ── ML enhancements (dormant unless backendConfig.mlUrl is set) ──
+  // NOTE: the injected "AI Sales Forecast" (Analytics) and "AI Stock Prediction"
+  // (Overview) cards were removed per request. The dedicated sidebar pages
+  // (AI Sales Forecast / Stock Prediction) are unaffected.
   if (window.AuraML && AuraML.ready()) {
-    if (state.route === 'customer') setTimeout(() => AuraML.enhanceRecommendations(), 50);
-    if (state.route === 'admin' && state.subRoute === 'analytics') setTimeout(() => AuraML.enhanceForecast(), 50);
-    if (state.route === 'admin' && state.subRoute === 'overview') setTimeout(() => AuraML.enhanceStock(), 50);
+    if (state.route === 'customer') {
+      // Recommendations reflect ONLY the current session's optional inputs.
+      window.__auraRecoCustomer = state.recPrefs || null;
+      setTimeout(() => AuraML.enhanceRecommendations(), 50);
+    }
   }
 
   const chartDefaults = {
@@ -5061,7 +5120,12 @@ function attachListeners() {
       if(state.loginRole==='admin') navigate('admin');
       else if(state.loginRole==='employee') navigate('employee');
       else if(state.loginRole==='super-admin'){navigate('super-admin');loadSuperAdminShops();}
-      else navigate('customer');
+      else {
+        // Existing-customer login → offer the optional recommendation form.
+        // Start each session with no recommendations until the customer chooses.
+        state.recPrefs = null; state.recFormPending = true;
+        navigate('customer');
+      }
     }
   });
   on('#go-register-customer','click', ()=>navigate('register-customer'));
@@ -6127,6 +6191,24 @@ function attachListeners() {
   onAll('[data-add-cart]','click', e=>{e.stopPropagation();addToCart(e.currentTarget.dataset.addCart);});
   on('#open-cart-btn','click', ()=>{state.cartOpen=true;render();});
   on('#close-cart-btn','click', ()=>{state.cartOpen=false;render();});
+
+  /* Optional post-login recommendation form (session-only, existing customers) */
+  const _closeRecForm = () => { state.recFormPending=false; render(); postRender(); };
+  on('#rec-prefs-skip','click', ()=>{ state.recPrefs=null; _closeRecForm(); });
+  on('#rec-prefs-skip-btn','click', ()=>{ state.recPrefs=null; _closeRecForm(); });
+  on('#rec-prefs-submit','click', ()=>{
+    const form=document.getElementById('rec-prefs-form'); if(!form){ _closeRecForm(); return; }
+    const fd=new FormData(form);
+    const prefs={ gender:(fd.get('gender')||'').trim(), size:(fd.get('size')||'').trim(),
+      skinTone:(fd.get('skinTone')||'').trim(), preferredColor:(fd.get('preferredColor')||'').trim(),
+      occasion:(fd.get('occasion')||'').trim() };
+    const hasAny = Object.values(prefs).some(v=>v);
+    // Only generate recommendations if at least one optional field was entered.
+    state.recPrefs = hasAny ? prefs : null;
+    state.recFormPending = false;
+    if(hasAny) showToast('Recommendations are generated based on your current preferences.','success');
+    render(); postRender();
+  });
 
   /* Customer style profile (edit + save) */
   on('#cust-profile-btn','click', ()=>{ state.modalOpen='cust-profile'; render(); });

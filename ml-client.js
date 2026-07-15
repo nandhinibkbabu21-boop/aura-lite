@@ -48,8 +48,13 @@
       var db = _db();
       if (!db) return;
       var session = (db.getSession && db.getSession()) || {};
-      var cust = (db.getCustomers ? db.getCustomers() : [])
-        .find(function (c) { return c.id === session.id; }) || session;
+      // Prefer the current session's optional recommendation inputs (set by the
+      // app) over the saved profile, so ML ranking matches what the shopper
+      // entered this visit. Falls back to the saved profile when not set.
+      var cust = (typeof window !== 'undefined' && window.__auraRecoCustomer)
+        ? window.__auraRecoCustomer
+        : ((db.getCustomers ? db.getCustomers() : [])
+            .find(function (c) { return c.id === session.id; }) || session);
       var products = (db.getProducts ? db.getProducts() : [])
         .filter(function (p) { return +p.quantity > 0; });
       if (!cust || !products.length) return;

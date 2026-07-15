@@ -2886,20 +2886,30 @@ function renderCustomerProfileModal() {
         </div>
         <form id="cust-profile-form">
           <div style="display:flex;flex-direction:column;gap:14px;">
+            <div style="font-size:0.7rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;">Personal Details</div>
+            <div class="form-group"><label class="form-label">Name</label>
+              <input type="text" class="form-control" name="name" value="${esc(c.name||'')}" placeholder="Your name"/></div>
             <div class="form-row">
+              <div class="form-group"><label class="form-label">WhatsApp / Mobile</label>
+                <input type="tel" class="form-control" name="whatsapp" value="${esc(c.whatsapp||'')}" maxlength="10" pattern="[0-9]{10}" placeholder="10-digit number"/></div>
               <div class="form-group"><label class="form-label">Gender</label>
                 <select class="form-control" name="gender"><option value="">Select</option>${opt(c.gender,['Female','Male','Other'])}</select></div>
+            </div>
+            <div class="form-group"><label class="form-label">Address</label>
+              <textarea class="form-control" name="address" style="min-height:56px;" placeholder="Your address…">${esc(c.address||'')}</textarea></div>
+            <div style="border-top:1px solid var(--border-light);padding-top:12px;font-size:0.7rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;">Style Preferences <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--text-light);">(used for AI recommendations)</span></div>
+            <div class="form-row">
               <div class="form-group"><label class="form-label">Clothing Size</label>
                 <select class="form-control" name="size"><option value="">Select</option>${opt(c.size,['XS','S','M','L','XL','XXL','3XL'])}</select></div>
-            </div>
-            <div class="form-row">
               <div class="form-group"><label class="form-label">Skin Tone</label>
                 <select class="form-control" name="skinTone"><option value="">Select</option>${opt(c.skinTone,['Fair','Wheatish','Medium','Dusky','Dark'])}</select></div>
+            </div>
+            <div class="form-row">
               <div class="form-group"><label class="form-label">Favorite Color</label>
                 <input type="text" class="form-control" name="preferredColor" value="${esc(c.preferredColor||'')}" placeholder="e.g. Blue"/></div>
+              <div class="form-group"><label class="form-label">Preferred Occasion</label>
+                <select class="form-control" name="occasion"><option value="">Select</option>${opt(c.occasion,['Casual','Formal','Wedding','Festival','Party','Sports'])}</select></div>
             </div>
-            <div class="form-group"><label class="form-label">Preferred Occasion</label>
-              <select class="form-control" name="occasion"><option value="">Select</option>${opt(c.occasion,['Casual','Formal','Wedding','Festival','Party','Sports'])}</select></div>
           </div>
         </form>
       </div>
@@ -2929,7 +2939,7 @@ function renderShopCard(p) {
       ${p._recReasons&&p._recReasons.length?`<div class="rec-why" style="background:var(--cream);border:1px solid var(--border-light);border-radius:8px;padding:8px 10px;margin:6px 0;">
         <div style="font-size:0.64rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--gold-dark);margin-bottom:4px;">✨ Why Recommended?</div>
         <ul style="list-style:none;margin:0;padding:0;font-size:0.72rem;color:var(--text-medium);line-height:1.5;">
-          ${p._recReasons.slice(0,4).map(r=>`<li>• ${esc(r)}</li>`).join('')}
+          ${p._recReasons.slice(0,5).map(r=>`<li>• ${esc(r)}</li>`).join('')}
         </ul>
       </div>`:''}
       ${p.hasSizes && p.sizePrices?.length ? `<div class="size-selector" data-prod-id="${esc(p.id)}">${p.sizePrices.filter(sp=>sp.stock>0).map(sp=>`<button class="size-btn" data-prod="${esc(p.id)}" data-size="${esc(sp.size)}" data-price="${sp.price}" data-stock="${sp.stock}">${esc(sp.size)}</button>`).join('')}</div>` : ''}
@@ -4202,25 +4212,26 @@ function getRecommendations(products, cust, filterSubcat) {
   const prefColor = (cust.preferredColor||'').toLowerCase();
   const scoreAndReason = p => {
     let s = 0; const reasons = [];
+    // Dynamic, specific reasons built from the customer's ACTUAL profile values.
+    // (Scores below are unchanged — only the explanation text is generated here.)
     const allColors = (p.colors||[{name:p.color||''}]).map(c=>(c.name||'').toLowerCase());
-    if (prefColor && allColors.some(c=>c.includes(prefColor))) { s+=4; reasons.push(`Matches your preferred color (${cust.preferredColor})`); }
+    if (prefColor && allColors.some(c=>c.includes(prefColor))) { s+=4; reasons.push(`Matches your favorite color (${cust.preferredColor})`); }
     if (skinToneColors.length) {
       const matchedColor = allColors.find(c=>skinToneColors.some(sk=>c.includes(sk)||sk.includes(c)));
       if (matchedColor) { s+=3; reasons.push(`Suits your ${cust.skinTone} skin tone`); }
     }
     const allSizes=(p.sizes||[]).map(sz=>sz.size);
     if (cust.size && allSizes.includes(cust.size)) { s+=2; reasons.push(`Available in your size (${cust.size})`); }
-    if (cust.gender==='Female'&&p.category==='Women') { s+=2; }
-    if (cust.gender==='Male'&&p.category==='Men') { s+=2; }
+    if (cust.gender==='Female'&&p.category==='Women') { s+=2; reasons.push(`Matches your gender preference (Women's wear)`); }
+    if (cust.gender==='Male'&&p.category==='Men')   { s+=2; reasons.push(`Matches your gender preference (Men's wear)`); }
     if (filterSubcat&&p.subcategory===filterSubcat) s+=2;
     if (cust.occasion&&p.subcategory){ // occasion fit via subcategory/description
       const occ=cust.occasion.toLowerCase();
-      if((p.description||'').toLowerCase().includes(occ)||(p.subcategory||'').toLowerCase().includes(occ)){ s+=1; reasons.push(`Fits your ${cust.occasion} occasion`); }
+      if((p.description||'').toLowerCase().includes(occ)||(p.subcategory||'').toLowerCase().includes(occ)){ s+=1; reasons.push(`Suitable for your ${cust.occasion} occasion`); }
     }
-    // Softer profile-based reasons so the card always has a clear "why"
+    // Last resort — still specific to THIS product, never a vague "your profile".
     if(!reasons.length){
-      if((cust.gender==='Female'&&p.category==='Women')||(cust.gender==='Male'&&p.category==='Men')) reasons.push('Matches your profile');
-      else reasons.push(`Trending in ${p.category||'your preferred category'}`);
+      reasons.push(`Popular pick in ${p.subcategory||p.category||'our collection'}`);
     }
     return { score:s, reason: reasons[0], reasons };
   };
@@ -6123,9 +6134,15 @@ function attachListeners() {
     const form=document.getElementById('cust-profile-form'); if(!form) return;
     const session=DB.getSession(); if(!session?.id){ showToast('Please log in again','error'); return; }
     const fd=new FormData(form);
-    const data={ gender:fd.get('gender')||'', size:fd.get('size')||'',
+    const name=(fd.get('name')||'').trim();
+    const whatsapp=(fd.get('whatsapp')||'').trim();
+    if(whatsapp && !/^[0-9]{10}$/.test(whatsapp)){ showToast('WhatsApp must be a 10-digit number','error'); return; }
+    const data={ name, whatsapp, address:(fd.get('address')||'').trim(),
+      gender:fd.get('gender')||'', size:fd.get('size')||'',
       skinTone:fd.get('skinTone')||'', preferredColor:fd.get('preferredColor')||'', occasion:fd.get('occasion')||'' };
     DB.updateCustomer(session.id, data);
+    // Keep the session's display name in sync (credentials/username unchanged)
+    if(name && name!==session.name){ DB.setSession({ ...session, name }); state.session=DB.getSession(); }
     state.modalOpen=null;
     showToast('Profile updated — recommendations refreshed','success');
     render(); postRender();

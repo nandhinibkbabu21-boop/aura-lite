@@ -275,6 +275,59 @@
     document.body.appendChild(b);
   }
 
+  /* ── Data getters for the dedicated AI pages (return raw model output) ── */
+  // Returns the forecast object ({next_day, next_7_days, daily[], weekly[], monthly[], ...}) or null.
+  function getForecast() {
+    if (!ready()) return Promise.resolve(null);
+    var recent = [];
+    try {
+      var db = _db();
+      var orders = (db && db.getOrders ? db.getOrders() : []);
+      var byDay = {};
+      orders.forEach(function (o) {
+        var d = new Date(o.date).toISOString().slice(0, 10);
+        byDay[d] = (byDay[d] || 0) + (+o.total || 0);
+      });
+      recent = Object.keys(byDay).sort().slice(-30).map(function (k) { return byDay[k]; });
+    } catch (e) {}
+    return _fetch('/api/forecast', { recentDailyRevenue: recent, daysAhead: 365 }, 20000)
+      .then(function (res) { return (res && res.ok && res.forecast) ? res.forecast : null; });
+  }
+
+  // Returns the stock items array ([{id,name,current_stock,predicted_demand,reorder_qty,urgency}]) or null.
+  function getStock() {
+    if (!ready()) return Promise.resolve(null);
+    var db = _db();
+    if (!db) return Promise.resolve(null);
+    var products = (db.getProducts ? db.getProducts() : []);
+    if (!products.length) return Promise.resolve([]);
+    var soldByProduct = {};
+    try {
+      var orders = (db.getOrders ? db.getOrders() : []);
+      var cutoff = Date.now() - 28 * 24 * 60 * 60 * 1000;
+      orders.forEach(function (o) {
+        if (new Date(o.date).getTime() < cutoff) return;
+        (o.items || o.products || []).forEach(function (it) {
+          var pid = it.id || it.productId;
+          if (!pid) return;
+          soldByProduct[pid] = (soldByProduct[pid] || 0) + (+it.qty || +it.quantity || 1);
+        });
+      });
+    } catch (e) {}
+    var payload = products.map(function (p) {
+      var sold4 = soldByProduct[p.id] || 0;
+      return {
+        id: p.id, name: p.name, category: p.category,
+        subcategory: p.subcategory, price: +p.price || 0,
+        quantity: +p.quantity || 0,
+        recentUnitsSold: Math.round(sold4 / 4),
+        avgSales4wk: Math.round(sold4 / 4)
+      };
+    });
+    return _fetch('/api/stock', { products: payload }, 20000)
+      .then(function (res) { return (res && res.ok && res.items) ? res.items : null; });
+  }
+
   /* ── Tell the server new real records arrived (auto-retrain trigger) ── */
   function notifyRecords(count) {
     if (!ready()) return;
@@ -295,6 +348,8 @@
     enhanceRecommendations: enhanceRecommendations,
     enhanceForecast: enhanceForecast,
     enhanceStock: enhanceStock,
+    getForecast: getForecast,
+    getStock: getStock,
     showEngineBadge: showEngineBadge,
     notifyRecords: notifyRecords
   };

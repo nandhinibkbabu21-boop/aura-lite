@@ -1191,7 +1191,9 @@ function renderSidebar(role) {
     ? [['overview','◈','Overview'],['products','✦','Products'],['categories','◻','Categories'],
        ['employees','◉','Employees'],['customers','◎','Customers'],['orders','◊','Orders'],
        ['billing','🧾','Billing'],
-       ['analytics','📊','Analytics'],['sms','📣','Send Offers'],['feedback','⭐','Feedback']]
+       ['analytics','📊','Analytics'],
+       ['forecast','📈','AI Sales Forecast'],['stockpredict','📦','Stock Prediction'],
+       ['sms','📣','Send Offers'],['feedback','⭐','Feedback']]
     : role === 'employee'
     ? [['products','✦','Products'],['categories','◻','Categories'],['stock','📦','Stock'],['salary','💰','My Salary']]
     : [['products','✦','Products'],['stock','◻','Stock'],['feedback','⭐','My Feedback']];
@@ -1222,7 +1224,9 @@ function renderAdminDash() {
     categories:renderAdminCategories, employees:renderAdminEmployees,
     customers:renderAdminCustomers, orders:renderAdminOrders,
     billing:renderAdminBilling,
-    analytics:renderAdminAnalytics, sms:renderAdminSms, feedback:renderAdminFeedback };
+    analytics:renderAdminAnalytics,
+    forecast:renderAdminForecast, stockpredict:renderAdminStock,
+    sms:renderAdminSms, feedback:renderAdminFeedback };
   return `<div>${renderAppHeader({ shopName:shop?.name, userName:session?.name })}
     <div class="dash-layout">${renderSidebar('admin')}
       <main class="dash-main">${(subViews[state.subRoute]||renderAdminOverview)()}</main>
@@ -2125,6 +2129,184 @@ function renderAdminAnalytics() {
 }
 
 /* ═══════════════════════════════════════════════════
+   14b. AI SALES FORECAST  (dedicated page — ML)
+═══════════════════════════════════════════════════ */
+function _mlLoadingCard(msg){
+  return `<div class="card" style="text-align:center;padding:44px 20px;">
+    <div style="font-size:2rem;">🤖</div>
+    <div style="margin-top:12px;color:var(--text-light);font-size:0.9rem;">${msg}</div>
+    <div style="margin-top:10px;font-size:0.72rem;color:var(--text-light);">Random Forest Regression · live ML server</div>
+  </div>`;
+}
+function _mlErrorCard(kind){
+  const id = kind==='forecast' ? 'fc-refresh' : 'sp-refresh';
+  return `<div class="card" style="text-align:center;padding:38px 20px;color:var(--text-light);">
+    Couldn't reach the AI server. Free-tier servers sleep after inactivity and can take up to a minute to wake.<br/>
+    <button class="btn btn-gold btn-sm" id="${id}" style="margin-top:14px;">↻ Try Again</button>
+  </div>`;
+}
+function _chartCard(title,id){
+  return `<div class="card"><h4 style="font-family:var(--font-serif);margin-bottom:16px;">${title}</h4>
+    <div class="chart-container"><canvas id="${id}"></canvas></div></div>`;
+}
+
+function renderAdminForecast() {
+  const head = `<div class="dash-page-title">📈 AI Sales Forecast</div>
+    <div class="dash-page-subtitle">Machine-learning revenue predictions · Random Forest Regression</div>`;
+  const mlOn = !!(window.AuraML && AuraML.ready());
+  const fd = state.forecastData;
+  if (!mlOn) return `<div class="animate-fadeIn">${head}
+    <div class="card" style="text-align:center;padding:40px;color:var(--text-light);">
+      The AI forecast service is not connected. Set <code>mlUrl</code> in backend-config.js to enable live predictions.</div></div>`;
+  if (fd === undefined || fd === 'loading')
+    return `<div class="animate-fadeIn">${head}${_mlLoadingCard('Forecasting your sales…')}</div>`;
+  if (fd === null) return `<div class="animate-fadeIn">${head}${_mlErrorCard('forecast')}</div>`;
+
+  const period = state.forecastPeriod || 'daily';
+  const periods = [['daily','Daily','next_day','Tomorrow'],
+                   ['weekly','Weekly','next_7_days','Next 7 Days'],
+                   ['monthly','Monthly','next_30_days','Next 30 Days'],
+                   ['yearly','Yearly','next_365_days','Next 1 Year']];
+  const prods = DB.getProducts();
+  const cats = ['all', ...new Set(prods.map(p=>p.category).filter(Boolean))];
+  const range = state.fcRange || '90', fcat = state.fcCategory || 'all', fprod = state.fcProduct || 'all';
+
+  return `<div class="animate-fadeIn">
+    ${head}
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+      <button class="btn btn-ghost btn-sm" id="fc-refresh">↻ Refresh</button>
+    </div>
+
+    <!-- SECTION 1 · Forecast Summary -->
+    <div class="analytics-filter-bar" style="margin-bottom:14px;">
+      ${periods.map(([id,label])=>`<button class="analytics-filter-btn${period===id?' active':''}" data-forecast-period="${id}">${label}</button>`).join('')}
+    </div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:14px;">
+      <div style="display:flex;gap:16px;min-width:min-content;padding-bottom:4px;">
+        ${periods.map(([id,label,key,cap])=>`
+          <div class="stat-card" style="min-width:200px;flex:0 0 auto;${period===id?'border:1px solid var(--gold);box-shadow:0 2px 10px rgba(201,168,76,0.18);':''}">
+            <div class="stat-value" style="color:var(--gold-dark);white-space:nowrap;">${fmt(Math.round(fd[key]||0))}</div>
+            <div class="stat-label">${cap} · ${label}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+    <div style="font-size:0.72rem;color:var(--text-light);margin:0 4px 24px;line-height:1.5;">
+      Model Used: <strong style="color:var(--gold-dark);">Random Forest Regression</strong>
+      <span style="opacity:0.7;">(${esc(fd.algorithm||'RandomForestRegressor')})</span> ·
+      trained on historical daily sales with seasonality, weekends &amp; festivals. Scroll cards horizontally to see all periods.
+    </div>
+
+    <!-- SECTION 2 · Forecast Analytics Dashboard -->
+    <div class="dash-page-subtitle" style="margin-top:6px;">Forecast Analytics Dashboard</div>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:18px;">
+      <select class="form-control" id="fc-range" style="max-width:170px;">
+        ${[['7','Last 7 Days'],['30','Last 30 Days'],['90','Last 90 Days'],['365','This Year']].map(([v,l])=>`<option value="${v}"${range===v?' selected':''}>${l}</option>`).join('')}
+      </select>
+      <select class="form-control" id="fc-category" style="max-width:180px;">
+        ${cats.map(c=>`<option value="${esc(c)}"${fcat===c?' selected':''}>${c==='all'?'All Categories':esc(c)}</option>`).join('')}
+      </select>
+      <select class="form-control" id="fc-product" style="max-width:210px;">
+        <option value="all"${fprod==='all'?' selected':''}>All Products</option>
+        ${prods.map(p=>`<option value="${esc(p.id)}"${fprod===p.id?' selected':''}>${esc(p.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="grid-2" style="margin-bottom:24px;">
+      ${_chartCard('Revenue Prediction ('+period.charAt(0).toUpperCase()+period.slice(1)+')','fc-revpred')}
+      ${_chartCard('Sales Trend (Actual)','fc-trend')}
+      ${_chartCard('Forecast vs Actual','fc-vsactual')}
+      ${_chartCard('Category-wise Forecast','fc-cat-chart')}
+    </div>
+    <div class="card">
+      <h4 style="font-family:var(--font-serif);margin-bottom:16px;">Seasonal Demand — next 12 months</h4>
+      <div class="chart-container"><canvas id="fc-seasonal"></canvas></div>
+    </div>
+  </div>`;
+}
+
+/* ═══════════════════════════════════════════════════
+   14c. STOCK PREDICTION  (dedicated page — ML)
+═══════════════════════════════════════════════════ */
+function _stockStatus(urgency){
+  if (urgency==='critical') return {label:'Critical',color:'#c0392b'};
+  if (urgency==='reorder'||urgency==='watch') return {label:'Low',color:'#b8860b'};
+  return {label:'Normal',color:'#2e7d32'};
+}
+function renderStockTableRows() {
+  let items = Array.isArray(state.stockData) ? state.stockData.slice() : [];
+  const q = (state.stockSearch||'').toLowerCase();
+  const sf = state.stockStatusFilter || 'all';
+  const sort = state.stockSort || 'reorder';
+  if (q) items = items.filter(i => (i.name||'').toLowerCase().includes(q));
+  if (sf !== 'all') items = items.filter(i => _stockStatus(i.urgency).label.toLowerCase() === sf);
+  items.sort((a,b) => sort==='demand' ? (b.predicted_demand-a.predicted_demand)
+    : sort==='stock' ? (a.current_stock-b.current_stock)
+    : sort==='name'  ? String(a.name||'').localeCompare(String(b.name||''))
+    : (b.reorder_qty-a.reorder_qty));
+  if (!items.length) return `<div style="padding:24px;text-align:center;color:var(--text-light);">No products match your search / filter.</div>`;
+  return `<div class="table-wrap"><table>
+    <thead><tr><th>Product Name</th><th>Current Stock</th><th>Predicted Demand</th><th>Suggested Reorder</th><th>Status</th></tr></thead>
+    <tbody>${items.map(i=>{const st=_stockStatus(i.urgency);return `<tr>
+      <td><strong>${esc(i.name||'—')}</strong></td>
+      <td>${i.current_stock}</td>
+      <td>${i.predicted_demand}</td>
+      <td>${i.reorder_qty>0?i.reorder_qty:'—'}</td>
+      <td><span style="color:${st.color};font-weight:700;font-size:0.72rem;border:1px solid ${st.color};border-radius:999px;padding:2px 10px;white-space:nowrap;">${st.label}</span></td>
+    </tr>`;}).join('')}</tbody>
+  </table></div>`;
+}
+function updateStockTable() {
+  const wrap = document.getElementById('sp-table-wrap');
+  if (wrap) wrap.innerHTML = renderStockTableRows();
+}
+function renderAdminStock() {
+  const head = `<div class="dash-page-title">📦 Stock Prediction</div>
+    <div class="dash-page-subtitle">AI demand forecasting &amp; reorder suggestions · Random Forest Regression</div>`;
+  const mlOn = !!(window.AuraML && AuraML.ready());
+  const sd = state.stockData;
+  if (!mlOn) return `<div class="animate-fadeIn">${head}
+    <div class="card" style="text-align:center;padding:40px;color:var(--text-light);">The AI stock service is not connected.</div></div>`;
+  if (sd === undefined || sd === 'loading')
+    return `<div class="animate-fadeIn">${head}${_mlLoadingCard('Predicting next-week demand for every product…')}</div>`;
+  if (sd === null) return `<div class="animate-fadeIn">${head}${_mlErrorCard('stock')}</div>`;
+
+  const total = sd.length;
+  const crit = sd.filter(i=>i.urgency==='critical').length;
+  const low = sd.filter(i=>i.urgency==='reorder'||i.urgency==='watch').length;
+  return `<div class="animate-fadeIn">
+    ${head}
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+      <div class="dash-page-subtitle" style="margin:0;">${total} products analysed ·
+        <span style="color:#c0392b;font-weight:600;">${crit} Critical</span> ·
+        <span style="color:#b8860b;font-weight:600;">${low} Low</span></div>
+      <button class="btn btn-ghost btn-sm" id="sp-refresh">↻ Refresh</button>
+    </div>
+
+    <!-- Visual analytics -->
+    <div class="grid-2" style="margin-bottom:24px;">
+      ${_chartCard('Product-wise Demand vs Stock','sp-prodwise')}
+      ${_chartCard('Demand Prediction (Top Products)','sp-demand')}
+      ${_chartCard('Current Stock Levels','sp-stock-trend')}
+      ${_chartCard('Reorder Analytics (Status Mix)','sp-reorder')}
+    </div>
+
+    <!-- Table with search / filter / sort -->
+    <div class="card">
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:14px;">
+        <div class="dash-search" style="flex:1;min-width:180px;"><span class="dash-search-icon">⌕</span>
+          <input type="text" id="sp-search" placeholder="Search products…" value="${esc(state.stockSearch||'')}"/></div>
+        <select class="form-control" id="sp-status" style="max-width:160px;">
+          ${[['all','All Status'],['critical','Critical'],['low','Low'],['normal','Normal']].map(([v,l])=>`<option value="${v}"${(state.stockStatusFilter||'all')===v?' selected':''}>${l}</option>`).join('')}
+        </select>
+        <select class="form-control" id="sp-sort" style="max-width:190px;">
+          ${[['reorder','Sort: Reorder Qty'],['demand','Sort: Predicted Demand'],['stock','Sort: Current Stock'],['name','Sort: Name (A–Z)']].map(([v,l])=>`<option value="${v}"${(state.stockSort||'reorder')===v?' selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>
+      <div id="sp-table-wrap">${renderStockTableRows()}</div>
+    </div>
+  </div>`;
+}
+
+/* ═══════════════════════════════════════════════════
    15. EMPLOYEE DASHBOARD
 ═══════════════════════════════════════════════════ */
 function renderEmpOrderCard(o) {
@@ -2542,6 +2724,7 @@ function renderCustomerShop() {
         <div class="dash-search" style="min-width:190px;"><span class="dash-search-icon">⌕</span>
           <input type="text" placeholder="Search…" id="shop-search" value="${esc(state.searchQuery)}" style="padding:8px 14px 8px 34px;border-radius:20px;"/></div>
         <div class="cart-btn" id="open-cart-btn">🛍${cartCount>0?`<span class="cart-count">${cartCount}</span>`:''}</div>
+        ${cust?`<button class="btn btn-ghost btn-sm" id="cust-profile-btn" title="My style profile">👤 Profile</button>`:''}
         <button class="btn btn-ghost btn-sm" id="logout-btn">Sign Out</button>
       </div>
     </header>
@@ -2679,10 +2862,51 @@ function renderCustomerShop() {
       </div>`;
     })()}
     ${state.modalOpen==='product-detail'?renderProductDetailModal(state.viewingProductId):''}
+    ${state.modalOpen==='cust-profile'?renderCustomerProfileModal():''}
     <!-- Floating Feedback Button -->
     <div class="feedback-float-btn" id="float-feedback-btn" title="Share your experience">
       <span class="feedback-float-icon">⭐</span>
       <span class="feedback-float-label">Rate Us</span>
+    </div>
+  </div>`;
+}
+function renderCustomerProfileModal() {
+  const session = DB.getSession();
+  const c = DB.getCustomers().find(x=>x.id===session?.id) || {};
+  const opt = (val, list) => list.map(o=>`<option value="${esc(o)}"${(val||'')===o?' selected':''}>${esc(o)}</option>`).join('');
+  return `<div class="modal-overlay" id="cust-profile-overlay">
+    <div class="modal animate-slideUp" style="max-width:520px;width:95vw;">
+      <div class="modal-header" style="background:var(--gold-lighter);border-bottom:2px solid var(--gold-light);">
+        <div class="modal-title" style="font-family:var(--font-serif);color:var(--gold-dark);">👤 My Style Profile</div>
+        <button class="modal-close" data-close-modal="cust-profile">✕</button>
+      </div>
+      <div class="modal-body" style="padding:24px;">
+        <div style="font-size:0.8rem;color:var(--text-medium);margin-bottom:16px;line-height:1.5;">
+          These details personalise your <strong>AI recommendations</strong> — the better we know your style, the better the picks.
+        </div>
+        <form id="cust-profile-form">
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">Gender</label>
+                <select class="form-control" name="gender"><option value="">Select</option>${opt(c.gender,['Female','Male','Other'])}</select></div>
+              <div class="form-group"><label class="form-label">Clothing Size</label>
+                <select class="form-control" name="size"><option value="">Select</option>${opt(c.size,['XS','S','M','L','XL','XXL','3XL'])}</select></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label">Skin Tone</label>
+                <select class="form-control" name="skinTone"><option value="">Select</option>${opt(c.skinTone,['Fair','Wheatish','Medium','Dusky','Dark'])}</select></div>
+              <div class="form-group"><label class="form-label">Favorite Color</label>
+                <input type="text" class="form-control" name="preferredColor" value="${esc(c.preferredColor||'')}" placeholder="e.g. Blue"/></div>
+            </div>
+            <div class="form-group"><label class="form-label">Preferred Occasion</label>
+              <select class="form-control" name="occasion"><option value="">Select</option>${opt(c.occasion,['Casual','Formal','Wedding','Festival','Party','Sports'])}</select></div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer" style="justify-content:flex-end;gap:10px;">
+        <button class="btn btn-ghost" data-close-modal="cust-profile">Cancel</button>
+        <button class="btn btn-gold" id="save-cust-profile-btn">💾 Save Profile</button>
+      </div>
     </div>
   </div>`;
 }
@@ -2702,6 +2926,12 @@ function renderShopCard(p) {
     <div class="shop-card-body">
       <div class="shop-card-category">${esc(p.category)}${p.subcategory?` · ${esc(p.subcategory)}`:''}${p.material?` · ${esc(p.material)}`:''}</div>
       <div class="shop-card-name">${esc(p.name)}</div>
+      ${p._recReasons&&p._recReasons.length?`<div class="rec-why" style="background:var(--cream);border:1px solid var(--border-light);border-radius:8px;padding:8px 10px;margin:6px 0;">
+        <div style="font-size:0.64rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--gold-dark);margin-bottom:4px;">✨ Why Recommended?</div>
+        <ul style="list-style:none;margin:0;padding:0;font-size:0.72rem;color:var(--text-medium);line-height:1.5;">
+          ${p._recReasons.slice(0,4).map(r=>`<li>• ${esc(r)}</li>`).join('')}
+        </ul>
+      </div>`:''}
       ${p.hasSizes && p.sizePrices?.length ? `<div class="size-selector" data-prod-id="${esc(p.id)}">${p.sizePrices.filter(sp=>sp.stock>0).map(sp=>`<button class="size-btn" data-prod="${esc(p.id)}" data-size="${esc(sp.size)}" data-price="${sp.price}" data-stock="${sp.stock}">${esc(sp.size)}</button>`).join('')}</div>` : ''}
       <!-- Color swatches — prominent & visible -->
       ${(()=>{
@@ -3983,14 +4213,22 @@ function getRecommendations(products, cust, filterSubcat) {
     if (cust.gender==='Female'&&p.category==='Women') { s+=2; }
     if (cust.gender==='Male'&&p.category==='Men') { s+=2; }
     if (filterSubcat&&p.subcategory===filterSubcat) s+=2;
-    if (cust.occasion&&(p.description||'').toLowerCase().includes(cust.occasion.toLowerCase())) { s+=1; reasons.push(`Good for ${cust.occasion}`); }
-    return { score:s, reason: reasons[0]||'Recommended for you' };
+    if (cust.occasion&&p.subcategory){ // occasion fit via subcategory/description
+      const occ=cust.occasion.toLowerCase();
+      if((p.description||'').toLowerCase().includes(occ)||(p.subcategory||'').toLowerCase().includes(occ)){ s+=1; reasons.push(`Fits your ${cust.occasion} occasion`); }
+    }
+    // Softer profile-based reasons so the card always has a clear "why"
+    if(!reasons.length){
+      if((cust.gender==='Female'&&p.category==='Women')||(cust.gender==='Male'&&p.category==='Men')) reasons.push('Matches your profile');
+      else reasons.push(`Trending in ${p.category||'your preferred category'}`);
+    }
+    return { score:s, reason: reasons[0], reasons };
   };
   return products
     .map(p=>({ p, ...scoreAndReason(p) }))
     .filter(x=>x.score>0)
     .sort((a,b)=>b.score-a.score)
-    .map(x=>({ ...x.p, _recReason: x.reason }));
+    .map(x=>({ ...x.p, _recReason: x.reason, _recReasons: x.reasons }));
 }
 
 /* ═══════════════════════════════════════════════════
@@ -4549,6 +4787,202 @@ function postRender() {
           ticks:{ callback: v=>'₹'+Number(v).toLocaleString('en-IN') } } } }
     });
   }
+
+  // ── AI Sales Forecast & Stock Prediction pages (ML) ──
+  const _ML = window.AuraML && AuraML.ready();
+  // Kick off async ML fetches the first time each page is opened
+  if (_ML && state.route === 'admin' && state.subRoute === 'forecast' && state.forecastData === undefined) {
+    state.forecastData = 'loading';
+    AuraML.getForecast().then(f => {
+      state.forecastData = f || null;
+      if (state.subRoute === 'forecast') { render(); postRender(); }
+    });
+  }
+  if (_ML && state.route === 'admin' && state.subRoute === 'stockpredict' && state.stockData === undefined) {
+    state.stockData = 'loading';
+    AuraML.getStock().then(items => {
+      state.stockData = Array.isArray(items) ? items : null;
+      if (state.subRoute === 'stockpredict') { render(); postRender(); }
+    });
+  }
+
+  const _GOLD='#C9A84C', _BLUE='#6B8CAE', _GREEN='#2e7d32', _RED='#c0392b', _AMBER='#b8860b';
+  const _inrTicks = { callback: v => '₹'+Number(v).toLocaleString('en-IN') };
+  const _monthNames = (n) => {
+    const out=[], d=new Date();
+    for (let i=0;i<n;i++){ out.push(new Date(d.getFullYear(), d.getMonth()+i, 1).toLocaleDateString('en-IN',{month:'short'})); }
+    return out;
+  };
+  // Historical actual daily revenue from real orders, filtered by category / product
+  const _fcActualSeries = (rangeDays, category, product) => {
+    const orders = DB.getOrders(), prods = DB.getProducts();
+    const catOf = {}; prods.forEach(p => catOf[p.id]=p.category);
+    const from = Date.now() - rangeDays*864e5, byDay = {};
+    orders.forEach(o => {
+      const t = new Date(o.date).getTime(); if (t < from) return;
+      let amt = 0;
+      if (category==='all' && product==='all') amt = +o.total||0;
+      else (o.items||o.products||[]).forEach(it => {
+        const pid = it.id||it.productId, c = it.category||catOf[pid];
+        const line = (+it.qty||+it.quantity||1)*(+it.price||0);
+        if (product!=='all') { if (pid===product) amt += line; }
+        else if (c===category) amt += line;
+      });
+      const key = new Date(o.date).toISOString().slice(0,10);
+      byDay[key] = (byDay[key]||0) + amt;
+    });
+    const keys = Object.keys(byDay).sort();
+    return { labels: keys.map(k=>k.slice(5)), values: keys.map(k=>Math.round(byDay[k])) };
+  };
+  const _fcCategorySeries = (rangeDays, forecastTotal) => {
+    const orders = DB.getOrders(), prods = DB.getProducts();
+    const catOf = {}; prods.forEach(p => catOf[p.id]=p.category);
+    const from = Date.now() - rangeDays*864e5, byCat = {};
+    orders.forEach(o => {
+      if (new Date(o.date).getTime() < from) return;
+      (o.items||o.products||[]).forEach(it => {
+        const pid = it.id||it.productId, c = it.category||catOf[pid]||'Other';
+        byCat[c] = (byCat[c]||0) + (+it.qty||+it.quantity||1)*(+it.price||0);
+      });
+    });
+    let cats = Object.keys(byCat);
+    if (!cats.length) {
+      cats = [...new Set(prods.map(p=>p.category).filter(Boolean))];
+      return { labels: cats, values: cats.map(()=>Math.round(forecastTotal/(cats.length||1))) };
+    }
+    const tot = Object.values(byCat).reduce((a,b)=>a+b,0)||1;
+    return { labels: cats, values: cats.map(c=>Math.round(forecastTotal*(byCat[c]/tot))) };
+  };
+
+  // Forecast page charts
+  const fd = state.forecastData;
+  if (_ML && state.subRoute === 'forecast' && fd && typeof fd === 'object' && typeof Chart !== 'undefined') {
+    const period = state.forecastPeriod || 'daily';
+    const range = parseInt(state.fcRange||'90',10), fcat = state.fcCategory||'all', fprod = state.fcProduct||'all';
+
+    // Revenue Prediction (granularity by selected period)
+    const rp = document.getElementById('fc-revpred');
+    if (rp) {
+      let labels, values, type='bar';
+      if (period==='daily') { type='line'; const d=fd.daily||[]; labels=d.map(x=>String(x.date).slice(5)); values=d.map(x=>x.revenue); }
+      else if (period==='weekly') { const w=fd.weekly||[]; labels=w.map((_,i)=>'W'+(i+1)); values=w.slice(); }
+      else if (period==='monthly') { const m=fd.monthly||[]; labels=_monthNames(m.length); values=m.slice(); }
+      else { const m=fd.monthly||[]; labels=_monthNames(m.length); values=m.slice(); }
+      _charts.fcRevpred = new Chart(rp, {
+        type,
+        data: { labels, datasets:[{ label:'Predicted Revenue (₹)', data:values,
+          borderColor:_GOLD, backgroundColor:'rgba(201,168,76,0.35)', borderWidth:2, borderRadius:6, tension:0.4,
+          fill:type==='line', pointBackgroundColor:_GOLD, pointRadius:3 }] },
+        options: { ...chartDefaults, scales:{ y:{ beginAtZero:true, ticks:_inrTicks } } }
+      });
+    }
+    // Sales Trend (actual)
+    const tr = document.getElementById('fc-trend');
+    if (tr) {
+      const s = _fcActualSeries(range, fcat, fprod);
+      _charts.fcTrend = new Chart(tr, {
+        type:'line',
+        data: { labels:s.labels, datasets:[{ label:'Actual Revenue (₹)', data:s.values,
+          borderColor:_BLUE, backgroundColor:'rgba(107,140,174,0.12)', borderWidth:2.5, tension:0.4, fill:true, pointRadius:2 }] },
+        options: { ...chartDefaults, scales:{ y:{ beginAtZero:true, ticks:_inrTicks } } }
+      });
+    }
+    // Forecast vs Actual (recent actual + forecast continuation)
+    const va = document.getElementById('fc-vsactual');
+    if (va) {
+      const act = _fcActualSeries(21, 'all', 'all');
+      const aLbl = act.labels.slice(-14), aVal = act.values.slice(-14);
+      const fdaily = (fd.daily||[]).slice(0,14);
+      const fLbl = fdaily.map(x=>String(x.date).slice(5)), fVal = fdaily.map(x=>x.revenue);
+      const labels = aLbl.concat(fLbl);
+      const actualData = aVal.concat(fLbl.map(()=>null));
+      const foreData = aVal.map(()=>null); if (aVal.length) foreData[aVal.length-1]=aVal[aVal.length-1];
+      const foreFull = foreData.concat(fVal);
+      _charts.fcVs = new Chart(va, {
+        type:'line',
+        data: { labels, datasets:[
+          { label:'Actual', data:actualData.concat(fLbl.map(()=>null)).slice(0,labels.length), borderColor:_BLUE, backgroundColor:'rgba(107,140,174,0.12)', borderWidth:2.5, tension:0.4, spanGaps:false, pointRadius:2 },
+          { label:'Forecast', data:foreFull.slice(0,labels.length), borderColor:_GOLD, borderDash:[6,4], backgroundColor:'rgba(201,168,76,0.10)', borderWidth:2.5, tension:0.4, spanGaps:true, pointRadius:2 }
+        ] },
+        options: { ...chartDefaults, plugins:{ legend:{ display:true } }, scales:{ y:{ beginAtZero:true, ticks:_inrTicks } } }
+      });
+    }
+    // Category-wise Forecast
+    const cc = document.getElementById('fc-cat-chart');
+    if (cc) {
+      const s = _fcCategorySeries(range, fd.next_30_days||0);
+      _charts.fcCat = new Chart(cc, {
+        type:'bar',
+        data: { labels:s.labels, datasets:[{ label:'Forecast next 30 days (₹)', data:s.values,
+          backgroundColor:['rgba(201,168,76,0.55)','rgba(107,140,174,0.55)','rgba(46,125,50,0.45)','rgba(184,134,11,0.5)','rgba(192,57,43,0.45)','rgba(120,120,160,0.45)'],
+          borderWidth:1, borderRadius:6 }] },
+        options: { ...chartDefaults, scales:{ y:{ beginAtZero:true, ticks:_inrTicks } } }
+      });
+    }
+    // Seasonal Demand (12-month forecast)
+    const sd2 = document.getElementById('fc-seasonal');
+    if (sd2) {
+      const m = fd.monthly||[];
+      _charts.fcSeason = new Chart(sd2, {
+        type:'line',
+        data: { labels:_monthNames(m.length), datasets:[{ label:'Predicted Monthly Revenue (₹)', data:m.slice(),
+          borderColor:_GREEN, backgroundColor:'rgba(46,125,50,0.12)', borderWidth:2.5, tension:0.45, fill:true, pointBackgroundColor:_GREEN, pointRadius:4 }] },
+        options: { ...chartDefaults, scales:{ y:{ beginAtZero:true, ticks:_inrTicks } } }
+      });
+    }
+  }
+
+  // Stock Prediction page charts
+  const stk = state.stockData;
+  if (_ML && state.subRoute === 'stockpredict' && Array.isArray(stk) && stk.length && typeof Chart !== 'undefined') {
+    const byDemand = stk.slice().sort((a,b)=>b.predicted_demand-a.predicted_demand);
+    const topD = byDemand.slice(0,8);
+    // Product-wise Demand vs Stock (grouped)
+    const pw = document.getElementById('sp-prodwise');
+    if (pw) {
+      _charts.spProd = new Chart(pw, {
+        type:'bar',
+        data: { labels: topD.map(i=>i.name), datasets:[
+          { label:'Predicted Demand', data:topD.map(i=>i.predicted_demand), backgroundColor:'rgba(201,168,76,0.6)', borderRadius:5 },
+          { label:'Current Stock', data:topD.map(i=>i.current_stock), backgroundColor:'rgba(46,125,50,0.5)', borderRadius:5 }
+        ] },
+        options: { ...chartDefaults, plugins:{ legend:{ display:true } }, scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 } } } }
+      });
+    }
+    // Demand Prediction (top products)
+    const dp = document.getElementById('sp-demand');
+    if (dp) {
+      const top = byDemand.slice(0,10);
+      _charts.spDemand = new Chart(dp, {
+        type:'bar',
+        data: { labels: top.map(i=>i.name), datasets:[{ label:'Predicted Weekly Demand', data:top.map(i=>i.predicted_demand),
+          backgroundColor:'rgba(107,140,174,0.6)', borderRadius:5 }] },
+        options: { ...chartDefaults, indexAxis:'y', scales:{ x:{ beginAtZero:true } } }
+      });
+    }
+    // Current Stock Levels
+    const stl = document.getElementById('sp-stock-trend');
+    if (stl) {
+      const top = stk.slice().sort((a,b)=>b.current_stock-a.current_stock).slice(0,10);
+      _charts.spStock = new Chart(stl, {
+        type:'bar',
+        data: { labels: top.map(i=>i.name), datasets:[{ label:'Current Stock', data:top.map(i=>i.current_stock),
+          backgroundColor:'rgba(46,125,50,0.5)', borderRadius:5 }] },
+        options: { ...chartDefaults, scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 } } } }
+      });
+    }
+    // Reorder Analytics — status mix (doughnut)
+    const ra = document.getElementById('sp-reorder');
+    if (ra) {
+      let c=0,l=0,n=0; stk.forEach(i=>{const s=_stockStatus(i.urgency).label; if(s==='Critical')c++;else if(s==='Low')l++;else n++;});
+      _charts.spReorder = new Chart(ra, {
+        type:'doughnut',
+        data: { labels:['Critical','Low','Normal'], datasets:[{ data:[c,l,n],
+          backgroundColor:[_RED,_AMBER,_GREEN], borderWidth:2, borderColor:'#fff' }] },
+        options: { responsive:true, maintainAspectRatio:true, plugins:{ legend:{ display:true, position:'bottom' } } }
+      });
+    }
+  }
 }
 
 /* ── Live Bill Preview (shop registration form) ── */
@@ -4928,6 +5362,22 @@ function attachListeners() {
     state.empPerfPeriod = e.currentTarget.dataset.empPerfPeriod;
     render(); postRender();
   });
+
+  /* ── AI Sales Forecast page ── */
+  onAll('[data-forecast-period]','click', e=>{
+    state.forecastPeriod = e.currentTarget.dataset.forecastPeriod;
+    render(); postRender();
+  });
+  on('#fc-range','change', e=>{ state.fcRange=e.target.value; render(); postRender(); });
+  on('#fc-category','change', e=>{ state.fcCategory=e.target.value; render(); postRender(); });
+  on('#fc-product','change', e=>{ state.fcProduct=e.target.value; render(); postRender(); });
+  on('#fc-refresh','click', ()=>{ state.forecastData=undefined; render(); postRender(); });
+
+  /* ── Stock Prediction page ── */
+  on('#sp-search','input', e=>{ state.stockSearch=e.target.value; updateStockTable(); });
+  on('#sp-status','change', e=>{ state.stockStatusFilter=e.target.value; updateStockTable(); });
+  on('#sp-sort','change', e=>{ state.stockSort=e.target.value; updateStockTable(); });
+  on('#sp-refresh','click', ()=>{ state.stockData=undefined; render(); postRender(); });
 
   /* Sidebar nav */
   onAll('.sidebar-nav-item','click', e=>{
@@ -5666,6 +6116,20 @@ function attachListeners() {
   onAll('[data-add-cart]','click', e=>{e.stopPropagation();addToCart(e.currentTarget.dataset.addCart);});
   on('#open-cart-btn','click', ()=>{state.cartOpen=true;render();});
   on('#close-cart-btn','click', ()=>{state.cartOpen=false;render();});
+
+  /* Customer style profile (edit + save) */
+  on('#cust-profile-btn','click', ()=>{ state.modalOpen='cust-profile'; render(); });
+  on('#save-cust-profile-btn','click', ()=>{
+    const form=document.getElementById('cust-profile-form'); if(!form) return;
+    const session=DB.getSession(); if(!session?.id){ showToast('Please log in again','error'); return; }
+    const fd=new FormData(form);
+    const data={ gender:fd.get('gender')||'', size:fd.get('size')||'',
+      skinTone:fd.get('skinTone')||'', preferredColor:fd.get('preferredColor')||'', occasion:fd.get('occasion')||'' };
+    DB.updateCustomer(session.id, data);
+    state.modalOpen=null;
+    showToast('Profile updated — recommendations refreshed','success');
+    render(); postRender();
+  });
   on('#cart-overlay-bg','click', ()=>{state.cartOpen=false;render();});
   onAll('[data-cart-inc]','click', e=>updateCartQty(e.currentTarget.dataset.cartInc,1));
   onAll('[data-cart-dec]','click', e=>updateCartQty(e.currentTarget.dataset.cartDec,-1));

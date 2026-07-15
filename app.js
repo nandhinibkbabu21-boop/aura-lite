@@ -6632,7 +6632,12 @@ async function init() {
     } else if(session.role==='admin') navigate('admin');
     else if(session.role==='employee') navigate('employee');
     else if(session.role==='super-admin'){navigate('super-admin');loadSuperAdminShops();}
-    else navigate('customer');
+    else {
+      // Returning customer (session restored): offer the optional recommendation
+      // form for this visit. Starts with no recommendations until they choose.
+      state.recPrefs = null; state.recFormPending = true;
+      navigate('customer');
+    }
   }else{
     navigate('landing');
   }

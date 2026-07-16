@@ -471,9 +471,9 @@ window.addEventListener('popstate', e => {
 
 function render() {
   const app = document.getElementById('app'); if (!app) return;
-  ['cart-overlay-bg','checkout-overlay','success-overlay','product-detail-overlay','stock-modal-overlay']
+  ['cart-overlay-bg','checkout-overlay','success-overlay','product-detail-overlay','stock-modal-overlay','cart-fullscreen-overlay']
     .forEach(id => document.getElementById(id)?.remove());
-  document.querySelectorAll('.cart-overlay,.cart-sidebar').forEach(el => el.remove());
+  document.querySelectorAll('.cart-overlay,.cart-sidebar,.cart-fullscreen').forEach(el => el.remove());
 
   state.session = DB.getSession();
   state.shopId  = DB.getShopId();
@@ -3105,66 +3105,149 @@ function renderProductDetailModal(pid) {
 /* ═══════════════════════════════════════════════════
    17. CART SIDEBAR
 ═══════════════════════════════════════════════════ */
+/* FULL-SCREEN 3-step customer checkout (replaces the old cart side panel). */
 function renderCartSidebar() {
-  const cart=state.cart, total=cart.reduce((s,i)=>s+i.qty*i.price,0);
-  return `
-  <div class="cart-overlay" id="cart-overlay-bg"></div>
-  <div class="cart-sidebar">
-    <div class="cart-header">
-      <div class="cart-title">Shopping Cart <span style="font-family:var(--font-sans);font-size:0.82rem;font-weight:400;color:var(--text-light);">(${cart.reduce((s,i)=>s+i.qty,0)} items)</span></div>
-      <button class="modal-close" id="close-cart-btn">✕</button>
-    </div>
-    ${cart.length===0?`<div class="cart-empty"><div class="cart-empty-icon">🛍</div>
-      <div style="font-family:var(--font-serif);font-size:1.2rem;color:var(--text-medium);margin-bottom:8px;">Your cart is empty</div>
-      <p class="text-muted">Add items to begin shopping</p></div>`:`
-    <div class="cart-items">${cart.map(item=>`
-      <div class="cart-item">
-        ${item.image?`<img src="${item.image}" class="cart-item-img" alt="${esc(item.name)}"/>`:
-          `<div class="cart-item-img" style="display:flex;align-items:center;justify-content:center;font-size:1.5rem;">👗</div>`}
-        <div class="cart-item-info">
-          <div class="cart-item-name">${esc(item.name)}</div>
-          <div class="cart-item-meta">${esc(item.size)} · ${esc(item.color)} · ${fmt(item.price)}</div>
-          <div class="cart-item-controls"><div class="qty-control">
-            <button class="qty-btn" data-cart-dec="${esc(item.cartKey||item.id)}">−</button>
-            <span class="qty-value">${item.qty}</span>
-            <button class="qty-btn" data-cart-inc="${esc(item.cartKey||item.id)}">+</button>
-          </div></div>
+  const cart = state.cart;
+  const shop = DB.getShop() || {};
+  const session = DB.getSession();
+  const custName = session?.name || 'Guest';
+  const step = state.cartStep || 1;
+  const inr = n => fmt(n);
+  const sub = cart.reduce((s,i)=>s+i.qty*i.price,0);
+  const gstRate = +(shop.gstRate||0), sgstRate = +(shop.sgstRate||0), cgstRate = +(shop.cgstRate||0);
+  const gstAmt = ((sgstRate>0?Math.round(sub*sgstRate/100):0)+(cgstRate>0?Math.round(sub*cgstRate/100):0)) || Math.round(sub*gstRate/100);
+  const grand = sub + gstAmt;
+
+  const shell = (inner, showProgress=true) => {
+    const steps = [['1','Order Summary'],['2','Payment Method'],['3','Bill Preview']];
+    const cur = step==='done'?3:Number(step);
+    const progress = `<div style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid var(--border-light);background:#fff;">
+      ${steps.map(([n,l],i)=>`<div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;font-weight:600;color:${Number(n)===cur?'var(--gold-dark)':'var(--text-light)'};">
+        <span style="width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:0.74rem;background:${Number(n)===cur?'var(--gold)':Number(n)<cur?'var(--gold-light)':'var(--cream-2)'};color:${Number(n)===cur?'#fff':'var(--text-medium)'};">${n}</span>${l}</div>${i<2?'<span style="color:var(--text-light);">→</span>':''}`).join('')}
+    </div>`;
+    return `<div class="cart-fullscreen" id="cart-fullscreen-overlay" style="position:fixed;inset:0;z-index:1000;background:var(--cream);display:flex;flex-direction:column;overflow:hidden;">
+      <header style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#fff;border-bottom:1px solid var(--border-light);">
+        <div style="font-family:var(--font-serif);font-size:1.2rem;color:var(--gold-dark);">🛍 Checkout</div>
+        <button class="modal-close" id="close-cart-btn">✕</button>
+      </header>
+      ${showProgress?progress:''}
+      <div style="flex:1;overflow-y:auto;padding:22px 16px;"><div style="max-width:640px;margin:0 auto;">${inner}</div></div>
+    </div>`;
+  };
+
+  // ── Completion screen ──
+  if (step==='done') {
+    return shell(`<div style="text-align:center;padding:30px 10px;">
+      <div style="font-size:3rem;">✅</div>
+      <div style="font-size:1.15rem;color:#2e7d32;font-weight:700;margin-top:10px;">Order Completed Successfully</div>
+      <div style="font-family:var(--font-serif);font-size:1.6rem;color:var(--gold-dark);margin-top:6px;">Thank You For Purchasing</div>
+      <div style="display:flex;justify-content:center;gap:12px;margin-top:26px;flex-wrap:wrap;">
+        <button class="btn btn-outline btn-lg" id="cart-new-order">🛍 New Order</button>
+        <button class="btn btn-gold btn-lg" id="cart-back-dashboard">🏠 Back To Dashboard</button>
+      </div>
+    </div>`, false);
+  }
+
+  // ── Empty cart ──
+  if (!cart.length) {
+    return shell(`<div style="text-align:center;padding:50px 10px;">
+      <div style="font-size:2.6rem;">🛍</div>
+      <div style="font-family:var(--font-serif);font-size:1.3rem;color:var(--text-medium);margin:10px 0 6px;">Your cart is empty</div>
+      <p class="text-muted">Add items to begin shopping.</p>
+      <button class="btn btn-gold" id="cart-back-dashboard" style="margin-top:16px;">← Back to Shop</button>
+    </div>`);
+  }
+
+  // ── STEP 1: ORDER SUMMARY ──
+  if (step===1) {
+    return shell(`
+      <div class="card" style="padding:20px;margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <span style="font-size:0.8rem;color:var(--text-light);">Customer</span><strong>${esc(custName)}</strong>
         </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
-          <div class="cart-item-price">${fmt(item.qty*item.price)}</div>
-          <span class="cart-item-remove" data-cart-remove="${esc(item.cartKey||item.id)}">✕ Remove</span>
+        <div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:8px;">Order Summary</div>
+        <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.86rem;">
+          <thead><tr style="background:var(--cream-2);">
+            <th style="text-align:left;padding:8px;">Product</th>
+            <th style="text-align:center;padding:8px;">Qty</th>
+            <th style="text-align:right;padding:8px;">Price</th>
+            <th style="text-align:right;padding:8px;">Total</th>
+          </tr></thead>
+          <tbody>${cart.map(item=>`<tr style="border-bottom:1px solid var(--border-light);">
+            <td style="padding:8px;">${esc(item.name)}${item.size||item.color?`<div style="font-size:0.72rem;color:var(--text-light);">${esc(item.size||'')}${item.color?' · '+esc(item.color):''}</div>`:''}</td>
+            <td style="padding:8px;"><div class="qty-control" style="justify-content:center;">
+              <button class="qty-btn" data-cart-dec="${esc(item.cartKey||item.id)}">−</button>
+              <span class="qty-value">${item.qty}</span>
+              <button class="qty-btn" data-cart-inc="${esc(item.cartKey||item.id)}">+</button>
+            </div></td>
+            <td style="text-align:right;padding:8px;">${inr(item.price)}</td>
+            <td style="text-align:right;padding:8px;font-weight:600;">${inr(item.qty*item.price)}</td>
+          </tr>`).join('')}</tbody>
+        </table>
         </div>
-      </div>`).join('')}
-    </div>
-    <div class="cart-footer">
-      <div class="cart-summary-row"><span>Subtotal</span><span>${fmt(total)}</span></div>
-      <div class="cart-total-row"><span>Total</span><span class="cart-total-amount">${fmt(total)}</span></div>
-      <div style="margin:12px 0 4px;">
-        <div style="font-size:0.78rem;font-weight:600;color:var(--text-medium);margin-bottom:8px;">Payment Mode <span style="color:red;">*</span></div>
-        <div class="pay-mode-select">
-          ${[{v:'Cash',l:'Cash',i:'💵'},{v:'UPI',l:'UPI / GPay / PhonePe',i:'📱'},{v:'Card',l:'Card',i:'💳'}].map(({v,l,i})=>`<label class="pay-mode-btn${state.paymentMode===v?' selected':''}">
-            <input type="radio" name="cartPayMode" value="${v}" ${state.paymentMode===v?'checked':''} style="display:none;"/>
-            ${i} ${l}
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border-light);">
+          <div style="display:flex;justify-content:space-between;font-size:0.9rem;"><span style="color:var(--text-light);">Subtotal</span><span>${inr(sub)}</span></div>
+          ${gstAmt>0?`<div style="display:flex;justify-content:space-between;font-size:0.9rem;"><span style="color:var(--text-light);">GST (${gstRate}%)</span><span>${inr(gstAmt)}</span></div>`:''}
+          <div style="display:flex;justify-content:space-between;padding-top:8px;border-top:2px solid var(--gold-light);font-weight:700;font-size:1.1rem;"><span>Grand Total</span><span style="color:var(--gold-dark);">${inr(grand)}</span></div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:10px;">
+        <button class="btn btn-gold btn-lg" id="cart-next-1">Next →</button>
+      </div>`);
+  }
+
+  // ── STEP 2: PAYMENT METHOD ──
+  if (step===2) {
+    const opts=[{v:'Cash',l:'Cash',i:'💵'},{v:'UPI',l:'UPI',i:'🏦'},{v:'GPay',l:'Google Pay (GPay)',i:'📱'},{v:'PhonePe',l:'PhonePe',i:'📲'},{v:'Card',l:'Card',i:'💳'}];
+    return shell(`
+      <div class="card" style="padding:20px;margin-bottom:18px;">
+        <div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:14px;">Select Payment Method <span style="color:#c62828;">*</span></div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          ${opts.map(o=>`<label class="pay-mode-btn${state.paymentMode===o.v?' selected':''}" data-cart-pay="${o.v}" style="justify-content:flex-start;padding:14px 16px;">
+            <input type="radio" name="cartPayMode" value="${o.v}" ${state.paymentMode===o.v?'checked':''} style="display:none;"/>
+            <span style="font-size:1.1rem;margin-right:8px;">${o.i}</span> ${o.l}
           </label>`).join('')}
         </div>
       </div>
-      ${state.paymentMode ? `
-      <div style="margin-top:14px;border-top:1px dashed var(--border-light);padding-top:12px;">
-        <div style="font-size:0.75rem;font-weight:700;color:var(--gold-dark);margin-bottom:8px;text-align:center;letter-spacing:0.07em;text-transform:uppercase;">📄 Your Bill</div>
-        <div style="border:1px solid var(--border-light);border-radius:8px;overflow:hidden;max-height:360px;overflow-y:auto;">
-          ${renderGSTInvoice(cartToInvoiceBill(cart, DB.getShop(), state.paymentMode), DB.getShop())}
-        </div>
-        <div style="display:flex;gap:8px;margin-top:12px;">
-          <button class="btn btn-gold btn-block" id="cart-whatsapp-btn" style="font-size:0.82rem;padding:10px 8px;">📱 WhatsApp</button>
-          <button class="btn btn-outline btn-block" id="cart-print-btn" style="font-size:0.82rem;padding:10px 8px;">🖨️ Print</button>
-        </div>
-        <button class="btn btn-outline btn-block" id="cart-both-btn" style="margin-top:8px;font-size:0.82rem;padding:9px 8px;">⚡ Both (WhatsApp + Print)</button>
+      <div style="display:flex;justify-content:space-between;gap:10px;">
+        <button class="btn btn-ghost btn-lg" id="cart-back-1">← Back</button>
+        <button class="btn btn-gold btn-lg" id="cart-next-2">Next →</button>
+      </div>`);
+  }
+
+  // ── STEP 3: BILL PREVIEW ──
+  const now = new Date();
+  return shell(`
+    <div class="card" style="padding:20px;margin-bottom:18px;">
+      <div style="text-align:center;border-bottom:1px dashed var(--border-light);padding-bottom:12px;margin-bottom:12px;">
+        <div style="font-family:var(--font-serif);font-weight:700;font-size:1.15rem;color:var(--gold-dark);">${esc(shop.name||'Zara Aura')}</div>
+        <div style="font-size:0.8rem;color:var(--text-medium);">${esc(shop.address||'')}</div>
+        ${shop.phone?`<div style="font-size:0.8rem;color:var(--text-medium);">📞 ${esc(shop.phone)}</div>`:''}
+        ${shop.gst?`<div style="font-size:0.74rem;color:var(--text-light);">GSTIN: ${esc(shop.gst)}</div>`:''}
       </div>
-      ` : `
-      <button class="btn btn-ghost btn-block btn-lg" style="margin-top:10px;opacity:0.5;cursor:default;" disabled>✦ &nbsp; Select payment to continue</button>
-      `}
-    </div>`}
-  </div>`;
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:4px;"><span style="color:var(--text-light);">Customer Name</span><strong>${esc(custName)}</strong></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:12px;"><span style="color:var(--text-light);">Date &amp; Time</span><span>${now.toLocaleString('en-IN')}</span></div>
+      <div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:6px;">Product Details</div>
+      <table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-bottom:12px;">
+        <thead><tr style="background:var(--cream-2);"><th style="text-align:left;padding:6px;">Product</th><th style="text-align:center;padding:6px;">Qty</th><th style="text-align:right;padding:6px;">Price</th><th style="text-align:right;padding:6px;">Total</th></tr></thead>
+        <tbody>${cart.map(i=>`<tr style="border-bottom:1px solid var(--border-light);"><td style="padding:6px;">${esc(i.name)}</td><td style="text-align:center;padding:6px;">${i.qty}</td><td style="text-align:right;padding:6px;">${inr(i.price)}</td><td style="text-align:right;padding:6px;">${inr(i.qty*i.price)}</td></tr>`).join('')}</tbody>
+      </table>
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:0.88rem;">
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--text-light);">Subtotal</span><span>${inr(sub)}</span></div>
+        ${gstAmt>0?`<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-light);">GST (${gstRate}%)</span><span>${inr(gstAmt)}</span></div>`:''}
+        <div style="display:flex;justify-content:space-between;padding-top:8px;border-top:2px solid var(--gold-light);font-weight:700;font-size:1.05rem;"><span>Grand Total</span><span style="color:var(--gold-dark);">${inr(grand)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px;"><span style="color:var(--text-light);">Payment Method</span><strong>${esc(state.paymentMode||'—')}</strong></div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+      <button class="btn btn-ghost btn-lg" id="cart-back-2">← Back</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-outline" id="cart-final-wa">💬 WhatsApp</button>
+        <button class="btn btn-outline" id="cart-final-print">🖨 Print</button>
+        <button class="btn btn-gold" id="cart-final-both">💬 + 🖨 WhatsApp + Print</button>
+      </div>
+    </div>`);
 }
 
 /* ═══════════════════════════════════════════════════
@@ -4631,6 +4714,43 @@ async function confirmAndDeliver(pref) {
 
   // Execute the delivery choice immediately and show all status steps
   await executeOrderDelivery(order.id, pref);
+}
+
+/* Finalize the full-screen 3-step checkout: create order, reduce stock,
+   deliver via WhatsApp/print, then show the completion screen. */
+async function finalizeCartCheckout(action) {
+  const session = DB.getSession(), cart = state.cart;
+  if (!cart.length) { showToast('Cart is empty','error'); return; }
+  if (!state.paymentMode) { showToast('Please select a payment method','error'); return; }
+  const shop = DB.getShop();
+  const sub = cart.reduce((s,i)=>s+i.qty*i.price,0);
+  // Reduce stock per item (size-aware) — same logic as confirmAndDeliver
+  cart.forEach(item => {
+    const p = DB.getProducts().find(pr => pr.id === item.id);
+    if (!p) return;
+    if ((p.hasSizes || p.sizeStock?.length) && item.size) {
+      const newSS = (p.sizeStock||[]).map(s => s.size===item.size ? {...s, stock: Math.max(0, s.stock-item.qty)} : s);
+      DB.updateProduct(item.id, {sizeStock: newSS, quantity: newSS.reduce((s,x)=>s+x.stock,0)});
+    } else {
+      DB.updateProduct(item.id, {quantity: Math.max(0, +p.quantity - item.qty)});
+    }
+  });
+  const order = {
+    id: uid(), customerId: session?.id,
+    customerName: session?.name || 'Guest',
+    guestName: session?.isGuest ? session?.name : null,
+    customerPhone: session?.phone || '',
+    items: cart.map(i => ({id:i.id, name:i.name, size:i.size||'', color:i.color||'', price:i.price, qty:i.qty, image:i.image||''})),
+    total: sub, paymentMode: state.paymentMode,
+    status: 'pending', date: Date.now()
+  };
+  DB.addOrder(order);
+  // Deliver via the chosen action (WhatsApp opens with bill details / print opens receipt)
+  if (action==='whatsapp' || action==='both') { try { shareInvoiceWhatsApp(order, shop); } catch(_){} }
+  if (action==='print'    || action==='both') { try { window._printOrderBill(order.id); } catch(_){} }
+  // Move to the completion screen
+  state.cart = []; state.paymentMode = ''; state.cartStep = 'done';
+  render();
 }
 
 /* ═══════════════════════════════════════════════════
@@ -6305,8 +6425,8 @@ function attachListeners() {
 
   /* Cart */
   onAll('[data-add-cart]','click', e=>{e.stopPropagation();addToCart(e.currentTarget.dataset.addCart);});
-  on('#open-cart-btn','click', ()=>{state.cartOpen=true;render();});
-  on('#close-cart-btn','click', ()=>{state.cartOpen=false;render();});
+  on('#open-cart-btn','click', ()=>{state.cartOpen=true; state.cartStep=1; render();});
+  on('#close-cart-btn','click', ()=>{state.cartOpen=false; state.cartStep=1; render();});
 
   /* Optional post-login recommendation form (session-only, existing customers) */
   const _closeRecForm = () => { state.recFormPending=false; render(); postRender(); };
@@ -6350,10 +6470,22 @@ function attachListeners() {
   onAll('[data-cart-dec]','click', e=>updateCartQty(e.currentTarget.dataset.cartDec,-1));
   onAll('[data-cart-remove]','click', e=>removeFromCart(e.currentTarget.dataset.cartRemove));
 
-  /* Cart bill delivery buttons (shown after payment mode selected) */
-  on('#cart-whatsapp-btn','click', () => confirmAndDeliver('whatsapp'));
-  on('#cart-print-btn',   'click', () => confirmAndDeliver('print'));
-  on('#cart-both-btn',    'click', () => confirmAndDeliver('both'));
+  /* ── Full-screen 3-step checkout navigation ── */
+  on('#cart-next-1','click', ()=>{
+    if(!state.cart.length){ showToast('Your cart is empty','error'); return; }
+    state.cartStep=2; render();
+  });
+  on('#cart-back-1','click', ()=>{ state.cartStep=1; render(); });
+  on('#cart-next-2','click', ()=>{
+    if(!state.paymentMode){ showToast('Please select a payment method','error'); return; }
+    state.cartStep=3; render();
+  });
+  on('#cart-back-2','click', ()=>{ state.cartStep=2; render(); });
+  on('#cart-final-wa','click',   ()=>finalizeCartCheckout('whatsapp'));
+  on('#cart-final-print','click',()=>finalizeCartCheckout('print'));
+  on('#cart-final-both','click', ()=>finalizeCartCheckout('both'));
+  on('#cart-new-order','click', ()=>{ state.cartOpen=false; state.cartStep=1; state.paymentMode=''; state.subRoute='products'; render(); postRender(); });
+  on('#cart-back-dashboard','click', ()=>{ state.cartOpen=false; state.cartStep=1; state.paymentMode=''; state.subRoute='products'; render(); postRender(); });
 
   /* Checkout (legacy modal — still wired up as fallback) */
   on('#checkout-btn','click', ()=>{

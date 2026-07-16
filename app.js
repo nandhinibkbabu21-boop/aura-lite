@@ -2146,6 +2146,14 @@ function _chartCard(title,id){
     <div class="chart-container"><canvas id="${id}"></canvas></div></div>`;
 }
 
+/* True only when the shop has REAL sales history (orders and/or bills with
+   revenue). A brand-new shop with no sales returns false, so no forecast is
+   fetched or shown. */
+function _forecastHasSalesData() {
+  const orders = (DB.getOrders() || []).filter(o => (+o.total || 0) > 0);
+  const bills  = (DB.getBills()  || []).filter(b => (+b.grandTotal || 0) > 0);
+  return (orders.length + bills.length) > 0;
+}
 function renderAdminForecast() {
   const head = `<div class="dash-page-title">📈 AI Sales Forecast</div>
     <div class="dash-page-subtitle">Machine-learning revenue predictions · Random Forest Regression</div>`;
@@ -2154,6 +2162,16 @@ function renderAdminForecast() {
   if (!mlOn) return `<div class="animate-fadeIn">${head}
     <div class="card" style="text-align:center;padding:40px;color:var(--text-light);">
       The AI forecast service is not connected. Set <code>mlUrl</code> in backend-config.js to enable live predictions.</div></div>`;
+  // No real sales history yet → professional empty state (no predictions, no charts, no fetch).
+  if (!_forecastHasSalesData()) return `<div class="animate-fadeIn">${head}
+    <div class="card" style="text-align:center;padding:44px 24px;">
+      <div style="font-size:2.4rem;">📊</div>
+      <div style="font-family:var(--font-serif);font-size:1.2rem;color:var(--gold-dark);margin-top:10px;">AI Sales Forecast is not available yet</div>
+      <div style="max-width:540px;margin:12px auto 0;color:var(--text-light);font-size:0.9rem;line-height:1.65;">
+        Start adding products and complete customer sales transactions. Once sufficient sales data is
+        available, AI will generate accurate revenue forecasts, trends, and predictions for your shop.
+      </div>
+    </div></div>`;
   if (fd === undefined || fd === 'loading')
     return `<div class="animate-fadeIn">${head}${_mlLoadingCard('Forecasting your sales…')}</div>`;
   if (fd === null) return `<div class="animate-fadeIn">${head}${_mlErrorCard('forecast')}</div>`;
@@ -5097,7 +5115,7 @@ function postRender() {
   // ── AI Sales Forecast & Stock Prediction pages (ML) ──
   const _ML = window.AuraML && AuraML.ready();
   // Kick off async ML fetches the first time each page is opened
-  if (_ML && state.route === 'admin' && state.subRoute === 'forecast' && state.forecastData === undefined) {
+  if (_ML && state.route === 'admin' && state.subRoute === 'forecast' && state.forecastData === undefined && _forecastHasSalesData()) {
     state.forecastData = 'loading';
     AuraML.getForecast().then(f => {
       state.forecastData = f || null;

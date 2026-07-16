@@ -2894,7 +2894,7 @@ function renderRecPrefsModal() {
           <div style="display:flex;flex-direction:column;gap:14px;">
             <div class="form-row">
               <div class="form-group"><label class="form-label">Gender <span class="optional-tag">(Optional)</span></label>
-                <select class="form-control" name="gender"><option value="">Select</option>${opt(['Female','Male','Other'])}</select></div>
+                <select class="form-control" name="gender"><option value="">Select</option>${opt(['Female','Male','Kids'])}</select></div>
               <div class="form-group"><label class="form-label">Clothing Size <span class="optional-tag">(Optional)</span></label>
                 <select class="form-control" name="size"><option value="">Select</option>${opt(['XS','S','M','L','XL','XXL','3XL'])}</select></div>
             </div>
@@ -3295,126 +3295,155 @@ function renderBillingModal() {
   const shop = DB.getShop();
   const custs = DB.getCustomers();
   const prods = DB.getProducts();
+  const stepChip = (n,label)=>`<div class="bill-step-chip" data-chip="${n}" style="display:flex;align-items:center;gap:6px;font-size:0.74rem;font-weight:600;color:var(--text-light);">
+      <span class="bill-step-num" style="width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--cream-2);color:var(--text-medium);font-size:0.72rem;">${n}</span>${label}</div>`;
   return `<div class="modal-overlay" id="billing-modal-overlay">
     <div class="modal modal-lg animate-slideUp" style="max-width:820px;width:95vw;">
       <div class="modal-header">
-        <div class="modal-title">🧾 Generate New GST Invoice</div>
+        <div class="modal-title">🧾 New Bill</div>
         <button class="modal-close" data-close-modal="billing">✕</button>
       </div>
-      <div class="modal-body" style="max-height:78vh;overflow-y:auto;padding:20px;">
-        <!-- Shop Details Preview -->
-        <div style="background:var(--cream-2);border-radius:var(--radius-md);padding:14px 18px;margin-bottom:20px;border:1px solid var(--border-light);">
-          <div style="font-size:0.7rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold-dark);font-weight:700;margin-bottom:8px;">Shop Details (shown on invoice)</div>
-          <div style="font-weight:700;font-size:1rem;">${esc(shop?.name||'Your Shop')}</div>
-          <div style="font-size:0.82rem;color:var(--text-medium);">${esc(shop?.address||'—')}</div>
-          <div style="font-size:0.82rem;color:var(--text-medium);">${shop?.phone?'📞 '+esc(shop.phone):''}</div>
-          ${shop?.gst?`<div style="font-size:0.78rem;color:var(--text-light);">GSTIN: ${esc(shop.gst)}</div>`:''}
-        </div>
+      <!-- Step indicator -->
+      <div id="bill-stepper" style="display:flex;align-items:center;justify-content:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--border-light);flex-wrap:wrap;">
+        ${stepChip(1,'Order Summary')}<span style="color:var(--text-light);">→</span>
+        ${stepChip(2,'Payment')}<span style="color:var(--text-light);">→</span>
+        ${stepChip(3,'Bill Preview')}
+      </div>
+      <div class="modal-body" style="max-height:70vh;overflow-y:auto;padding:20px;">
 
-        <!-- Customer Details -->
-        <div class="grid-2" style="margin-bottom:20px;gap:16px;">
-          <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">Customer Name</label>
-            <input type="text" class="form-control" id="bill-cust-name" list="bill-custs-dl" placeholder="Enter customer name" autocomplete="off"/>
-            <datalist id="bill-custs-dl">${custs.map(c=>`<option value="${esc(c.name)}" data-phone="${esc(c.whatsapp||'')}"/>`).join('')}</datalist>
-          </div>
-          <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">Customer Phone (WhatsApp)</label>
-            <input type="tel" class="form-control" id="bill-cust-phone" maxlength="10" placeholder="10-digit number"/>
-          </div>
-        </div>
-
-        <!-- Items Table -->
-        <div style="margin-bottom:20px;">
-          <div style="font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:10px;">Items Purchased</div>
-          <div style="overflow-x:auto;">
-            <table style="width:100%;min-width:500px;border-collapse:collapse;">
-              <thead>
-                <tr style="background:var(--cream-2);">
-                  <th style="padding:8px 6px;text-align:center;width:36px;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Sr.</th>
-                  <th style="padding:8px 6px;text-align:left;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Product Name</th>
-                  <th style="padding:8px 6px;text-align:center;width:72px;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Qty</th>
-                  <th style="padding:8px 6px;text-align:right;width:110px;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Price/Unit (₹)</th>
-                  <th style="padding:8px 6px;text-align:right;width:110px;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Total (₹)</th>
-                  <th style="padding:8px 6px;width:36px;"></th>
-                </tr>
-              </thead>
-              <tbody id="bill-items-tbody">
-                <tr class="bill-item-row" style="border-bottom:1px solid var(--border-light);">
-                  <td style="padding:8px 6px;text-align:center;color:var(--text-light);font-size:0.82rem;">1</td>
-                  <td style="padding:6px;"><input type="text" class="form-control form-control-sm bill-item-name" list="bill-prods-dl" placeholder="Product name" autocomplete="off"/></td>
-                  <td style="padding:6px;"><input type="number" class="form-control form-control-sm bill-item-qty" min="1" value="1" placeholder="1" style="text-align:center;"/></td>
-                  <td style="padding:6px;"><input type="number" class="form-control form-control-sm bill-item-price" min="0" placeholder="0" style="text-align:right;"/></td>
-                  <td style="padding:6px;"><input type="number" class="form-control form-control-sm bill-item-total" readonly placeholder="0" style="text-align:right;background:var(--cream-2);"/></td>
-                  <td style="padding:6px;text-align:center;"><button type="button" class="btn-icon remove-bill-row" title="Remove" style="color:#c62828;width:28px;height:28px;font-size:0.9rem;">✕</button></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <datalist id="bill-prods-dl">${prods.map(p=>`<option value="${esc(p.name)}" data-price="${getProductBasePrice(p)}"/>`).join('')}</datalist>
-          <button type="button" class="btn btn-outline btn-sm" id="add-bill-item-btn" style="margin-top:10px;">+ Add Item</button>
-        </div>
-
-        <!-- Pricing Summary -->
-        <div class="card" style="margin-bottom:20px;padding:18px;">
-          <div style="font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:14px;">Pricing Summary</div>
-          <div style="display:flex;flex-direction:column;gap:12px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:0.9rem;color:var(--text-medium);">Subtotal</span>
-              <span id="bill-subtotal" style="font-weight:600;font-size:0.9rem;">₹0</span>
+        <!-- ══════ STEP 1: ORDER SUMMARY ══════ -->
+        <div class="bill-step" data-step="1">
+          <div class="grid-2" style="margin-bottom:20px;gap:16px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Customer Name</label>
+              <input type="text" class="form-control" id="bill-cust-name" list="bill-custs-dl" placeholder="Enter customer name" autocomplete="off"/>
+              <datalist id="bill-custs-dl">${custs.map(c=>`<option value="${esc(c.name)}" data-phone="${esc(c.whatsapp||'')}"/>`).join('')}</datalist>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
-              <span style="font-size:0.9rem;color:var(--text-medium);">Discount (Optional)</span>
-              <div style="display:flex;align-items:center;gap:8px;">
-                <select class="form-control form-control-sm" id="bill-discount-type" style="width:70px;">
-                  <option value="amount">₹</option>
-                  <option value="percent">%</option>
-                </select>
-                <input type="number" class="form-control form-control-sm" id="bill-discount-val" min="0" placeholder="0" style="width:90px;text-align:right;"/>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Customer Phone (WhatsApp)</label>
+              <input type="tel" class="form-control" id="bill-cust-phone" maxlength="10" placeholder="10-digit number"/>
+            </div>
+          </div>
+          <div style="margin-bottom:20px;">
+            <div style="font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:10px;">Products</div>
+            <div style="overflow-x:auto;">
+              <table style="width:100%;min-width:500px;border-collapse:collapse;">
+                <thead>
+                  <tr style="background:var(--cream-2);">
+                    <th style="padding:8px 6px;text-align:center;width:36px;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Sr.</th>
+                    <th style="padding:8px 6px;text-align:left;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Product Name</th>
+                    <th style="padding:8px 6px;text-align:center;width:72px;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Qty</th>
+                    <th style="padding:8px 6px;text-align:right;width:110px;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Price/Unit (₹)</th>
+                    <th style="padding:8px 6px;text-align:right;width:110px;font-size:0.78rem;font-weight:600;color:var(--text-medium);">Total (₹)</th>
+                    <th style="padding:8px 6px;width:36px;"></th>
+                  </tr>
+                </thead>
+                <tbody id="bill-items-tbody">
+                  <tr class="bill-item-row" style="border-bottom:1px solid var(--border-light);">
+                    <td style="padding:8px 6px;text-align:center;color:var(--text-light);font-size:0.82rem;">1</td>
+                    <td style="padding:6px;"><input type="text" class="form-control form-control-sm bill-item-name" list="bill-prods-dl" placeholder="Product name" autocomplete="off"/></td>
+                    <td style="padding:6px;"><input type="number" class="form-control form-control-sm bill-item-qty" min="1" value="1" placeholder="1" style="text-align:center;"/></td>
+                    <td style="padding:6px;"><input type="number" class="form-control form-control-sm bill-item-price" min="0" placeholder="0" style="text-align:right;"/></td>
+                    <td style="padding:6px;"><input type="number" class="form-control form-control-sm bill-item-total" readonly placeholder="0" style="text-align:right;background:var(--cream-2);"/></td>
+                    <td style="padding:6px;text-align:center;"><button type="button" class="btn-icon remove-bill-row" title="Remove" style="color:#c62828;width:28px;height:28px;font-size:0.9rem;">✕</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <datalist id="bill-prods-dl">${prods.map(p=>`<option value="${esc(p.name)}" data-price="${getProductBasePrice(p)}"/>`).join('')}</datalist>
+            <button type="button" class="btn btn-outline btn-sm" id="add-bill-item-btn" style="margin-top:10px;">+ Add Item</button>
+          </div>
+          <div class="card" style="margin-bottom:20px;padding:18px;">
+            <div style="font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:14px;">Pricing Summary</div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:0.9rem;color:var(--text-medium);">Subtotal</span>
+                <span id="bill-subtotal" style="font-weight:600;font-size:0.9rem;">₹0</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+                <span style="font-size:0.9rem;color:var(--text-medium);">Discount (Optional)</span>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <select class="form-control form-control-sm" id="bill-discount-type" style="width:70px;">
+                    <option value="amount">₹</option>
+                    <option value="percent">%</option>
+                  </select>
+                  <input type="number" class="form-control form-control-sm" id="bill-discount-val" min="0" placeholder="0" style="width:90px;text-align:right;"/>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:0.9rem;color:var(--text-medium);">Taxable Amount</span>
+                <span id="bill-taxable" style="font-weight:600;font-size:0.9rem;">₹0</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+                <span style="font-size:0.9rem;color:var(--text-medium);">GST (%)</span>
+                <input type="number" class="form-control form-control-sm" id="bill-gst-rate" min="0" max="28" placeholder="0" value="${DB.getShop()?.gstRate||0}" style="width:90px;text-align:right;"/>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:0.9rem;color:var(--text-medium);">GST Amount</span>
+                <span id="bill-gst-amount" style="font-weight:600;font-size:0.9rem;">₹0</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px;border-top:2px solid var(--gold-light);">
+                <span style="font-size:1rem;font-weight:700;">Grand Total</span>
+                <span id="bill-grand-total" style="font-size:1.3rem;font-weight:700;color:var(--gold-dark);font-family:var(--font-serif);">₹0</span>
               </div>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:0.9rem;color:var(--text-medium);">Taxable Amount</span>
-              <span id="bill-taxable" style="font-weight:600;font-size:0.9rem;">₹0</span>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:10px;">
+            <button class="btn btn-ghost" data-close-modal="billing">Cancel</button>
+            <button class="btn btn-gold btn-lg" id="bill-to-step2">Next →</button>
+          </div>
+        </div>
+
+        <!-- ══════ STEP 2: PAYMENT SELECTION ══════ -->
+        <div class="bill-step" data-step="2" style="display:none;">
+          <div class="card" style="margin-bottom:20px;padding:18px;">
+            <div style="font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:14px;">Select Payment Method <span style="color:#c62828;">*</span></div>
+            <div class="pay-mode-select" style="margin-bottom:14px;flex-wrap:wrap;">
+              ${['Cash','UPI / GPay / PhonePe','Card'].map(pm=>`<label class="pay-mode-btn" id="bill-pay-${pm.replace(/[^a-z0-9]/gi,'-').toLowerCase()}">
+                <input type="radio" name="billPayMode" value="${pm}" style="display:none;"/>${pm==='Cash'?'💵':pm==='Card'?'💳':'📱'} ${pm}
+              </label>`).join('')}
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
-              <span style="font-size:0.9rem;color:var(--text-medium);">GST (%)</span>
-              <input type="number" class="form-control form-control-sm" id="bill-gst-rate" min="0" max="28" placeholder="0" value="${DB.getShop()?.gstRate||0}" style="width:90px;text-align:right;"/>
+            <div class="grid-2" style="gap:14px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Amount Paid (₹)</label>
+                <input type="number" class="form-control" id="bill-amount-paid" min="0" placeholder="0"/>
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">Balance Amount (₹)</label>
+                <input type="number" class="form-control" id="bill-balance" readonly placeholder="0" style="background:var(--cream-2);"/>
+              </div>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:0.9rem;color:var(--text-medium);">GST Amount</span>
-              <span id="bill-gst-amount" style="font-weight:600;font-size:0.9rem;">₹0</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px;border-top:2px solid var(--gold-light);">
-              <span style="font-size:1rem;font-weight:700;">Grand Total</span>
-              <span id="bill-grand-total" style="font-size:1.3rem;font-weight:700;color:var(--gold-dark);font-family:var(--font-serif);">₹0</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;gap:10px;">
+            <button class="btn btn-ghost" id="bill-back-step1">← Back</button>
+            <button class="btn btn-gold btn-lg" id="bill-to-step3">Next →</button>
+          </div>
+        </div>
+
+        <!-- ══════ STEP 3: BILL PREVIEW ══════ -->
+        <div class="bill-step" data-step="3" style="display:none;">
+          <div id="bill-preview-content"></div>
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:18px;">
+            <button class="btn btn-ghost" id="bill-back-step2">← Back</button>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <button class="btn btn-outline" id="bill-final-wa">💬 WhatsApp</button>
+              <button class="btn btn-outline" id="bill-final-print">🖨 Print</button>
+              <button class="btn btn-gold" id="bill-final-both">💬 + 🖨 WhatsApp + Print</button>
             </div>
           </div>
         </div>
 
-        <!-- Payment Details -->
-        <div class="card" style="margin-bottom:8px;padding:18px;">
-          <div style="font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:14px;">Payment Details <span style="color:#c62828;">*</span> Required</div>
-          <div class="pay-mode-select" style="margin-bottom:14px;flex-wrap:wrap;">
-            ${['Cash','GPay / UPI / PhonePe','Card'].map(pm=>`<label class="pay-mode-btn" id="bill-pay-${pm.replace(/[^a-z0-9]/gi,'-').toLowerCase()}">
-              <input type="radio" name="billPayMode" value="${pm}" style="display:none;"/>${pm==='Cash'?'💵':pm==='Card'?'💳':'📱'} ${pm}
-            </label>`).join('')}
-          </div>
-          <div class="grid-2" style="gap:14px;">
-            <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label">Amount Paid (₹)</label>
-              <input type="number" class="form-control" id="bill-amount-paid" min="0" placeholder="0"/>
-            </div>
-            <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label">Balance Amount (₹)</label>
-              <input type="number" class="form-control" id="bill-balance" readonly placeholder="0" style="background:var(--cream-2);"/>
-            </div>
+        <!-- ══════ COMPLETION ══════ -->
+        <div class="bill-step" data-step="done" style="display:none;text-align:center;padding:24px 10px;">
+          <div style="font-size:3rem;">✅</div>
+          <div style="font-family:var(--font-serif);font-size:1.5rem;color:var(--gold-dark);margin-top:10px;">Thank You For Purchasing</div>
+          <div style="font-size:1rem;color:#2e7d32;font-weight:600;margin-top:8px;">✓ Order Completed Successfully</div>
+          <div style="display:flex;justify-content:center;gap:12px;margin-top:24px;flex-wrap:wrap;">
+            <button class="btn btn-outline btn-lg" id="bill-new-order">🧾 New Order</button>
+            <button class="btn btn-gold btn-lg" id="bill-dashboard">🏠 Dashboard</button>
           </div>
         </div>
-      </div>
-      <div class="modal-footer" style="justify-content:flex-end;gap:10px;">
-        <button class="btn btn-ghost" data-close-modal="billing">Cancel</button>
-        <button class="btn btn-gold btn-lg" id="generate-invoice-btn">🧾 &nbsp; Generate Invoice</button>
+
       </div>
     </div>
   </div>`;
@@ -3751,6 +3780,85 @@ function calcBillingTotals() {
   if (el('bill-balance')) el('bill-balance').value = bal || '';
 
   return { sub, discAmt, taxable, gstAmt, grand, discType, discVal, gstRate };
+}
+
+/* ── 3-step billing wizard helpers ── */
+function _billShowStep(step){
+  document.querySelectorAll('#billing-modal-overlay .bill-step').forEach(el=>{
+    el.style.display = (el.getAttribute('data-step')===String(step)) ? '' : 'none';
+  });
+  document.querySelectorAll('#bill-stepper .bill-step-chip').forEach(chip=>{
+    const n=chip.getAttribute('data-chip');
+    const num=chip.querySelector('.bill-step-num');
+    const cur=(step==='done')?3:Number(step);
+    const active=Number(n)===cur, done=Number(n)<cur;
+    if(num){
+      num.style.background = active?'var(--gold)':done?'var(--gold-light)':'var(--cream-2)';
+      num.style.color = active?'#fff':'var(--text-medium)';
+    }
+    chip.style.color = active?'var(--gold-dark)':'var(--text-light)';
+  });
+  const body=document.querySelector('#billing-modal-overlay .modal-body'); if(body) body.scrollTop=0;
+}
+function _readBillItems(){
+  const items=[];
+  document.querySelectorAll('#bill-items-tbody .bill-item-row').forEach(row=>{
+    const name=row.querySelector('.bill-item-name')?.value.trim();
+    const qty=Math.max(1,+row.querySelector('.bill-item-qty')?.value||1);
+    const price=+row.querySelector('.bill-item-price')?.value||0;
+    if(name&&price>0) items.push({name,qty,price,total:qty*price});
+  });
+  return items;
+}
+function _buildBillPreview(){
+  const el=document.getElementById('bill-preview-content'); if(!el) return;
+  const shop=DB.getShop()||{};
+  const custName=document.getElementById('bill-cust-name')?.value.trim()||'Guest';
+  const custPhone=document.getElementById('bill-cust-phone')?.value.trim()||'';
+  const items=_readBillItems();
+  const t=calcBillingTotals();
+  const payMode=document.querySelector('input[name="billPayMode"]:checked')?.value||'—';
+  const inr=n=>`₹${Number(n).toLocaleString('en-IN')}`;
+  el.innerHTML=`
+    <div style="background:var(--cream-2);border-radius:var(--radius-md);padding:14px 18px;margin-bottom:16px;border:1px solid var(--border-light);text-align:center;">
+      <div style="font-weight:700;font-size:1.05rem;">${esc(shop.name||'Your Shop')}</div>
+      <div style="font-size:0.8rem;color:var(--text-medium);">${esc(shop.address||'')}</div>
+      ${shop.phone?`<div style="font-size:0.8rem;color:var(--text-medium);">📞 ${esc(shop.phone)}</div>`:''}
+      ${shop.gst?`<div style="font-size:0.75rem;color:var(--text-light);">GSTIN: ${esc(shop.gst)}</div>`:''}
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:6px;"><span style="color:var(--text-light);">Customer Name</span><strong>${esc(custName)}</strong></div>
+    ${custPhone?`<div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:12px;"><span style="color:var(--text-light);">Phone</span><span>${esc(custPhone)}</span></div>`:'<div style="margin-bottom:12px;"></div>'}
+    <div style="font-size:0.72rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-medium);font-weight:700;margin-bottom:6px;">Product Details</div>
+    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-bottom:12px;">
+      <thead><tr style="background:var(--cream-2);"><th style="text-align:left;padding:6px;">Product</th><th style="text-align:center;padding:6px;">Qty</th><th style="text-align:right;padding:6px;">Price</th><th style="text-align:right;padding:6px;">Total</th></tr></thead>
+      <tbody>${items.map(i=>`<tr style="border-bottom:1px solid var(--border-light);"><td style="padding:6px;">${esc(i.name)}</td><td style="text-align:center;padding:6px;">${i.qty}</td><td style="text-align:right;padding:6px;">${inr(i.price)}</td><td style="text-align:right;padding:6px;">${inr(i.total)}</td></tr>`).join('')}</tbody>
+    </table>
+    <div style="display:flex;flex-direction:column;gap:6px;font-size:0.88rem;">
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--text-light);">Subtotal</span><span>${inr(t.sub)}</span></div>
+      ${t.discAmt>0?`<div style="display:flex;justify-content:space-between;"><span style="color:var(--text-light);">Discount</span><span>-${inr(t.discAmt)}</span></div>`:''}
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--text-light);">GST (${t.gstRate}%)</span><span>${inr(t.gstAmt)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding-top:8px;border-top:2px solid var(--gold-light);font-weight:700;font-size:1.05rem;"><span>Grand Total</span><span style="color:var(--gold-dark);">${inr(t.grand)}</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;"><span style="color:var(--text-light);">Payment Mode</span><strong>${esc(payMode)}</strong></div>
+    </div>`;
+}
+function _saveBillFromForm(){
+  const custName=document.getElementById('bill-cust-name')?.value.trim()||'';
+  const custPhone=document.getElementById('bill-cust-phone')?.value.trim()||'';
+  const payMode=document.querySelector('input[name="billPayMode"]:checked')?.value||'';
+  const items=_readBillItems();
+  if(!items.length){ showToast('Add at least one item with name and price','error'); return null; }
+  if(!payMode){ showToast('Please select a payment method','error'); return null; }
+  const t=calcBillingTotals();
+  const amtPaid=+document.getElementById('bill-amount-paid')?.value||t.grand;
+  const balance=Math.max(0,t.grand-amtPaid);
+  const bill={ id:uid(), billNo:generateBillNo(), date:Date.now(),
+    customerName:custName||'Guest', customerPhone:custPhone, items,
+    subtotal:t.sub, discountType:t.discType, discountValue:t.discVal,
+    discountAmount:t.discAmt, taxableAmount:t.taxable, gstRate:t.gstRate,
+    gstAmount:t.gstAmt, grandTotal:t.grand, paymentMode:payMode,
+    amountPaid:amtPaid, balance, status:'completed' };
+  DB.addBill(bill);
+  return bill;
 }
 
 /* ═══════════════════════════════════════════════════
@@ -4256,8 +4364,18 @@ const SKIN_TONE_COLORS = {
   'Dark':    ['bright','red','cobalt','royal blue','magenta','yellow','white','orange','electric','hot pink'],
   'Deep':    ['bold','bright','jewel','magenta','fuchsia','cobalt','royal','electric','white','gold'],
 };
+/* Gender → allowed product categories (STRICT). Applied before any other
+   filtering/scoring so recommendations only ever contain the selected gender. */
+const GENDER_CATEGORIES = {
+  'Female': ['Women'],
+  'Male':   ['Men'],
+  'Kids':   ['Kids', 'Newborn'],
+};
 function getRecommendations(products, cust, filterSubcat) {
   if (!cust) return [];
+  // STEP 0 — hard gender filter (before occasion/color/size/ranking/scoring).
+  const allowedCats = cust.gender ? GENDER_CATEGORIES[cust.gender] : null;
+  if (allowedCats) products = products.filter(p => allowedCats.includes(p.category));
   const skinToneColors = cust.skinTone ? (SKIN_TONE_COLORS[cust.skinTone] || []) : [];
   const prefColor = (cust.preferredColor||'').toLowerCase();
   const scoreAndReason = p => {
@@ -4272,8 +4390,10 @@ function getRecommendations(products, cust, filterSubcat) {
     }
     const allSizes=(p.sizes||[]).map(sz=>sz.size);
     if (cust.size && allSizes.includes(cust.size)) { s+=2; reasons.push(`Available in your size (${cust.size})`); }
-    if (cust.gender==='Female'&&p.category==='Women') { s+=2; reasons.push(`Matches your gender preference (Women's wear)`); }
-    if (cust.gender==='Male'&&p.category==='Men')   { s+=2; reasons.push(`Matches your gender preference (Men's wear)`); }
+    if (allowedCats && allowedCats.includes(p.category)) {
+      const lbl = cust.gender==='Female' ? "Women's wear" : cust.gender==='Male' ? "Men's wear" : "Kids' wear";
+      s+=2; reasons.push(`Matches your gender preference (${lbl})`);
+    }
     if (filterSubcat&&p.subcategory===filterSubcat) s+=2;
     if (cust.occasion&&p.subcategory){ // occasion fit via subcategory/description
       const occ=cust.occasion.toLowerCase();
@@ -6306,7 +6426,7 @@ function attachListeners() {
     render();
   });
 
-  on('#new-bill-btn','click', ()=>{ state.modalOpen='billing'; render(); });
+  on('#new-bill-btn','click', ()=>{ window.__billFinalizedId=null; state.modalOpen='billing'; render(); });
 
   /* View bill */
   onAll('[data-view-bill]','click', e=>{
@@ -6393,62 +6513,32 @@ function attachListeners() {
     }
   });
 
-  /* Generate Invoice */
-  on('#generate-invoice-btn','click', ()=>{
-    const custName  = document.getElementById('bill-cust-name')?.value.trim()||'';
-    const custPhone = document.getElementById('bill-cust-phone')?.value.trim()||'';
-    const payMode   = document.querySelector('input[name="billPayMode"]:checked')?.value||'';
-
-    if (!payMode) { showToast('Please select a payment method', 'error'); return; }
-
-    const rows = document.querySelectorAll('#bill-items-tbody .bill-item-row');
-    const items = [];
-    let hasItem = false;
-    rows.forEach((row, i) => {
-      const name  = row.querySelector('.bill-item-name')?.value.trim();
-      const qty   = Math.max(1, +row.querySelector('.bill-item-qty')?.value||1);
-      const price = +row.querySelector('.bill-item-price')?.value||0;
-      if (name && price > 0) { items.push({ name, qty, price, total: qty*price }); hasItem = true; }
-    });
-    if (!hasItem) { showToast('Add at least one item with name and price', 'error'); return; }
-
-    const totals = calcBillingTotals();
-    const amtPaid = +document.getElementById('bill-amount-paid')?.value||totals.grand;
-    const balance = Math.max(0, totals.grand - amtPaid);
-
-    const bill = {
-      id:          uid(),
-      billNo:      generateBillNo(),
-      date:        Date.now(),
-      customerName: custName||'Guest',
-      customerPhone: custPhone,
-      items,
-      subtotal:      totals.sub,
-      discountType:  totals.discType,
-      discountValue: totals.discVal,
-      discountAmount: totals.discAmt,
-      taxableAmount: totals.taxable,
-      gstRate:       totals.gstRate,
-      gstAmount:     totals.gstAmt,
-      grandTotal:    totals.grand,
-      paymentMode:   payMode,
-      amountPaid:    amtPaid,
-      balance,
-      status:        'bill-generated',
-    };
-
-    DB.addBill(bill);
-    showToast(`✅ Invoice ${bill.billNo} generated!`, 'success');
-
-    // Show full invoice on screen first, then auto-print + auto-WhatsApp
-    state.modalOpen = 'view-bill';
-    state.currentBillId = bill.id;
-    render();
-
-    // Auto-print after invoice is visible (800ms), then auto-WhatsApp (1600ms)
-    setTimeout(() => { window._printBill(bill.id); }, 800);
-    setTimeout(() => { sendWhatsAppBill(bill.id); }, 1600);
+  /* ── 3-step billing wizard navigation ── */
+  on('#bill-to-step2','click', ()=>{
+    if(!_readBillItems().length){ showToast('Add at least one product with a name and price','error'); return; }
+    _billShowStep(2);
   });
+  on('#bill-back-step1','click', ()=>_billShowStep(1));
+  on('#bill-to-step3','click', ()=>{
+    if(!document.querySelector('input[name="billPayMode"]:checked')){ showToast('Please select a payment method','error'); return; }
+    _buildBillPreview();
+    _billShowStep(3);
+  });
+  on('#bill-back-step2','click', ()=>_billShowStep(2));
+
+  function _finalizeBill(action){
+    let id=window.__billFinalizedId;
+    if(!id){ const bill=_saveBillFromForm(); if(!bill) return; id=bill.id; window.__billFinalizedId=id; }
+    if(action==='wa') sendWhatsAppBill(id);
+    else if(action==='print') window._printBill(id);
+    else if(action==='both'){ window._printBill(id); sendWhatsAppBill(id); }
+    _billShowStep('done');
+  }
+  on('#bill-final-wa','click', ()=>_finalizeBill('wa'));
+  on('#bill-final-print','click', ()=>_finalizeBill('print'));
+  on('#bill-final-both','click', ()=>_finalizeBill('both'));
+  on('#bill-new-order','click', ()=>{ window.__billFinalizedId=null; state.modalOpen='billing'; render(); });
+  on('#bill-dashboard','click', ()=>{ window.__billFinalizedId=null; state.modalOpen=null; state.subRoute='overview'; render(); });
 
   /* WhatsApp bill from view modal */
   on('#wa-bill-btn','click', e=>{

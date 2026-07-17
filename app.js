@@ -1102,27 +1102,23 @@ function renderRegisterCustomer() {
           </div>
           <div class="form-row">
             <div class="form-group"><label class="form-label">Gender <span class="optional-tag">(Optional)</span></label>
-              <select class="form-control" name="gender">
-                <option value="">Select</option>
-                <option value="Female">Female</option><option value="Male">Male</option><option value="Other">Other</option>
-              </select></div>
+              <input type="text" class="form-control" name="gender" list="creg-gender-list" placeholder="Select or type"/>
+              <datalist id="creg-gender-list">${['Male','Female','Kids','Newborn'].map(s=>`<option value="${s}"></option>`).join('')}</datalist></div>
             <div class="form-group"><label class="form-label">Clothing Size <span class="optional-tag">(Optional)</span></label>
-              <select class="form-control" name="size">
-                <option value="">Select</option>
-                ${['XS','S','M','L','XL','XXL','3XL'].map(s=>`<option value="${s}">${s}</option>`).join('')}
-              </select></div>
+              <input type="text" class="form-control" name="size" list="creg-size-list" placeholder="Select or type"/>
+              <datalist id="creg-size-list">${['XS','S','M','L','XL','XXL','XXXL','Free Size','2-3Y','4-5Y','6-7Y','8-9Y','10-11Y','12-13Y'].map(s=>`<option value="${s}"></option>`).join('')}</datalist></div>
           </div>
           <div class="form-group"><label class="form-label">Address <span class="optional-tag">(Optional)</span></label>
             <textarea class="form-control" name="address" placeholder="Your address…" style="min-height:64px;"></textarea></div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
             <div class="form-group"><label class="form-label">Skin Tone <span class="optional-tag">(Opt.)</span></label>
-              <select class="form-control" name="skinTone"><option value="">—</option>
-                ${['Fair','Wheatish','Medium','Dusky','Dark'].map(s=>`<option>${s}</option>`).join('')}</select></div>
+              <input type="text" class="form-control" name="skinTone" list="creg-skin-list" placeholder="Select or type"/>
+              <datalist id="creg-skin-list">${['Fair','Wheatish','Medium','Dusky','Dark'].map(s=>`<option value="${s}"></option>`).join('')}</datalist></div>
             <div class="form-group"><label class="form-label">Fav. Color <span class="optional-tag">(Opt.)</span></label>
               <input type="text" class="form-control" name="preferredColor" placeholder="e.g. Blue"/></div>
             <div class="form-group"><label class="form-label">Occasion <span class="optional-tag">(Opt.)</span></label>
-              <select class="form-control" name="occasion"><option value="">—</option>
-                ${['Casual','Formal','Wedding','Festival','Party','Sports'].map(s=>`<option>${s}</option>`).join('')}</select></div>
+              <input type="text" class="form-control" name="occasion" list="creg-occasion-list" placeholder="Select or type"/>
+              <datalist id="creg-occasion-list">${['Casual','Formal','Wedding','Festival','Party','Sports'].map(s=>`<option value="${s}"></option>`).join('')}</datalist></div>
           </div>
           <div style="border-top:1px solid var(--border-light);padding-top:14px;">
             <div class="form-row">
@@ -1882,7 +1878,7 @@ function renderEmployeeModal() {
           <div class="form-group"><label class="form-label">Full Name <span class="required">*</span></label>
             <input type="text" class="form-control" name="name" value="${esc(v.name||'')}" required/></div>
           <div class="form-group"><label class="form-label">Phone <span class="required">*</span></label>
-            <input type="tel" class="form-control" name="phone" value="${esc(v.phone||'')}" required/></div>
+            <input type="tel" class="form-control" name="phone" value="${esc(v.phone||'')}" required inputmode="numeric" maxlength="10" pattern="[0-9]{10}" title="Enter exactly 10 digits" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)"/></div>
         </div>
         <div class="form-group"><label class="form-label">Gender <span class="required">*</span></label>
           <div class="radio-group">${['Female','Male','Other'].map(g=>

@@ -9,6 +9,16 @@
     "mae": 0.96,
     "rmse": 1.44
   },
+  "hyperparameters": {
+    "n_estimators": 300,
+    "max_depth": 14,
+    "min_samples_split": 2,
+    "min_samples_leaf": 2,
+    "max_features": 1.0,
+    "bootstrap": true,
+    "criterion": "squared_error",
+    "random_state": 42
+  },
   "comparison": {
     "RandomForestRegressor": {
       "r2": 0.8986,

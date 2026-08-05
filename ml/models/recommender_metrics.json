@@ -7,9 +7,13 @@
   "hyperparameters": {
     "n_estimators": 300,
     "max_depth": 20,
+    "min_samples_split": 2,
     "min_samples_leaf": 2,
+    "max_features": "sqrt",
+    "bootstrap": true,
+    "criterion": "gini",
     "class_weight": "balanced",
-    "criterion": "gini"
+    "random_state": 42
   },
   "accuracy": 0.822,
   "precision": 0.7052,

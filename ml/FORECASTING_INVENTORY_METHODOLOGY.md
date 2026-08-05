@@ -85,6 +85,34 @@ Urgency: `Critical` if on-hand ≤ SS; `Low` if on-hand ≤ ROP; `Watch` if on-h
   `predicted_demand`, `current_stock`, `reorder_qty`, and `urgency`. Existing
   keys are preserved, so the frontend requires no changes.
 
+## 5a. Hyperparameters, tuning & robustness (IEEE review)
+
+All eight Random Forest hyperparameters are now set explicitly in
+`train_forecaster.py` and `train_stock.py` and documented in the metrics files
+and `EVALUATION_REPORT.md`:
+
+| Param | Forecasting | Stock |
+|---|---|---|
+| n_estimators | 300 | 300 |
+| max_depth | 12 | 14 |
+| min_samples_split | 2 | 2 |
+| min_samples_leaf | 2 | 2 |
+| max_features | 1.0 | 1.0 |
+| bootstrap | True | True |
+| criterion | squared_error | squared_error |
+| random_state | 42 | 42 |
+
+`RandomizedSearchCV` (seed=42; TimeSeriesSplit for the forecaster to avoid
+temporal leakage) was run for both models. The searched configurations did **not**
+beat the production configs on the held-out sets (forecaster daily R² 0.643 vs
+0.514; stock R² 0.899 vs 0.894), so the production hyperparameters were retained.
+
+`robustness_test.py` evaluates both regressors on the clean hold-out and under
+missing values, noise, outliers, and a high-value-tail ("imbalance") subset.
+Both degrade gracefully (stock R² 0.899 → 0.57–0.83; daily forecast R² 0.643 →
+0.41–0.58) with MAPE staying in a usable range. See
+`figures/robustness_comparison.png`.
+
 ## 6. Affected files
 
 `train_forecaster.py`, `train_stock.py`, `predict.py`, `server.py`,

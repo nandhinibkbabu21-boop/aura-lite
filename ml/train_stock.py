@@ -68,8 +68,14 @@ def train():
         X, y, test_size=0.2, random_state=42)
 
     # 4. TRAIN two candidates
-    rf = _build(RandomForestRegressor(n_estimators=300, max_depth=14,
-                                      min_samples_leaf=2, random_state=42, n_jobs=-1))
+    # All eight RF hyperparameters set EXPLICITLY (documentation/reproducibility).
+    # This config beat the RandomizedSearchCV suggestions on the hold-out set
+    # (see hyperparameter_tuning.py), so it is retained. max_features=1.0 and
+    # criterion='squared_error' are the regressor defaults, stated for clarity.
+    rf = _build(RandomForestRegressor(
+        n_estimators=300, max_depth=14, min_samples_split=2, min_samples_leaf=2,
+        max_features=1.0, bootstrap=True, criterion="squared_error",
+        random_state=42, n_jobs=-1))
     lr = _build(LinearRegression())
     rf.fit(X_tr, y_tr)
     lr.fit(X_tr, y_tr)
@@ -88,6 +94,10 @@ def train():
         "n_train": int(len(X_tr)),
         "n_test": int(len(X_te)),
         "selected_metrics": best_m,
+        "hyperparameters": ({"n_estimators": 300, "max_depth": 14, "min_samples_split": 2,
+                             "min_samples_leaf": 2, "max_features": 1.0, "bootstrap": True,
+                             "criterion": "squared_error", "random_state": 42}
+                            if best_name == "RandomForestRegressor" else {"model": "LinearRegression"}),
         "comparison": {"RandomForestRegressor": rf_m, "LinearRegression": lr_m},
         "r2_score": best_m["r2"],
         "mae": best_m["mae"],

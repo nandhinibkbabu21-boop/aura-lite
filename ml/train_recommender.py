@@ -64,9 +64,13 @@ def train():
     ])
     model = Pipeline([
         ("prep", pre),
-        ("clf", RandomForestClassifier(n_estimators=300, max_depth=20,
-                                       min_samples_leaf=2, class_weight="balanced",
-                                       random_state=42, n_jobs=-1)),
+        # All eight Random Forest hyperparameters are set EXPLICITLY (not left to
+        # defaults) for full documentation/reproducibility. This configuration was
+        # confirmed near-optimal by RandomizedSearchCV (see hyperparameter_tuning.py).
+        ("clf", RandomForestClassifier(
+            n_estimators=300, max_depth=20, min_samples_split=2,
+            min_samples_leaf=2, max_features="sqrt", bootstrap=True,
+            criterion="gini", class_weight="balanced", random_state=42, n_jobs=-1)),
     ])
     X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     model.fit(X_tr, y_tr)
@@ -88,8 +92,9 @@ def train():
         "algorithm": "RandomForestClassifier",
         "task": "product_recommendation (classification, feature-engineered + tuned)",
         "n_rows": int(len(df)), "n_train": int(len(X_tr)), "n_test": int(len(X_te)),
-        "hyperparameters": {"n_estimators": 300, "max_depth": 20, "min_samples_leaf": 2,
-                            "class_weight": "balanced", "criterion": "gini"},
+        "hyperparameters": {"n_estimators": 300, "max_depth": 20, "min_samples_split": 2,
+                            "min_samples_leaf": 2, "max_features": "sqrt", "bootstrap": True,
+                            "criterion": "gini", "class_weight": "balanced", "random_state": 42},
         "accuracy":  round(float(accuracy_score(y_te, pred)), 4),
         "precision": round(float(precision_score(y_te, pred, zero_division=0)), 4),
         "recall":    round(float(recall_score(y_te, pred, zero_division=0)), 4),

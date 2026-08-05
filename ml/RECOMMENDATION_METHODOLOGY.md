@@ -24,15 +24,30 @@ training** (`train_recommender.py :: engineer()` and `predict.py :: rank_product
 
 ## 2. Hyperparameter tuning
 
-A cross-validated search over `n_estimators`, `max_depth`, and
-`min_samples_leaf` selected:
+A `RandomizedSearchCV` (F1, 3-fold, seed=42) over `n_estimators`, `max_depth`,
+`min_samples_split`, `min_samples_leaf`, `max_features` and `bootstrap` confirmed
+the following production configuration (all eight hyperparameters are now set
+explicitly in `train_recommender.py`):
 
 ```
-RandomForestClassifier(n_estimators=300, max_depth=20, min_samples_leaf=2,
-                       class_weight="balanced", random_state=42)
+RandomForestClassifier(
+    n_estimators=300, max_depth=20, min_samples_split=2, min_samples_leaf=2,
+    max_features="sqrt", bootstrap=True, criterion="gini",
+    class_weight="balanced", random_state=42)
 ```
 
 `class_weight="balanced"` addresses the 66:34 liked/not-liked class imbalance.
+The search did not find a materially better configuration, so the production
+model was retained (see `hyperparameter_tuning.py` and `EVALUATION_REPORT.md`).
+
+## 2a. Robustness testing
+
+`robustness_test.py` evaluates the deployed model on the clean hold-out set and
+under missing values, noise, outliers, and a 90:10 imbalanced test. F1 degrades
+gracefully (0.757 → 0.71–0.75) for missing/noise/outliers; recall stays high on
+the imbalanced test while precision drops, as expected. Full numbers and the
+comparison figure are in `EVALUATION_REPORT.md` and
+`paper/revised/figures/robustness_comparison.png`.
 
 ## 3. Retrained metrics (20% stratified hold-out)
 

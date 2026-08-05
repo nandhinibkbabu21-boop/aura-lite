@@ -229,7 +229,8 @@
               'padding:8px 0;border-bottom:1px solid var(--border-light);font-size:0.85rem;">' +
               '<div style="flex:1;"><strong>' + (i.name || '—') + '</strong>' +
               '<div style="font-size:0.72rem;color:var(--text-light);">in stock: ' + i.current_stock +
-              ' · predicted demand/wk: ' + i.predicted_demand +
+              ' · demand/wk: ' + i.predicted_demand +
+              (i.reorder_point != null ? ' · ROP: ' + Math.round(i.reorder_point) : '') +
               (i.reorder_qty > 0 ? ' · reorder: ' + i.reorder_qty : '') + '</div></div>' +
               '<span style="color:' + color + ';font-weight:700;font-size:0.7rem;white-space:nowrap;' +
               'border:1px solid ' + color + ';border-radius:999px;padding:2px 9px;">' + status + '</span></div>';
@@ -246,7 +247,7 @@
             'Next-week demand &amp; suggested reorders</div>' + rowsHtml +
             '<div style="font-size:0.68rem;color:var(--text-light);margin-top:12px;line-height:1.5;">' +
             'Demand predicted from category, price, season &amp; recent sales. ' +
-            'Reorder quantity = predicted demand − current stock.</div>';
+            'Reorder point (ROP) = lead-time demand + safety stock; reorder quantity raises stock to the ROP.</div>';
           anchor.parentNode.insertBefore(card, anchor);
         });
     } catch (e) { /* silent — dashboard unchanged */ }

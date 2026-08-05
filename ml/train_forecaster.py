@@ -23,8 +23,14 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 import config as C
 
-RF = dict(n_estimators=300, max_depth=12, min_samples_leaf=2,
+# All eight Random Forest hyperparameters set EXPLICITLY for documentation /
+# reproducibility. max_features=1.0 (use all features) is the regressor default
+# and beat 'sqrt'/'log2' on the chronological hold-out (see hyperparameter_tuning.py),
+# so it is retained. criterion='squared_error' is the regression split criterion.
+RF = dict(n_estimators=300, max_depth=12, min_samples_split=2, min_samples_leaf=2,
+          max_features=1.0, bootstrap=True, criterion="squared_error",
           random_state=42, n_jobs=-1)
+RF_DOC = {k: v for k, v in RF.items() if k != "n_jobs"}
 
 
 def _metrics(y, p):
@@ -114,6 +120,7 @@ def train():
         "task": "sales_forecasting (regression, chronological, multi-horizon)",
         "algorithm": "RandomForestRegressor",
         "split": "chronological 80:20 (no temporal leakage)",
+        "hyperparameters": RF_DOC,
         "horizons": {
             "daily":   d_metrics,
             "weekly":  w_metrics,

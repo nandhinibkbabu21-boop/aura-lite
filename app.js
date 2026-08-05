@@ -2253,12 +2253,15 @@ function renderStockTableRows() {
     : sort==='name'  ? String(a.name||'').localeCompare(String(b.name||''))
     : (b.reorder_qty-a.reorder_qty));
   if (!items.length) return `<div style="padding:24px;text-align:center;color:var(--text-light);">No products match your search / filter.</div>`;
+  const _num = v => (v==null ? '—' : Math.round(+v));
   return `<div class="table-wrap"><table>
-    <thead><tr><th>Product Name</th><th>Current Stock</th><th>Predicted Demand</th><th>Suggested Reorder</th><th>Status</th></tr></thead>
+    <thead><tr><th>Product Name</th><th>Current Stock</th><th>Predicted Demand</th><th>Safety Stock</th><th>Reorder Point</th><th>Suggested Reorder</th><th>Status</th></tr></thead>
     <tbody>${items.map(i=>{const st=_stockStatus(i.urgency);return `<tr>
       <td><strong>${esc(i.name||'—')}</strong></td>
       <td>${i.current_stock}</td>
       <td>${i.predicted_demand}</td>
+      <td>${_num(i.safety_stock)}</td>
+      <td>${_num(i.reorder_point)}</td>
       <td>${i.reorder_qty>0?i.reorder_qty:'—'}</td>
       <td><span style="color:${st.color};font-weight:700;font-size:0.72rem;border:1px solid ${st.color};border-radius:999px;padding:2px 10px;white-space:nowrap;">${st.label}</span></td>
     </tr>`;}).join('')}</tbody>
@@ -2282,12 +2285,15 @@ function renderAdminStock() {
   const total = sd.length;
   const crit = sd.filter(i=>i.urgency==='critical').length;
   const low = sd.filter(i=>i.urgency==='reorder'||i.urgency==='watch').length;
+  const lead = sd.find(i=>i.lead_time!=null);
+  const leadNote = lead ? ` · Lead time: <strong>${lead.lead_time} wk</strong>` +
+    (lead.service_level!=null ? ` · Service level: <strong>${Math.round(lead.service_level*100)}%</strong>` : '') : '';
   return `<div class="animate-fadeIn">
     ${head}
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
       <div class="dash-page-subtitle" style="margin:0;">${total} products analysed ·
         <span style="color:#c0392b;font-weight:600;">${crit} Critical</span> ·
-        <span style="color:#b8860b;font-weight:600;">${low} Low</span></div>
+        <span style="color:#b8860b;font-weight:600;">${low} Low</span>${leadNote}</div>
       <button class="btn btn-ghost btn-sm" id="sp-refresh">↻ Refresh</button>
     </div>
 

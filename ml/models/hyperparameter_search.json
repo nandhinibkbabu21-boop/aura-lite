@@ -1,0 +1,71 @@
+[
+  {
+    "model": "recommender",
+    "scoring": "f1 (4-fold CV)",
+    "best_params": {
+      "n_estimators": 100,
+      "min_samples_split": 2,
+      "min_samples_leaf": 3,
+      "max_features": "sqrt",
+      "max_depth": 20,
+      "bootstrap": true
+    },
+    "best_cv_score": 0.7474,
+    "current": {
+      "n_estimators": 300,
+      "max_depth": 20,
+      "min_samples_split": 2,
+      "min_samples_leaf": 2,
+      "max_features": "sqrt",
+      "bootstrap": true,
+      "criterion": "gini",
+      "random_state": 42
+    }
+  },
+  {
+    "model": "forecaster_daily",
+    "scoring": "r2 (TimeSeriesSplit x4)",
+    "best_params": {
+      "n_estimators": 200,
+      "min_samples_split": 5,
+      "min_samples_leaf": 1,
+      "max_features": "log2",
+      "max_depth": 12,
+      "bootstrap": false
+    },
+    "best_cv_score": 0.4531,
+    "current": {
+      "n_estimators": 300,
+      "max_depth": 12,
+      "min_samples_split": 2,
+      "min_samples_leaf": 2,
+      "max_features": "sqrt",
+      "bootstrap": true,
+      "criterion": "squared_error",
+      "random_state": 42
+    }
+  },
+  {
+    "model": "stock",
+    "scoring": "r2 (4-fold CV)",
+    "best_params": {
+      "n_estimators": 200,
+      "min_samples_split": 5,
+      "min_samples_leaf": 1,
+      "max_features": "log2",
+      "max_depth": 12,
+      "bootstrap": false
+    },
+    "best_cv_score": 0.8974,
+    "current": {
+      "n_estimators": 300,
+      "max_depth": 14,
+      "min_samples_split": 2,
+      "min_samples_leaf": 2,
+      "max_features": "sqrt",
+      "bootstrap": true,
+      "criterion": "squared_error",
+      "random_state": 42
+    }
+  }
+]

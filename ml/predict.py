@@ -103,69 +103,133 @@ def _features_for_date(d, day_index):
     }
 
 
+def _week_features(d, week_index):
+    span = pd.date_range(d, d + dt.timedelta(days=6))
+    return {
+        "week_index":       week_index,
+        "month":            d.month,
+        "week_of_year":     d.isocalendar()[1],
+        "is_festival_week": int(any((x.month, x.day) in C.FESTIVAL_DATES for x in span)),
+    }
+
+
+def _month_features(d, month_index):
+    span = pd.date_range(d, d + dt.timedelta(days=30))
+    return {
+        "month_index":       month_index,
+        "month":             d.month,
+        "is_festival_month": int(any((x.month, x.day) in C.FESTIVAL_DATES for x in span)),
+    }
+
+
 def forecast_sales(days_ahead=365, recent_daily_revenue=None):
     """
-    Predict future revenue for the next `days_ahead` days and aggregate to
-    daily / weekly / monthly / yearly totals.
-
-    recent_daily_revenue : optional list of the shop's recent REAL daily
-                           revenues; used only to gently anchor the baseline so
-                           predictions match the shop's actual scale.
+    Multi-horizon forecast using SEPARATE chronologically-trained Random Forest
+    models for the daily, weekly and monthly horizons; the yearly figure is
+    derived from the monthly model (a dedicated yearly model is not trainable on
+    a two-year history). `recent_daily_revenue` optionally anchors the forecast
+    to the shop's real revenue scale while preserving the learned seasonal shape.
     """
     bundle = _load_sales()
     if bundle is None:
         return None
-    model, feats = bundle["model"], bundle["features"]
+
+    # Backward compatibility: fall back to legacy single-model bundle.
+    if "daily" not in bundle:
+        model, feats = bundle["model"], bundle["features"]
+        start = dt.date.today(); base = C.SALES_HISTORY_DAYS
+        preds = np.clip(model.predict(pd.DataFrame(
+            [_features_for_date(start + dt.timedelta(days=i), base + i) for i in range(days_ahead)])[feats]), 0, None)
+        if recent_daily_revenue:
+            ra = float(np.mean([r for r in recent_daily_revenue if r is not None])); pa = float(np.mean(preds)) or 1.0
+            if ra > 0: preds = preds * (ra / pa)
+        daily = [{"date": (start + dt.timedelta(days=i)).isoformat(), "revenue": round(float(preds[i]), 2)} for i in range(days_ahead)]
+        return {"algorithm": bundle.get("algorithm", "RandomForestRegressor"),
+                "next_day": round(float(preds[0]), 2), "next_7_days": round(float(np.sum(preds[:7])), 2),
+                "next_30_days": round(float(np.sum(preds[:30])), 2), "next_365_days": round(float(np.sum(preds[:365])), 2),
+                "daily": daily[:30],
+                "weekly": [round(float(np.sum(preds[i:i+7])), 2) for i in range(0, 84, 7)],
+                "monthly": [round(float(np.sum(preds[i:i+30])), 2) for i in range(0, 360, 30)]}
 
     start = dt.date.today()
-    base_index = C.SALES_HISTORY_DAYS      # continue the trend after training window
-    rows = [_features_for_date(start + dt.timedelta(days=i), base_index + i)
-            for i in range(days_ahead)]
-    X = pd.DataFrame(rows)[feats]
-    preds = model.predict(X)
-    preds = np.clip(preds, 0, None)
+    d_model, d_feats = bundle["daily"]["model"], bundle["daily"]["features"]
+    w_model, w_feats = bundle["weekly"]["model"], bundle["weekly"]["features"]
+    m_model, m_feats = bundle["monthly"]["model"], bundle["monthly"]["features"]
+    d_base = C.SALES_HISTORY_DAYS
+    w_base = bundle["weekly"].get("last_index", 0) + 1
+    m_base = bundle["monthly"].get("last_index", 0) + 1
 
-    # Optional real-data anchoring: scale predictions so their average matches
-    # the shop's recent real average (keeps the seasonal SHAPE, fixes the scale).
+    # DAILY (next 30 days, for chart + anchoring scale)
+    d_rows = [_features_for_date(start + dt.timedelta(days=i), d_base + i) for i in range(30)]
+    d_pred = np.clip(d_model.predict(pd.DataFrame(d_rows)[d_feats]), 0, None)
+
+    # Anchor to the shop's real recent daily average; the same factor is applied
+    # to every horizon so predictions stay mutually consistent and on-scale.
+    scale = 1.0
     if recent_daily_revenue:
         real_avg = float(np.mean([r for r in recent_daily_revenue if r is not None]))
-        pred_avg = float(np.mean(preds)) or 1.0
+        pred_avg = float(np.mean(d_pred)) or 1.0
         if real_avg > 0:
-            preds = preds * (real_avg / pred_avg)
+            scale = real_avg / pred_avg
+    d_pred = d_pred * scale
+
+    # WEEKLY (next 12 weeks)
+    w_rows = [_week_features(start + dt.timedelta(weeks=w), w_base + w) for w in range(12)]
+    w_pred = np.clip(w_model.predict(pd.DataFrame(w_rows)[w_feats]), 0, None) * scale
+
+    # MONTHLY (next 12 months)
+    m_rows = [_month_features(start + dt.timedelta(days=30 * mth), m_base + mth) for mth in range(12)]
+    m_pred = np.clip(m_model.predict(pd.DataFrame(m_rows)[m_feats]), 0, None) * scale
 
     daily = [{"date": (start + dt.timedelta(days=i)).isoformat(),
-              "revenue": round(float(preds[i]), 2)} for i in range(days_ahead)]
-
-    def _sum(n):   # sum of next n days
-        return round(float(np.sum(preds[:n])), 2)
+              "revenue": round(float(d_pred[i]), 2)} for i in range(30)]
 
     return {
-        "algorithm": bundle["algorithm"],
-        "next_day":     round(float(preds[0]), 2),
-        "next_7_days":  _sum(7),
-        "next_30_days": _sum(30),
-        "next_365_days": _sum(365),
-        "daily":   daily[:30],          # first 30 days for charting
-        "weekly":  [round(float(np.sum(preds[i:i+7])), 2) for i in range(0, min(days_ahead, 84), 7)],
-        "monthly": [round(float(np.sum(preds[i:i+30])), 2) for i in range(0, min(days_ahead, 360), 30)],
+        "algorithm": "RandomForestRegressor (chronological, multi-horizon)",
+        "next_day":      round(float(d_pred[0]), 2),
+        "next_7_days":   round(float(w_pred[0]), 2),                 # weekly model
+        "next_30_days":  round(float(m_pred[0]), 2),                 # monthly model
+        "next_365_days": round(float(np.sum(m_pred[:12])), 2),       # derived from monthly
+        "daily":   daily,
+        "weekly":  [round(float(v), 2) for v in w_pred[:12]],
+        "monthly": [round(float(v), 2) for v in m_pred[:12]],
     }
 
 
 # ── STOCK / DEMAND PREDICTION ────────────────────────────────────
-def predict_stock(products):
+# Service-level -> z-factor (one-sided normal). Used for safety-stock sizing.
+_Z_TABLE = {0.80: 0.84, 0.85: 1.04, 0.90: 1.28, 0.95: 1.645, 0.975: 1.96, 0.99: 2.33}
+
+
+def _z_for(service_level):
+    # nearest tabulated service level
+    return _Z_TABLE[min(_Z_TABLE, key=lambda s: abs(s - service_level))]
+
+
+def predict_stock(products, lead_time=1.0, service_level=0.95):
     """
-    products : list of the app's real product dicts. Each may optionally carry
-               `recentUnitsSold` (units sold last week) — if absent it is
-               estimated from the 4-week average or a category baseline.
-    returns  : list of {id, name, predicted_demand, current_stock,
-               reorder_qty, urgency} — how many units are likely to sell next
-               week and how many to reorder. Falls back to [] if model missing.
+    Predict next-week demand per product and derive a full inventory-control
+    decision (safety stock, reorder point, reorder quantity) instead of a naive
+    demand-minus-stock rule.
+
+    products      : list of the app's product dicts (may carry recentUnitsSold /
+                    avgSales4wk; otherwise estimated).
+    lead_time     : replenishment lead time L, in weeks (default 1).
+    service_level : target cycle service level (default 0.95 -> z = 1.645).
+
+    returns : list of dicts with predicted_demand, current_stock, safety_stock,
+              reorder_point, reorder_qty, lead_time, service_level, urgency.
     """
     bundle = _load_stock()
     if bundle is None or not products:
         return []
     model = bundle["model"]
     cat_f, num_f = bundle["cat_features"], bundle["num_features"]
+    # Demand uncertainty sigma_d: use the model's test RMSE as a global estimate
+    # of weekly-demand variability (falls back to a small floor).
+    sigma_d = float(bundle.get("demand_std") or bundle.get("rmse") or 1.44)
+    L = max(0.0, float(lead_time or 1.0))
+    z = _z_for(float(service_level or 0.95))
 
     today = dt.date.today()
     month = today.month
@@ -197,16 +261,21 @@ def predict_stock(products):
     X = pd.DataFrame(rows)[cat_f + num_f]
     preds = np.clip(model.predict(X), 0, None)
 
+    import math
     out = []
     for p, demand in zip(products, preds):
         stock = int(p.get("quantity", 0) or 0)
-        demand = float(round(demand, 1))
-        reorder = int(max(0, round(demand - stock)))
-        if stock <= 0:
+        demand = float(round(demand, 1))                 # forecast weekly demand d
+        lead_time_demand = demand * L                    # LTD = d * L
+        safety_stock = z * sigma_d * math.sqrt(L) if L > 0 else 0.0
+        reorder_point = lead_time_demand + safety_stock  # ROP = LTD + SS
+        # Order-up-to quantity: raise on-hand to cover lead-time demand + safety.
+        reorder = int(max(0, round(reorder_point - stock)))
+        if stock <= safety_stock:
             urgency = "critical"
-        elif stock < demand:
+        elif stock <= reorder_point:
             urgency = "reorder"
-        elif stock < demand * 2:
+        elif stock <= reorder_point * 1.5:
             urgency = "watch"
         else:
             urgency = "ok"
@@ -215,7 +284,11 @@ def predict_stock(products):
             "name":             p.get("name"),
             "predicted_demand": demand,
             "current_stock":    stock,
+            "safety_stock":     round(float(safety_stock), 2),
+            "reorder_point":    round(float(reorder_point), 2),
             "reorder_qty":      reorder,
+            "lead_time":        L,
+            "service_level":    float(service_level or 0.95),
             "urgency":          urgency,
         })
     out.sort(key=lambda r: -r["reorder_qty"])

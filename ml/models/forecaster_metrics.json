@@ -1,27 +1,34 @@
 {
-  "algorithm_selected": "RandomForestRegressor",
-  "task": "sales_forecasting (regression)",
-  "n_rows": 730,
-  "n_train": 584,
-  "n_test": 146,
-  "selected_metrics": {
-    "r2": 0.8157,
-    "mae": 503.72,
-    "rmse": 641.53
-  },
-  "comparison": {
-    "RandomForestRegressor": {
-      "r2": 0.8157,
-      "mae": 503.72,
-      "rmse": 641.53
+  "task": "sales_forecasting (regression, chronological, multi-horizon)",
+  "algorithm": "RandomForestRegressor",
+  "split": "chronological 80:20 (no temporal leakage)",
+  "horizons": {
+    "daily": {
+      "r2": 0.6426,
+      "mae": 714.33,
+      "rmse": 1180.82,
+      "mape": 8.84,
+      "n_test": 146
     },
-    "LinearRegression": {
-      "r2": 0.7695,
-      "mae": 556.05,
-      "rmse": 717.48
+    "weekly": {
+      "r2": 0.0733,
+      "mae": 4854.3,
+      "rmse": 7806.68,
+      "mape": 13.82,
+      "n_test": 21
+    },
+    "monthly": {
+      "r2": 0.1206,
+      "mae": 53580.46,
+      "rmse": 66779.48,
+      "mape": 63.09,
+      "n_test": 5
+    },
+    "yearly": {
+      "note": "derived from monthly model (insufficient data for a dedicated model)"
     }
   },
-  "r2_score": 0.8157,
-  "mae": 503.72,
-  "rmse": 641.53
+  "r2_score": 0.6426,
+  "mae": 714.33,
+  "rmse": 1180.82
 }

@@ -95,10 +95,14 @@ def train():
     }
 
     # 6. SAVE model + metrics
+    # demand_std = test RMSE, used as the demand-variability estimate (sigma_d)
+    # for safety-stock sizing in the inventory-control logic.
     joblib.dump({"model": best,
                  "cat_features": CAT_FEATURES,
                  "num_features": NUM_FEATURES,
-                 "algorithm": best_name}, C.STOCK_MODEL, compress=3)
+                 "algorithm": best_name,
+                 "demand_std": best_m["rmse"],
+                 "rmse": best_m["rmse"]}, C.STOCK_MODEL, compress=3)
     with open(C.STOCK_METRICS, "w") as f:
         json.dump(metrics, f, indent=2)
     return metrics

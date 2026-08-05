@@ -72,8 +72,12 @@ def api_forecast():
 def api_stock():
     body = request.get_json(force=True) or {}
     products = body.get("products") or []
-    result = predict.predict_stock(products)
-    return jsonify({"ok": True, "count": len(result), "items": result})
+    lead_time = body.get("leadTime", 1.0)          # weeks (optional)
+    service_level = body.get("serviceLevel", 0.95)  # target cycle service level
+    result = predict.predict_stock(products, lead_time=lead_time, service_level=service_level)
+    return jsonify({"ok": True, "count": len(result),
+                    "lead_time": lead_time, "service_level": service_level,
+                    "items": result})
 
 
 @app.post("/api/retrain")

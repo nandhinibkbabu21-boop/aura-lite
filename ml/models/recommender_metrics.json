@@ -1,51 +1,80 @@
 {
   "algorithm": "RandomForestClassifier",
-  "task": "product_recommendation (classification)",
+  "task": "product_recommendation (classification, feature-engineered + tuned)",
   "n_rows": 10000,
   "n_train": 8000,
   "n_test": 2000,
-  "accuracy": 0.771,
-  "precision": 0.6724,
-  "recall": 0.6348,
-  "f1_score": 0.653,
+  "hyperparameters": {
+    "n_estimators": 300,
+    "max_depth": 20,
+    "min_samples_leaf": 2,
+    "class_weight": "balanced",
+    "criterion": "gini"
+  },
+  "accuracy": 0.822,
+  "precision": 0.7052,
+  "recall": 0.8174,
+  "f1_score": 0.7572,
   "confusion_matrix": [
     [
-      1111,
-      210
+      1089,
+      232
     ],
     [
-      248,
-      431
+      124,
+      555
     ]
   ],
   "confusion_matrix_labels": {
     "rows": "actual [not-liked, liked]",
     "cols": "predicted [not-liked, liked]"
   },
+  "feature_importance": {
+    "skin_compat": 0.2101,
+    "gender_cat_match": 0.1325,
+    "cust_pref_color": 0.0794,
+    "prod_color": 0.0717,
+    "color_match": 0.0697,
+    "prod_subcategory": 0.0623,
+    "prod_category": 0.0604,
+    "cust_skin_tone": 0.0577,
+    "cust_gender": 0.0566,
+    "cust_size": 0.0532,
+    "cust_occasion": 0.0527,
+    "prod_material": 0.0402,
+    "prod_price": 0.0354,
+    "price_band": 0.0179
+  },
+  "engineered_features": [
+    "color_match",
+    "skin_compat",
+    "gender_cat_match",
+    "price_band"
+  ],
   "classification_report": {
     "0": {
-      "precision": 0.8175128771155261,
-      "recall": 0.8410295230885693,
-      "f1-score": 0.8291044776119403,
+      "precision": 0.8977741137675186,
+      "recall": 0.8243754731264193,
+      "f1-score": 0.8595106550907656,
       "support": 1321.0
     },
     "1": {
-      "precision": 0.672386895475819,
-      "recall": 0.6347569955817378,
-      "f1-score": 0.6530303030303031,
+      "precision": 0.7052096569250318,
+      "recall": 0.8173784977908689,
+      "f1-score": 0.757162346521146,
       "support": 679.0
     },
-    "accuracy": 0.771,
+    "accuracy": 0.822,
     "macro avg": {
-      "precision": 0.7449498862956725,
-      "recall": 0.7378932593351535,
-      "f1-score": 0.7410673903211217,
+      "precision": 0.8014918853462751,
+      "recall": 0.8208769854586442,
+      "f1-score": 0.8083365008059558,
       "support": 2000.0
     },
     "weighted avg": {
-      "precision": 0.7682426063488456,
-      "recall": 0.771,
-      "f1-score": 0.7693272953414745,
+      "precision": 0.8323984806694944,
+      "recall": 0.822,
+      "f1-score": 0.8247634043313798,
       "support": 2000.0
     }
   }

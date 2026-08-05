@@ -53,7 +53,8 @@ def api_recommend():
     body = request.get_json(force=True) or {}
     customer = body.get("customer") or {}
     products = body.get("products") or []
-    ranked = predict.rank_products(customer, products)
+    history = body.get("purchaseHistory") or body.get("history") or None
+    ranked = predict.rank_products(customer, products, purchase_history=history)
     return jsonify({"ok": True, "count": len(ranked), "products": ranked})
 
 

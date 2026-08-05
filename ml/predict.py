@@ -50,42 +50,174 @@ def reload_models():
 
 
 # ── RECOMMENDATION ───────────────────────────────────────────────
-def rank_products(customer, products):
+# Profile fields that make a customer profile "complete enough" for the
+# personalised model. If none are present we treat the shopper as a pure
+# cold-start (new / anonymous / empty profile) and fall back to popularity.
+_PROFILE_FIELDS = ("gender", "size", "skinTone", "preferredColor", "occasion")
+
+
+def _prod_color(p):
+    color = ""
+    if p.get("colors"):
+        first = p["colors"][0]
+        color = (first.get("name") or "") if isinstance(first, dict) else str(first)
+    return (color or p.get("color") or "").lower() or "unknown"
+
+
+def _profile_filled(customer):
+    """How many of the key profile fields the customer actually provided."""
+    n = 0
+    for k in _PROFILE_FIELDS:
+        v = customer.get(k)
+        if v and str(v).strip() and str(v).strip().lower() not in ("unknown", "any"):
+            n += 1
+    return n
+
+
+def _popularity_score(p):
+    """Best-effort popularity signal from whatever the catalogue carries."""
+    for k in ("soldCount", "recentUnitsSold", "popularity", "salesCount", "timesSold"):
+        v = p.get(k)
+        if v is not None:
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def _popularity_fallback(products):
     """
-    customer : dict with gender, size, skinTone, preferredColor, occasion
-    products : list of dicts (your real catalogue from the app)
-    returns  : same products sorted by predicted 'like' probability, each with
-               a `_mlScore` (0-100). Falls back to [] if model missing.
+    Cold-start fallback for new shoppers / incomplete profiles: rank by
+    popularity (trending / best-selling) when available, otherwise by
+    in-stock-first then price. Marked with `_fallback` so callers can tell
+    these apart. `_mlScore` is still populated (0-100) so the existing UI,
+    which only reads `_mlScore`, keeps working unchanged.
     """
-    model = _load_reco()
-    if model is None or not products:
+    scored = []
+    have_pop = any(_popularity_score(p) is not None for p in products)
+    pops = [(_popularity_score(p) or 0.0) for p in products]
+    pmax = max(pops) if pops else 0.0
+    for p, pop in zip(products, pops):
+        if have_pop and pmax > 0:
+            score = 55.0 + 40.0 * (pop / pmax)        # trending → higher
+        else:
+            in_stock = int(p.get("quantity", 0) or 0) > 0
+            price = float(p.get("price", 0) or 0)
+            score = (60.0 if in_stock else 40.0) - min(price, 5000) / 5000 * 10.0
+        scored.append((score, p))
+    scored.sort(key=lambda x: -x[0])
+    ranked = []
+    for score, p in scored:
+        prod = dict(p)
+        prod["_mlScore"] = round(float(score), 1)
+        prod["_fallback"] = True
+        ranked.append(prod)
+    return ranked
+
+
+def rank_products(customer, products, purchase_history=None):
+    """
+    customer         : dict with gender, size, skinTone, preferredColor, occasion
+    products         : list of dicts (your real catalogue from the app)
+    purchase_history : optional list of the customer's past purchases (dicts with
+                       category / subcategory / color), used for a behavioural
+                       boost when history is available.
+
+    Cold-start strategy:
+      * NEW / anonymous customer (no profile fields)  -> popularity/trending fallback.
+      * INCOMPLETE profile (some fields missing)      -> personalised model with
+        the missing attributes filled as "Unknown" (the model was trained with the
+        same handle_unknown encoder), plus popularity used as a tie-breaker.
+      * EXISTING customer with history                -> personalised model score
+        plus a behavioural boost for categories/colours they have bought before.
+
+    returns : products sorted by score, each with `_mlScore` (0-100). Response
+              shape is unchanged, so the frontend needs no modification.
+    """
+    if not products:
         return []
+    bundle = _load_reco()
+    if bundle is None:
+        return []
+
+    filled = _profile_filled(customer or {})
+    # Pure cold-start: nothing to personalise on → trending / best-sellers.
+    if filled == 0:
+        return _popularity_fallback(products)
+
+    # New bundle format {"pipeline", "price_bins", ...}; tolerate the legacy
+    # bare-Pipeline format for backward compatibility.
+    if isinstance(bundle, dict) and "pipeline" in bundle:
+        model = bundle["pipeline"]
+        price_bins = bundle.get("price_bins")
+        engineered = True
+    else:
+        model = bundle
+        price_bins = None
+        engineered = False
+
+    pref_color = (customer.get("preferredColor") or "unknown").lower()
+    skin_tone = customer.get("skinTone", "Unknown")
+    gender = customer.get("gender", "Unknown")
+    skin_family = [c.lower() for c in C.SKIN_TONE_COLORS.get(skin_tone, [])]
 
     rows = []
     for p in products:
-        color = ""
-        if p.get("colors"):
-            color = (p["colors"][0].get("name") or "") if isinstance(p["colors"][0], dict) else str(p["colors"][0])
-        color = (color or p.get("color") or "").lower()
-        rows.append({
-            "cust_gender":     customer.get("gender", "Unknown"),
+        color = _prod_color(p)
+        price = float(p.get("price", 0) or 0)
+        cat = p.get("category", "Unknown")
+        row = {
+            "cust_gender":     gender,
             "cust_size":       customer.get("size", "Unknown"),
-            "cust_skin_tone":  customer.get("skinTone", "Unknown"),
-            "cust_pref_color": (customer.get("preferredColor") or "unknown").lower(),
+            "cust_skin_tone":  skin_tone,
+            "cust_pref_color": pref_color,
             "cust_occasion":   customer.get("occasion", "Unknown"),
-            "prod_category":   p.get("category", "Unknown"),
+            "prod_category":   cat,
             "prod_subcategory": p.get("subcategory", "Unknown"),
             "prod_material":   p.get("material", "Unknown"),
-            "prod_color":      color or "unknown",
-            "prod_price":      float(p.get("price", 0) or 0),
-        })
+            "prod_color":      color,
+            "prod_price":      price,
+        }
+        if engineered:
+            row["color_match"] = int(color == pref_color)
+            row["skin_compat"] = int(color in skin_family)
+            row["gender_cat_match"] = int((gender == "Female" and cat == "Women") or
+                                          (gender == "Male" and cat == "Men"))
+            row["price_band"] = int(np.digitize(price, price_bins)) if price_bins else 0
+        rows.append(row)
+
     X = pd.DataFrame(rows)
-    proba = model.predict_proba(X)[:, 1]      # probability of "liked"
-    order = np.argsort(-proba)
+    proba = model.predict_proba(X)[:, 1]          # probability of "liked"
+    scores = proba * 100.0
+
+    # Behavioural boost from purchase history (existing customers): nudge up
+    # products in categories / colours the customer has bought before.
+    if purchase_history:
+        hist_cats = {str(h.get("category", "")).lower() for h in purchase_history if isinstance(h, dict)}
+        hist_colors = {str(h.get("color", "")).lower() for h in purchase_history if isinstance(h, dict)}
+        for i, p in enumerate(products):
+            bonus = 0.0
+            if p.get("category", "").lower() in hist_cats:
+                bonus += 4.0
+            if _prod_color(p) in hist_colors:
+                bonus += 2.0
+            scores[i] = min(100.0, scores[i] + bonus)
+
+    # Incomplete profile: use popularity as a gentle tie-breaker so the ranking
+    # is still sensible when the model has little to distinguish products on.
+    if filled < len(_PROFILE_FIELDS):
+        pops = [(_popularity_score(p) or 0.0) for p in products]
+        pmax = max(pops) if pops else 0.0
+        if pmax > 0:
+            for i, pop in enumerate(pops):
+                scores[i] = min(100.0, scores[i] + 3.0 * (pop / pmax))
+
+    order = np.argsort(-scores)
     ranked = []
     for idx in order:
         prod = dict(products[idx])
-        prod["_mlScore"] = round(float(proba[idx]) * 100, 1)
+        prod["_mlScore"] = round(float(scores[idx]), 1)
         ranked.append(prod)
     return ranked
 
